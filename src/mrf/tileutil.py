@@ -23,11 +23,8 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 """
  
-from mrf.mathutil import *
 from mrf.search import *
 import math
-import unittest
-
 
 def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, collision_callback):
     
@@ -322,6 +319,8 @@ class TilePathfinder(AStar):
 # Testing
 #-------------------------------------------------------------------------------
 if __name__ == "__main__":
+    
+    import unittest
     
     class RayCastTest(unittest.TestCase):
         
