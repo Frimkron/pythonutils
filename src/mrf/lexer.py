@@ -912,6 +912,34 @@ class Rule_parser(object):
 class Parser_symbol(object):
 	pass	
 	
+class Parser_item(object):
+
+	def __init__(self, rules, rulename, position):
+		self.rules = rules
+		self.rulename = rulename
+		self.position = position
+		
+	def get_next_symbol(self):
+		if self.position < len(self.rules[self.rulename][1]):
+			return self.rules[self.rulename][1][self.position]
+		else:
+			return None
+			
+	def make_next_item(self):
+		if self.position < len(self.rules[self.rulename][1]):
+			next_pos = self.position + 1
+			return Parser_item(self.rules, self.rulename, next_pos)
+		else:
+			return None
+			
+	def __eq__(self, other):
+		return( self.rules==other.rules and self.rulename==other.rulename 
+				and self.position==other.position )			
+		
+	def __ne__(self, other):
+		return( self.rules!=other.rules or self.rulename!=other.rulename
+				or self.position!=other.position )
+	
 class Lr_parser(object):
 
 	def __init__(self, ruledefs):
@@ -923,22 +951,19 @@ class Lr_parser(object):
 			"accept" : self._do_accept
 		}
 	
-		self.rules = {}
+		self.rules = self._make_rules(ruledefs)
 		
-		ruleparser = Rule_parser()
-		rulenum = 1
-		for ruledef in ruledefs:
-			ruletree = ruleparser.parse_rule(ruledef)
-			for rhs in ruletree.children[1].children:
-				ruletuple = tuple([
-						ruletree.children[0].data[1],
-						tuple([x[1] for x in rhs.data])
-				])							
-				self.rules[str(rulenum)] = ruletuple 
-				rulenum += 1		
-		#print self.rules
+		# Find start rule
+		self.start_rule = None
+		for r in self.rules:
+			if self.rules[r][0] ==  "S":
+				self.start_rule = r
+				break
+		if self.start_rule == None:
+			raise Parse_error("Must specify start rule with lhs 'S'")
 		
-		self.table = {}
+		self.table = self._make_table()
+		
 		self._reset()
 	
 		# temporary
@@ -982,6 +1007,67 @@ class Lr_parser(object):
 			("8","one")		: ("reduce","2"),
 			("8",None)		: ("reduce","2")
 		}
+	
+	def _make_rules(self, ruledefs):
+		rules = {}
+		ruleparser = Rule_parser()
+		rulenum = 1
+		for ruledef in ruledefs:
+			ruletree = ruleparser.parse_rule(ruledef)
+			for rhs in ruletree.children[1].children:
+				ruletuple = tuple([
+						ruletree.children[0].data[1],
+						tuple([x[1] for x in rhs.data])
+				])							
+				rules[str(rulenum)] = ruletuple 
+				rulenum += 1		
+		return rules
+	
+	def _make_table(self):
+		
+		item_sets = []
+		
+		# make first item set		
+		first_item = Parser_item(self.rules, self.start_rule, 0)
+		first_set = self._make_item_closure(first_item)
+		item_sets.append(first_set)
+		
+		""" TODO: need to make note of symbol being moved over in order
+			to build table correctly""" 
+		
+		# derive remaining sets
+		next_sets = [first_set]
+		while True:
+			next_sets = self._make_next_item_sets(next_sets, item_sets)
+			if len(next_sets) == 0:
+				break
+			for s in next_sets:
+				item_sets.append(s)
+				
+		
+		
+	def _make_next_item_sets(self, item_sets, set_list):
+		new_sets = []
+		for item_set in item_sets:
+			for item in item_set:
+				new_item = item.make_next_item()
+				new_set = self._make_item_closure(new_item)
+				if not new_set in set_list:
+					new_sets.append(new_set)			
+		return new_sets	
+		
+	def _make_item_closure(self, item):
+		closure = set([])
+		if item.get_next_symbol() != None:
+			more_rules = self._find_rules(item.get_next_symbol())
+			for r in more_rules:
+				new_item = Parser_item(self.rules,r,0)
+				closure = closure.union(self._make_item_closure(new_item))
+				closure.add(new_item)
+		return closure
+	
+	def _find_rules(self, lhs):
+		return [x for x in self.rules if self.rules[x][0]==lhs]
 	
 	def _reset(self):
 		self.token_itr = None
