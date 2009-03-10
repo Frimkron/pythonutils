@@ -907,13 +907,14 @@ class Rule_parser(object):
 			self.current_token = self.lexer.next_token()
 			if self.current_token==None or self.current_token[0] != "whitespace":
 				break
-	
+
+
+class Parser_symbol(object):
+	pass	
 	
 class Lr_parser(object):
 
-	
-
-	def __init__(self):
+	def __init__(self, ruledefs):
 	
 		self.action_handlers = {
 			"shift" : self._do_shift,
@@ -923,17 +924,22 @@ class Lr_parser(object):
 		}
 	
 		self.rules = {}
+		
+		ruleparser = Rule_parser()
+		rulenum = 1
+		for ruledef in ruledefs:
+			ruletree = ruleparser.parse_rule(ruledef)
+			for rhs in ruletree.children[1].children:
+				ruletuple = tuple([
+						ruletree.children[0].data[1],
+						tuple([x[1] for x in rhs.data])
+				])							
+				self.rules[str(rulenum)] = ruletuple 
+				rulenum += 1		
+		#print self.rules
+		
 		self.table = {}
 		self._reset()
-	
-		# temporary	
-		self.rules = {
-			"1" : ("E",("E","times","B")),
-			"2"	: ("E",("E","plus","B")),
-			"3" : ("E",("B")),
-			"4" : ("B",("zero",)),
-			"5"	: ("B",("one",))
-		}
 	
 		# temporary
 		self.table = {
@@ -990,13 +996,13 @@ class Lr_parser(object):
 		
 	def _current_token_type(self):
 		if self.current_token != None:
-			return self.current_token[0]
+			return self.current_token.type
 		else:
 			return None
 	
 	def _current_token_value(self):
 		if self.current_token != None:
-			return self.current_token[1]
+			return self.current_token.data
 		else:
 			return None
 	
@@ -1007,7 +1013,13 @@ class Lr_parser(object):
 			return None
 			
 	def _advance(self):
-		self.current_token = self.token_itr.next_token()
+		next_token = self.token_itr.next_token()
+		if next_token != None:
+			self.current_token = Parser_symbol()
+			self.current_token.type = next_token[0]
+			self.current_token.data = next_token[1]
+		else:
+			self.current_token = None
 	
 	def parse(self, token_itr):
 
@@ -1018,6 +1030,9 @@ class Lr_parser(object):
 		self._advance()
 		
 		while True:
+		
+			#print "state stack %s" % str(self.state_stack)
+			#print "input stack %s" % str(self.input_stack)
 		
 			try:
 				action = self.table[(self._current_state(),self._current_token_type())]
@@ -1033,17 +1048,26 @@ class Lr_parser(object):
 			if self.accepted:
 				break
 				
+		# return final symbol now at top of input stack
+		return self.input_stack.pop()
+				
 	def _do_shift(self, to_state):
+		#print "shift %s" % to_state
 		self.input_stack.append(self._current_token())
 		self.state_stack.append(to_state)
 		self._advance()		
 		
 	def _do_reduce(self, rule):
+		#print "reduce %s" % rule
 		ruledata = self.rules[rule]
+		children = []
 		for i in range(len(ruledata[1])):
-			self.input_stack.pop()
+			children.insert(0,self.input_stack.pop())
 			self.state_stack.pop()
-		self.input_stack.append((ruledata[0],""))
+		new_symb = Parser_symbol()
+		new_symb.type = ruledata[0]
+		new_symb.children = children
+		self.input_stack.append(new_symb)
 		
 		try:
 			goto = self.table[(self._current_state(),ruledata[0])]
@@ -1053,9 +1077,11 @@ class Lr_parser(object):
 		self.action_handlers[goto[0]](goto[1])
 		
 	def _do_goto(self, to_state):
+		#print "goto %s" % to_state
 		self.state_stack.append(to_state)
 		
 	def _do_accept(self, dummy):
+		#print "accept"
 		self.accepted = True
 		
 
@@ -1066,8 +1092,15 @@ l = Lexer([
 	("zero","0")
 ])			
 l.prepare(sys.argv[1])
-p = Lr_parser()
-p.parse(l)
+p = Lr_parser([
+	"E -> E times B",
+	"E -> E plus B",
+	"E -> B",
+	"B -> one",
+	"B -> zero"
+])
+tree = p.parse(l)
+print_re_tree(tree)
 
 
 
