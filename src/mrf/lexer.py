@@ -940,6 +940,25 @@ class Parser_item(object):
 		return( self.rules!=other.rules or self.rulename!=other.rulename
 				or self.position!=other.position )
 	
+class Item_set(object):
+
+	def __init__(self):
+		self.items = set([])
+		self.lookup = {}
+		
+	def add(self, item):
+		if not item self.items:
+			self.items.add(item)
+			if not self.lookup.has_key(item.get_next_symbol()):
+				self.lookup[item.get_next_symbol()] = []
+			self.lookup[item.get_next_symbol()].append(item)
+			
+	def __eq__(self,other):
+		return self.items==other.items
+		
+	def __ne__(self,other):
+		return self.items!=other.items
+	
 class Lr_parser(object):
 
 	def __init__(self, ruledefs):
@@ -1025,36 +1044,52 @@ class Lr_parser(object):
 	
 	def _make_table(self):
 		
-		item_sets = []
+		table = {}
+		item_sets = {}
 		
-		# make first item set		
+		# make first item set: "0"		
 		first_item = Parser_item(self.rules, self.start_rule, 0)
-		first_set = self._make_item_closure(first_item)
-		item_sets.append(first_set)
+		first_closure = self._make_item_closure(first_item)
+		self._make_item_set(first_closure, item_sets)
 		
 		""" TODO: need to make note of symbol being moved over in order
 			to build table correctly""" 
 		
-		# derive remaining sets
-		next_sets = [first_set]
+		"""derive remaining sets, populating shift actions in table"""
+		next_set_names = ["0"]
 		while True:
-			next_sets = self._make_next_item_sets(next_sets, item_sets)
+			next_sets_names = self._make_next_item_sets(next_set_names, item_sets, table)
 			if len(next_sets) == 0:
 				break
-			for s in next_sets:
-				item_sets.append(s)
-				
-		
-		
-	def _make_next_item_sets(self, item_sets, set_list):
-		new_sets = []
-		for item_set in item_sets:
+								
+	def _make_item_set(self, closure, item_sets):
+		"""Make an item set from set of items and add to dict under next available name"""
+		new_set = Item_set()
+		for i in closure:
+			new_set.add(i)
+		if not new_set in item_sets.values():
+			set_name = str(len(item_sets))
+			item_sets[set_name] = new_set
+			return set_name
+		else:
+			for t in item_sets.items():
+				if t[1] == new_set:
+					return t[0]
+											
+	def _make_next_item_sets(self, item_set_names, set_list, table):
+		"""For each item set given, follow all available symbol transitions, creating
+			and adding new item sets to the dictionary as they are found, and recording
+			the transitions as shift actions in the table. Returns a list containing 
+			they keys of the newly created item sets"""
+		new_set_names = []
+		#TODO: working here
+		for item_set_name in item_set_names:
 			for item in item_set:
 				new_item = item.make_next_item()
 				new_set = self._make_item_closure(new_item)
 				if not new_set in set_list:
 					new_sets.append(new_set)			
-		return new_sets	
+		return new_set_names	
 		
 	def _make_item_closure(self, item):
 		closure = set([])
