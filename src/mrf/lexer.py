@@ -1069,6 +1069,7 @@ class Lr_parser(object):
 	def _make_table(self):
 		
 		table = {}
+		state_trans = {}
 		item_sets = {}
 		
 		# make first item set: "0"		
@@ -1079,15 +1080,18 @@ class Lr_parser(object):
 		""" TODO: need to make note of symbol being moved over in order
 			to build table correctly""" 
 		
-		"""derive remaining sets, populating shift actions in table"""
+		"""derive remaining sets, populating transitions in trans table"""
 		next_set_names = ["0"]
 		while True:
-			next_sets_names = self._make_next_item_sets(next_set_names, item_sets, table)
+			next_sets_names = self._make_next_item_sets(next_set_names, item_sets, 
+					state_trans)
 			if len(next_sets) == 0:
 				break
 								
 	def _make_item_set(self, closure, item_sets):
-		"""Make an item set from set of items and add to dict under next available name"""
+		"""Make an item set from set of items and add to dict under next available 
+			name. Returns a tuple containing the name of the new item set (or the name 
+			of an existing equivalent item set) and whether the item set is new or not."""
 		new_set = Item_set()
 		for i in closure:
 			new_set.add(i)
@@ -1100,19 +1104,22 @@ class Lr_parser(object):
 				if t[1] == new_set:
 					return t[0]
 											
-	def _make_next_item_sets(self, item_set_names, set_list, table):
+	def _make_next_item_sets(self, item_set_names, item_sets, state_trans):
 		"""For each item set given, follow all available symbol transitions, creating
 			and adding new item sets to the dictionary as they are found, and recording
-			the transitions as shift actions in the table. Returns a list containing 
-			they keys of the newly created item sets"""
+			the transitions in the transition table. Returns a list containing the keys 
+			of the newly created item sets"""
 		new_set_names = []
 		#TODO: working here
 		for item_set_name in item_set_names:
-			for item in item_set:
-				new_item = item.make_next_item()
-				new_set = self._make_item_closure(new_item)
-				if not new_set in set_list:
-					new_sets.append(new_set)			
+			item_set = item_sets[item_set_name]
+			# for each symbol, find item set reached by transitioning on it
+			for symbol in item_set.lookup:
+				closure = set([])
+				for item in item_set.lookup[symbol]:
+					closure = closure.union(self._make_item_closure(item))
+				dest_item_set_name = self._make_item_set(closure, item_sets)
+				state_trans[(item_set_name,symbol)] = dest_item_set_name			
 		return new_set_names	
 		
 	def _make_item_closure(self, item):
