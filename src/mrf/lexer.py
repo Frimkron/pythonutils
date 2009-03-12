@@ -956,6 +956,9 @@ class Parser_item(object):
 		else:
 			return None
 			
+	def is_end(self):
+		return self.position >= len(self.rules[self.rulename][1])
+			
 	def __eq__(self, other):
 		return( self.rules==other.rules and self.rulename==other.rulename 
 				and self.position==other.position )			
@@ -963,25 +966,37 @@ class Parser_item(object):
 	def __ne__(self, other):
 		return( self.rules!=other.rules or self.rulename!=other.rulename
 				or self.position!=other.position )
+				
+	def __str__(self):
+		rhs_with_dot = list(self.rules[self.rulename][1][:])
+		rhs_with_dot.insert(self.position,".")
+		return self.rules[self.rulename][0]+" -> " + " ".join(rhs_with_dot)
 	
 class Item_set(object):
 
 	def __init__(self):
 		self.items = set([])
 		self.lookup = {}
+		self.end_rules = []
 		
 	def add(self, item):
-		if not item self.items:
+		if not item in self.items:
 			self.items.add(item)
 			if not self.lookup.has_key(item.get_next_symbol()):
 				self.lookup[item.get_next_symbol()] = []
 			self.lookup[item.get_next_symbol()].append(item)
-			
+			if item.is_end:
+				if not item.rulename in self.end_rules:
+					self.end_rules.append(item.rulename)
+	
 	def __eq__(self,other):
 		return self.items==other.items
 		
 	def __ne__(self,other):
 		return self.items!=other.items
+		
+	def __str__(self):
+		return str(self.items)
 	
 class Lr_parser(object):
 
@@ -994,7 +1009,7 @@ class Lr_parser(object):
 			"accept" : self._do_accept
 		}
 	
-		self.rules = self._make_rules(ruledefs)
+		self.rules, terminals, nonterminals = self._make_rules(ruledefs)
 		
 		# Find start rule
 		self.start_rule = None
@@ -1005,11 +1020,12 @@ class Lr_parser(object):
 		if self.start_rule == None:
 			raise Parse_error("Must specify start rule with lhs 'S'")
 		
-		self.table = self._make_table()
+		self.table = self._make_table(self.rules, self.start_rule, terminals)
 		
 		self._reset()
 	
 		# temporary
+		"""
 		self.table = {
 			("0","zero") 	: ("shift","1"),
 			("0","one")		: ("shift","2"),
@@ -1050,43 +1066,52 @@ class Lr_parser(object):
 			("8","one")		: ("reduce","2"),
 			("8",None)		: ("reduce","2")
 		}
+		"""
 	
 	def _make_rules(self, ruledefs):
+		"""Returns 3 items tuple containing the new rule dict, the set of terminal
+			symbols and the set of nonterminal symbols"""
 		rules = {}
+		terminals = set([])
+		nonterminals = set([])
 		ruleparser = Rule_parser()
 		rulenum = 1
 		for ruledef in ruledefs:
 			ruletree = ruleparser.parse_rule(ruledef)
+			nonterminals.add(ruletree.children[0].data[1])
 			for rhs in ruletree.children[1].children:
-				ruletuple = tuple([
-						ruletree.children[0].data[1],
-						tuple([x[1] for x in rhs.data])
-				])							
+				rhs_items = []
+				for rhs_item in rhs.data:
+					rhs_items.append(rhs_item[1])
+					if self._is_nonterminal(rhs_item[1]):
+						nonterminals.add(rhs_item[1])
+					else:
+						terminals.add(rhs_item[1])
+				ruletuple = (ruletree.children[0].data[1], tuple(rhs_items))							
 				rules[str(rulenum)] = ruletuple 
 				rulenum += 1		
-		return rules
+		return (rules,terminals,nonterminals)
 	
-	def _make_table(self):
+	def _make_table(self, rules, start_rule, terminals):
 		
 		table = {}
-		state_trans = {}
 		item_sets = {}
 		
 		# make first item set: "0"		
-		first_item = Parser_item(self.rules, self.start_rule, 0)
+		first_item = Parser_item(rules, start_rule, 0)
 		first_closure = self._make_item_closure(first_item)
 		self._make_item_set(first_closure, item_sets)
 		
-		""" TODO: need to make note of symbol being moved over in order
-			to build table correctly""" 
-		
-		"""derive remaining sets, populating transitions in trans table"""
+		"""derive remaining sets, populating shifts and gotos in table"""
 		next_set_names = ["0"]
 		while True:
-			next_sets_names = self._make_next_item_sets(next_set_names, item_sets, 
-					state_trans)
-			if len(next_sets) == 0:
+			next_set_names = self._make_next_item_sets(next_set_names, item_sets, 
+					table, rules, start_rule, terminals)
+			if len(next_set_names) == 0:
 				break
+				
+		print table
+		return table
 								
 	def _make_item_set(self, closure, item_sets):
 		"""Make an item set from set of items and add to dict under next available 
@@ -1098,19 +1123,19 @@ class Lr_parser(object):
 		if not new_set in item_sets.values():
 			set_name = str(len(item_sets))
 			item_sets[set_name] = new_set
-			return set_name
+			return (set_name,True)
 		else:
 			for t in item_sets.items():
 				if t[1] == new_set:
-					return t[0]
+					return (t[0],False)
 											
-	def _make_next_item_sets(self, item_set_names, item_sets, state_trans):
+	def _make_next_item_sets(self, item_set_names, item_sets, table, rules, 
+			start_rule, terminals):
 		"""For each item set given, follow all available symbol transitions, creating
 			and adding new item sets to the dictionary as they are found, and recording
-			the transitions in the transition table. Returns a list containing the keys 
-			of the newly created item sets"""
+			transitions as actions in table. Returns a list containing the keys of the 
+			newly created item sets"""
 		new_set_names = []
-		#TODO: working here
 		for item_set_name in item_set_names:
 			item_set = item_sets[item_set_name]
 			# for each symbol, find item set reached by transitioning on it
@@ -1118,18 +1143,41 @@ class Lr_parser(object):
 				closure = set([])
 				for item in item_set.lookup[symbol]:
 					closure = closure.union(self._make_item_closure(item))
-				dest_item_set_name = self._make_item_set(closure, item_sets)
-				state_trans[(item_set_name,symbol)] = dest_item_set_name			
+				dest_item_set_name,is_new = self._make_item_set(closure, item_sets)
+				# record terminal transition as shift, nonterminal as goto
+				table[(item_set_name,symbol)] = (
+						"goto" if self._is_nonterminal(symbol) else "shift",
+						dest_item_set_name)				
+				if is_new:
+					new_set_names.append(dest_item_set_name)
+					# for end item set, add reduce action or accept for final rule
+					for end_rule in item_sets[dest_item_set_name].end_rules:
+						if end_rule == start_rule:
+							table[(dest_item_set_name,None)] = ("accept",None)
+						else:
+							for terminal in terminals:
+								if table.has_key((dest_item_set_name,terminal)):
+									raise (Parse_error("Shift-reduce conflict on symbol \"%s\" in state %s"
+											% (terminal, str(item_sets[dest_item_set_name]))))
+								table[(dest_item_set_name,terminal)] = ("reduce",end_rule)
+						
 		return new_set_names	
 		
-	def _make_item_closure(self, item):
+	def _is_nonterminal(self, symbol):
+		return symbol[0].isupper()
+		
+	def _make_item_closure(self, item, visited_rules=set([])):
+		# print "make item closure for %s" % str(item)
+		visited_rules.add(item.rulename)
 		closure = set([])
 		if item.get_next_symbol() != None:
 			more_rules = self._find_rules(item.get_next_symbol())
 			for r in more_rules:
-				new_item = Parser_item(self.rules,r,0)
-				closure = closure.union(self._make_item_closure(new_item))
-				closure.add(new_item)
+				# dont get into left recursion
+				if not r in visited_rules:
+					new_item = Parser_item(self.rules,r,0)
+					closure = closure.union(self._make_item_closure(new_item, visited_rules))
+					closure.add(new_item)
 		return closure
 	
 	def _find_rules(self, lhs):
@@ -1245,6 +1293,7 @@ l = Lexer([
 ])			
 l.prepare(sys.argv[1])
 p = Lr_parser([
+	"S -> E",
 	"E -> E times B",
 	"E -> E plus B",
 	"E -> B",
