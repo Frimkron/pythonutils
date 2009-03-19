@@ -934,7 +934,12 @@ class Rule_parser(object):
 
 
 class Parser_symbol(object):
-	pass	
+
+	def __str__(self):
+		return str(self.type)
+
+	def __repr__(self):
+		return self.__str__()	
 	
 class Parser_item(object):
 
@@ -960,17 +965,27 @@ class Parser_item(object):
 		return self.position >= len(self.rules[self.rulename][1])
 			
 	def __eq__(self, other):
-		return( self.rules==other.rules and self.rulename==other.rulename 
+		return( other!=None 
+				and self.rules==other.rules 
+				and self.rulename==other.rulename 
 				and self.position==other.position )			
 		
 	def __ne__(self, other):
-		return( self.rules!=other.rules or self.rulename!=other.rulename
+		return( other==None
+				or self.rules!=other.rules 
+				or self.rulename!=other.rulename
 				or self.position!=other.position )
 				
 	def __str__(self):
 		rhs_with_dot = list(self.rules[self.rulename][1][:])
 		rhs_with_dot.insert(self.position,".")
 		return self.rules[self.rulename][0]+" -> " + " ".join(rhs_with_dot)
+	
+	def __repr__(self):
+		return self.__str__()
+		
+	def __hash__(self):
+		return hash(str(id(self.rules))+str(hash(self.rulename))+str(hash(self.position)))
 	
 class Item_set(object):
 
@@ -982,21 +997,32 @@ class Item_set(object):
 	def add(self, item):
 		if not item in self.items:
 			self.items.add(item)
-			if not self.lookup.has_key(item.get_next_symbol()):
-				self.lookup[item.get_next_symbol()] = []
-			self.lookup[item.get_next_symbol()].append(item)
-			if item.is_end:
+			if item.get_next_symbol() != None:
+				if not self.lookup.has_key(item.get_next_symbol()):
+					self.lookup[item.get_next_symbol()] = []
+				self.lookup[item.get_next_symbol()].append(item)
+			if item.is_end():
 				if not item.rulename in self.end_rules:
 					self.end_rules.append(item.rulename)
 	
 	def __eq__(self,other):
-		return self.items==other.items
+		return other!=None and self.items==other.items
 		
 	def __ne__(self,other):
-		return self.items!=other.items
+		return other==None or self.items!=other.items
 		
 	def __str__(self):
 		return str(self.items)
+		
+	def __repr__(self):
+		return self.__str__()
+		
+	def __hash__(self):
+		set_hash = 0
+		for i in self.items:
+			set_hash ^= hash(i)
+		return set_hash
+		
 	
 class Lr_parser(object):
 
@@ -1011,6 +1037,10 @@ class Lr_parser(object):
 	
 		self.rules, terminals, nonterminals = self._make_rules(ruledefs)
 		
+		#for r in self.rules:
+		#	print "rule %s: %s" % (r,self.rules[r])
+		#print ""
+		
 		# Find start rule
 		self.start_rule = None
 		for r in self.rules:
@@ -1022,51 +1052,10 @@ class Lr_parser(object):
 		
 		self.table = self._make_table(self.rules, self.start_rule, terminals)
 		
+		#p = Lr_table_printer()
+		#p.print_lr_table(self.table)
+		
 		self._reset()
-	
-		# temporary
-		"""
-		self.table = {
-			("0","zero") 	: ("shift","1"),
-			("0","one")		: ("shift","2"),
-			("0","E")			: ("goto","3"),
-			("0","B")			: ("goto","4"),
-			("1","times")	: ("reduce","4"),
-			("1","plus")	: ("reduce","4"),
-			("1","zero")	: ("reduce","4"),
-			("1","one")		: ("reduce","4"),
-			("1",None)		: ("reduce","4"),
-			("2","times")	: ("reduce","5"),
-			("2","plus")	: ("reduce","5"),
-			("2","zero")	: ("reduce","5"),
-			("2","one")		: ("reduce","5"),
-			("2",None)		: ("reduce","5"),
-			("3","times")	: ("shift","5"),
-			("3","plus")	: ("shift","6"),
-			("3",None)		: ("accept",None),
-			("4","times")	: ("reduce","3"),
-			("4","plus")	: ("reduce","3"),
-			("4","zero")	: ("reduce","3"),
-			("4","one")		: ("reduce","3"),
-			("4",None)		: ("reduce","3"),
-			("5","zero")	: ("shift","1"),
-			("5","one")		: ("shift","2"),
-			("5","B")			: ("goto","7"),
-			("6","zero")	: ("shift","1"),
-			("6","one")		: ("shift","2"),
-			("6","B")			: ("goto","8"),
-			("7","times") : ("reduce","1"),
-			("7","plus")	: ("reduce","1"),
-			("7","zero")	: ("reduce","1"),
-			("7","one")		: ("reduce","1"),
-			("7",None)		: ("reduce","1"),
-			("8","times")	: ("reduce","2"),
-			("8","plus")	: ("reduce","2"),
-			("8","zero")	: ("reduce","2"),
-			("8","one")		: ("reduce","2"),
-			("8",None)		: ("reduce","2")
-		}
-		"""
 	
 	def _make_rules(self, ruledefs):
 		"""Returns 3 items tuple containing the new rule dict, the set of terminal
@@ -1075,7 +1064,7 @@ class Lr_parser(object):
 		terminals = set([])
 		nonterminals = set([])
 		ruleparser = Rule_parser()
-		rulenum = 1
+		rulenum = 0
 		for ruledef in ruledefs:
 			ruletree = ruleparser.parse_rule(ruledef)
 			nonterminals.add(ruletree.children[0].data[1])
@@ -1109,8 +1098,11 @@ class Lr_parser(object):
 					table, rules, start_rule, terminals)
 			if len(next_set_names) == 0:
 				break
+		
+		#print "item sets:"
+		#for i in item_sets:					
+		#	print "%s: %s {%s}" % (i,str(item_sets[i]),str(item_sets[i].lookup))
 				
-		print table
 		return table
 								
 	def _make_item_set(self, closure, item_sets):
@@ -1142,23 +1134,40 @@ class Lr_parser(object):
 			for symbol in item_set.lookup:
 				closure = set([])
 				for item in item_set.lookup[symbol]:
-					closure = closure.union(self._make_item_closure(item))
+					next_item = item.make_next_item()
+					if next_item != None:
+						closure = closure.union(self._make_item_closure(next_item))
 				dest_item_set_name,is_new = self._make_item_set(closure, item_sets)
 				# record terminal transition as shift, nonterminal as goto
-				table[(item_set_name,symbol)] = (
-						"goto" if self._is_nonterminal(symbol) else "shift",
-						dest_item_set_name)				
+				new_action = (
+						"goto" if symbol!=None and self._is_nonterminal(symbol) else "shift",
+						dest_item_set_name
+					)
+				if table.has_key((item_set_name,symbol)):
+					conflicting = new_action[0]+" "+dest_item_set_name
+					existing = table[(item_set_name,symbol)]
+					existing = str(existing[0])+" "+str(existing[1])
+					raise (Parse_error("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
+							% (symbol, item_set_name, str(item_set), conflicting, existing)))
+				table[(item_set_name,symbol)] = new_action			
 				if is_new:
 					new_set_names.append(dest_item_set_name)
-					# for end item set, add reduce action or accept for final rule
+					# for end item set, add reduce action or accept for final rule					
 					for end_rule in item_sets[dest_item_set_name].end_rules:
 						if end_rule == start_rule:
+							#print "add accept for %s" % dest_item_set_name
 							table[(dest_item_set_name,None)] = ("accept",None)
 						else:
-							for terminal in terminals:
-								if table.has_key((dest_item_set_name,terminal)):
-									raise (Parse_error("Shift-reduce conflict on symbol \"%s\" in state %s"
-											% (terminal, str(item_sets[dest_item_set_name]))))
+							#print terminals
+							#print terminals.union([None])
+							for terminal in terminals.union([None]):
+								if table.has_key((dest_item_set_name,terminal)):									
+									conflicting = "reduce "+str(end_rule)
+									existing = table[(dest_item_set_name,terminal)]
+									existing = str(existing[0])+" "+str(existing[1])
+									raise (Parse_error("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
+											% (terminal, dest_item_set_name, str(item_sets[dest_item_set_name]),conflicting,existing)))
+								#print "add reduce for %s, %s" % (dest_item_set_name,terminal)
 								table[(dest_item_set_name,terminal)] = ("reduce",end_rule)
 						
 		return new_set_names	
@@ -1166,18 +1175,24 @@ class Lr_parser(object):
 	def _is_nonterminal(self, symbol):
 		return symbol[0].isupper()
 		
-	def _make_item_closure(self, item, visited_rules=set([])):
-		# print "make item closure for %s" % str(item)
+	def _make_item_closure(self, item, visited_rules=set([])):	
+		#print "make item closure %s" % item
+		visited_rules = visited_rules.copy()
 		visited_rules.add(item.rulename)
-		closure = set([])
+		closure = set([item])
+		#print "\tget next symbol %s" % item.get_next_symbol()
 		if item.get_next_symbol() != None:
 			more_rules = self._find_rules(item.get_next_symbol())
+			#print "\tmore rules %s" % more_rules
 			for r in more_rules:
 				# dont get into left recursion
 				if not r in visited_rules:
 					new_item = Parser_item(self.rules,r,0)
 					closure = closure.union(self._make_item_closure(new_item, visited_rules))
-					closure.add(new_item)
+					closure.add(new_item)	
+				#else:
+				#	print "\t%r in visited rules" % r
+		#print "closure: %s" % closure	
 		return closure
 	
 	def _find_rules(self, lhs):
@@ -1284,14 +1299,93 @@ class Lr_parser(object):
 		#print "accept"
 		self.accepted = True
 		
+		
+class Lr_table_printer(Ascii_canvas):
 
+	def __init__(self):
+		Ascii_canvas.__init__(self)
+		self.state_order = []
+		self.symbol_order = []
+		
+	def _is_nonterminal(self, symbol):
+		return symbol!=None and symbol[0].isupper()
+		
+	def render_lr_table(self, table):
+		states = set([])
+		terminals = set([])
+		nonterminals = set([])
+		for key in table:
+			states.add(key[0])
+			if self._is_nonterminal(key[1]):
+				nonterminals.add(key[1])
+			else:
+				terminals.add(key[1])
+		self.state_order = [str(x) for x in sorted([int(x) for x in states])]
+		self.symbol_order = sorted(terminals) + sorted(nonterminals)
+		self.clear()
+		
+		for st in range(len(self.state_order)):
+			for sy in range(len(self.symbol_order)):
+				for i in range(2):
+					self.set(1+(sy+1)*7+6,1+(st+1)*3+i, "|")
+				for i in range(6):
+						self.set(1+(sy+1)*7+i,1+(st+1)*3+2, "-")
+				self.set(1+(sy+1)*7+6,1+(st+1)*3+2,"+")
+				if table.has_key((self.state_order[st],self.symbol_order[sy])):
+					content = table[(self.state_order[st],self.symbol_order[sy])]
+					self.write(1+(sy+1)*7,1+(st+1)*3, content[0], 6)					
+					self.write(1+(sy+1)*7,1+(st+1)*3+1, str(content[1]), 6)
+					
+		self.set(0,3,"+")
+		for i in range(6):
+			self.set(1+i,3,"-")
+		for st in range(len(self.state_order)):
+			for i in range(2):				
+				self.set(0,1+(st+1)*3+i,"|")
+				self.set(1+6,1+(st+1)*3+i,"|")
+			self.set(0,1+(st+1)*3+2,"+")
+			self.write(1,1+(st+1)*3,self.state_order[st],6)
+			for i in range(6):
+				self.set(1+i,1+(st+1)*3+2,"-")
+			self.set(1+6,1+(st+1)*3+2,"+")
+			
+		self.set(1+6,0,"+")
+		for i in range(2):
+			self.set(1+6,1+i,"|")
+		self.set(1+6,1+2,"+")
+		for sy in range(len(self.symbol_order)):
+			for i in range(6):
+				self.set(1+(1+sy)*7+i,0,"-")
+				self.set(1+(1+sy)*7+i,1+2,"-")
+			self.set(1+(1+sy)*7+6,0,"+")
+			self.write(1+(1+sy)*7,1,str(self.symbol_order[sy]),6)
+			for i in range(2):
+				self.set(1+(1+sy)*7+6,1+i,"|")
+			self.set(1+(1+sy)*7+6,1+2,"+")
+
+		return self.render()
+		
+	def print_lr_table(self, table):
+		print self.render_lr_table(table)
+
+"""
 l = Lexer([
 	("times","\*"),
 	("plus","\+"),
 	("one","1"),
 	("zero","0")
-])			
+])
+"""
+l = Lexer([
+	("number","[0-9]+"),
+	("plus","\+"),
+	("times","\*"),
+	("lbracket","\("),
+	("rbracket","\)"),
+	("whitespace","[ \t\n\r]+")
+])		
 l.prepare(sys.argv[1])
+"""
 p = Lr_parser([
 	"S -> E",
 	"E -> E times B",
@@ -1299,6 +1393,14 @@ p = Lr_parser([
 	"E -> B",
 	"B -> one",
 	"B -> zero"
+])
+"""
+p = Lr_parser([
+	"S -> E",
+	"E -> T | E plus T",
+	"T -> F | F times N",
+	"F -> N",
+	"N -> number | lbracket E rbracket"
 ])
 tree = p.parse(l)
 print_re_tree(tree)
