@@ -47,14 +47,26 @@ Doesn't handle:
 """
 
 class Parse_error(Exception):
+	"""
+	Error type thrown by the parser
+	"""
 	pass
 	
 class Re_symbol(object):
+	"""
+	A node in the regular expression parse tree
+	"""
 	pass
 
 class Re_parser(object):
+	"""
+	Class for parsing a regular expression into a parse tree.
+	"""
 	
 	def parse_re(self, input):
+		"""
+		Parses a regular expression string and returns a tree of Re_symbol objects
+		"""
 		self.input = input
 		self.pos = 0
 		
@@ -252,6 +264,9 @@ class Re_parser(object):
 		
 		
 def print_re_tree(re, indent=0):
+	"""
+	Prints out a parse tree obtained from Re_parser, Rule_parser or Lr_parser
+	"""
 	s = "\t"*indent	
 	s += re.type
 	if hasattr(re,"data"):
@@ -265,9 +280,15 @@ def print_re_tree(re, indent=0):
 			
 
 class State_error(Exception):
+	"""
+	Error type thrown by finite state automata classes
+	"""
 	pass
 
 class Nf_automaton(object):
+	"""
+	A non-deterministic finite state automaton.
+	"""
 
 	class empty(object):
 		def __str__(self):
@@ -281,26 +302,48 @@ class Nf_automaton(object):
 		self.state_data = {}
 		
 	def set_start_state(self,name):
+		"""
+		Makes the state with the given name the starting state.
+		"""
 		self.start_state = name
 		
 	def add_end_state(self, name, label_only=False):
+		"""
+		Adds a new state with the given name as an end state. If label_only is true,
+		a new state is not created, and instead an existing state can be named as an
+		end state
+		"""
 		if not label_only:
 			self.states[name] = {}
 		self.end_states.add(name)
 		
 	def add_state(self, name):
+		"""
+		Adds a new state to the automaton with the given name
+		"""
 		self.states[name] = {}
 		
 	def add_trans(self, fr, to, vals):
+		"""
+		Adds a new transition or transitions between fr and to, on each of the items 
+		in the sequence vals.
+		"""
 		for v in vals:
 			if not self.states[fr].has_key(v):
 				self.states[fr][v] = []
 			self.states[fr][v].append(to)
 	
 	def add_state_data(self, state, data):
+		"""
+		Adds additional data to accompany the named state.
+		"""
 		self.state_data[state] = data
 		
 	def make_dfa(self):
+		"""
+		Generates a deterministic state automaton from this nfa. Returns a 
+		Df_automaton object
+		"""
 		if self.start_state == None:
 			raise State_error("No start state")
 		dfa = Df_automaton()		
@@ -348,12 +391,22 @@ class Nf_automaton(object):
 							self._make_closure(state_set, [s2])
 		
 	def get_start_state(self):
+		"""
+		Returns the name of the start state
+		"""
 		return self.start_state
 							
 	def get_states(self):
+		"""
+		Returns the list of state names
+		"""
 		return self.states.keys()
 		
 	def get_transitions(self):
+		"""
+		Returns the list of transitions. Each item is a three-item tuple consisting 
+		of the 'from' state, the 'to' state and the transition symbol  
+		"""
 		out = []
 		for s in self.states:
 			for t in self.states[s]:
@@ -363,22 +416,37 @@ class Nf_automaton(object):
 	
 		
 class Df_automaton(Nf_automaton):
-	
+	"""
+	A deterministic finite state automaton.
+	"""
+		
 	def __init__(self):
 		Nf_automaton.__init__(self)
 		self.current_state = None
 		self.reset()
 		
 	def add_trans(self, fr, to, vals):
+		"""
+		Adds a new transition from 'fr' to 'to' for each of the items in the squence
+		'vals' 
+		"""
 		for v in vals:
 			if v == Nf_automaton.EMPTY:
 				raise State_error("deterministic automata may not use empty transitions")
 			self.states[fr][v] = to
 		
 	def reset(self):
+		"""
+		Resets the automaton to the starting state
+		"""
 		self.current_state = self.start_state
 			
 	def move(self, value):
+		"""
+		Attempts to change state via an available transition with the given symbol. 
+		If no such transition exists from the current state or the current state is
+		invalid, a State_error is thrown.
+		"""
 		if self.current_state == None:
 			raise State_error("Not in state")
 		if not self.states[self.current_state].has_key(value):
@@ -389,12 +457,22 @@ class Df_automaton(Nf_automaton):
 		self.current_state = new_state
 		
 	def is_at_end(self):
+		"""
+		Returns true if the current state is an end state.
+		"""
 		return self.current_state in self.end_states
 		
 	def get_state(self):
+		"""
+		Returns the name of the current state
+		"""
 		return self.current_state
 		
 	def get_transitions(self):
+		"""
+		Returns the list of transitions. Each item consists of a three-item tuple
+		containing the 'from' state, the 'to' state and the transition symbol
+		"""
 		out = []
 		for s in self.states:
 			for t in self.states[s]:				
@@ -403,7 +481,11 @@ class Df_automaton(Nf_automaton):
 		
 
 class Re_compiler(object):
-
+	"""
+	Class for compiling a regular expression parse tree into a deterministic 
+	finite state automaton.
+	"""
+	
 	ALL_CHARS = []
 	for c in range(1,128):
 		ALL_CHARS.append(chr(c))
@@ -421,6 +503,11 @@ class Re_compiler(object):
 		}
 		
 	def make_nfa(self, tree):
+		"""
+		Compiles a given re parse tree into a non-deterministic finite state automaton.
+		Returns a Nf_automaton object.
+		"""
+		
 		self.tree = tree
 		nfa = Nf_automaton()
 		
@@ -433,6 +520,10 @@ class Re_compiler(object):
 		return nfa	
 		
 	def make_dfa(self, tree):
+		"""
+		Compiles a given re parse tree into a deterministic finite state automaton.
+		Returns a Df_automaton object.
+		"""
 		nfa = self.make_nfa(tree)
 		dfa = nfa.make_dfa()
 		return dfa
@@ -570,8 +661,14 @@ class Re_compiler(object):
 		
 		
 class Re_matcher(object):		
+		"""
+		Class for testing if a string matches a given regular expression.
+		"""
 		
-		def __init__(self, re):								
+		def __init__(self, re):			
+			"""
+			Constructs the object from the given regular expression string
+			"""				
 			p = Re_parser()
 			tree = p.parse_re(re)
 			#print_re_tree(tree)
@@ -587,6 +684,10 @@ class Re_matcher(object):
 			#pr.print_automaton(self.dfa)
 
 		def matches(self, input):
+			"""
+			Returns true if the input string matches the regular expression this object
+			was initialised with.
+			"""
 			self.dfa.reset()
 			try:
 				for c in input:
@@ -599,16 +700,26 @@ class Re_matcher(object):
 		
 
 class Ascii_canvas(object):
+	"""
+	Class facilitating ascii art by allowing characters at arbitrary coordinates to
+	be set and then the full character space be printed out line by line.
+	"""
 	
 	def __init__(self):
 		self.clear()
 		
 	def clear(self):
+		"""
+		Clears the canvas
+		"""
 		self.grid = {}
 		self.width = 0
 		self.height = 0
 		
 	def set(self, x, y, char):
+		"""
+		Sets the position at x,y to the given character
+		"""
 		self.grid[(x,y)] = char
 		if x >= self.width:
 			self.width = x+1
@@ -616,12 +727,20 @@ class Ascii_canvas(object):
 			self.height = y+1
 	
 	def get(self, x, y):
+		"""
+		Returns the character at position x,y
+		"""
 		if self.grid.has_key((x,y)):
 			return self.grid[(x,y)]
 		else:
 			return ' '
 			
 	def write(self, x,y, text, maxlength=-1):
+		"""
+		Writes a sequence of characters into the space, starting at x,y and writing 
+		left to right. maxlength can be specified to cut short the text at a maximum
+		length
+		"""
 		i = 0
 		for c in text:
 			if maxlength!=-1 and i>=maxlength:
@@ -631,6 +750,9 @@ class Ascii_canvas(object):
 			i+=1
 	
 	def render(self):
+		"""
+		Returns a string representation of the full canvas
+		"""
 		str = ""
 		for j in range(self.height):
 			for i in range(self.width):		
@@ -639,15 +761,25 @@ class Ascii_canvas(object):
 		return str
 			
 	def print_out(self):
+		"""
+		Prints the full canvas
+		"""
 		print self.render()
 
 class Sa_printer(Ascii_canvas):
+	"""
+	Class for representing a finite state automaton in ascii art
+	"""
 
 	def __init__(self):
 		self.arrowed = set([])
 		self.state_order = {}
 		
 	def render_automaton(self, automaton):
+		"""
+		Renders the given Nf_automaton or Df_automaton object to a string as ascii 
+		art. Returns the string representation.
+		"""
 		self.arrowed = set([])
 		self.state_order = {}
 		self.clear()
@@ -732,17 +864,33 @@ class Sa_printer(Ascii_canvas):
 		return self.render()
 		
 	def print_automaton(self, automaton):
+		"""
+		Prints out an ascii art representation of the given Nf_automaton or 
+		Df_automaton object.
+		"""
 		print self.render_automaton(automaton)		
 		
 
 class Syntax_error(Exception):
+	"""
+	Error type thrown by Lexer class
+	"""
 	pass
 
 class Lexer(object):
-
+	"""
+	A simple lexical analyser which compiles a state machine from a number of 
+	token patterns. Can be used as an iterator.
+	"""
+	
 	END_OF_INPUT = 0
 
 	def __init__(self, token_defs):
+		"""
+		Initialises the object from the given list of token definitions. Each item
+		in the list should be a token definition consisting of a 2-item tuple: the 
+		token name followed by a regular expression describing its pattern.
+		"""
 		"""
 		token_defs = [("myToken","a+"),("myOtherToken",[0-9]{0,3})]
 		"""
@@ -752,10 +900,19 @@ class Lexer(object):
 		self.dfa = self.make_dfa(token_defs)
 		
 	def prepare(self, input):
+		"""
+		Prepares the lexer to tokenise the given input string.
+		"""
 		self.input = input
 		self.pos = 0
 		
 	def make_dfa(self, token_defs):
+		"""
+		Returns a Df_automaton object representing the deterministic finite state
+		automaton compiled by combining the regular expressions in the token 
+		definitions. Each end state in the automaton will have a token name in its
+		accompanying data.
+		"""
 	
 		self.next_state=0
 		parser = Re_parser()
@@ -811,12 +968,20 @@ class Lexer(object):
 		return self
 		
 	def next(self):
+		"""
+		Advances the lexer by one token and returns the next token. Throws 
+		StopIteration if no more tokens are available
+		"""
 		t = self.next_token()
 		if t == None:
 			raise StopIteration
 		return t
 		
 	def next_token(self):
+		"""
+		Advances the lexer by one token and returns the next token, or None, of no
+		more tokens are available
+		"""
 		if self._current_char() == Lexer.END_OF_INPUT:
 			return None
 		self.dfa.reset()
@@ -841,9 +1006,15 @@ Rule syntax:
 """
 
 class Rule_symbol(object):
+	"""
+	Node in the rule parse tree
+	"""
 	pass
 
 class Rule_parser(object):
+	"""
+	Class for parsing grammar rules using a simple syntax
+	"""
 
 	def __init__(self):
 		self.lexer = Lexer([
@@ -855,6 +1026,9 @@ class Rule_parser(object):
 		])	
 
 	def parse_rule(self, rule):
+		"""
+		Parses the given rule string, returning a parse tree of Rule_symbol objects
+		"""
 		self.lexer.prepare(rule)
 		self._advance()
 		
@@ -934,7 +1108,10 @@ class Rule_parser(object):
 
 
 class Parser_symbol(object):
-
+	"""
+	Item in parse tree
+	"""
+	
 	def __str__(self):
 		return str(self.type)
 
@@ -942,6 +1119,9 @@ class Parser_symbol(object):
 		return self.__str__()	
 	
 class Parser_item(object):
+	"""
+	Used internally by Lr_parser to represent an item e.g. E -> E . plus B
+	"""
 
 	def __init__(self, rules, rulename, position):
 		self.rules = rules
@@ -949,12 +1129,18 @@ class Parser_item(object):
 		self.position = position
 		
 	def get_next_symbol(self):
+		"""
+		Returns the symbol following the dot or None if dot is at the end
+		"""
 		if self.position < len(self.rules[self.rulename][1]):
 			return self.rules[self.rulename][1][self.position]
 		else:
 			return None
 			
 	def make_next_item(self):
+		"""
+		Returns another item where the dot has been advanced past the next symbol
+		"""
 		if self.position < len(self.rules[self.rulename][1]):
 			next_pos = self.position + 1
 			return Parser_item(self.rules, self.rulename, next_pos)
@@ -962,6 +1148,9 @@ class Parser_item(object):
 			return None
 			
 	def is_end(self):
+		"""
+		Returns true if the dot is at the end
+		"""
 		return self.position >= len(self.rules[self.rulename][1])
 			
 	def __eq__(self, other):
@@ -988,13 +1177,20 @@ class Parser_item(object):
 		return hash(str(id(self.rules))+str(hash(self.rulename))+str(hash(self.position)))
 	
 class Item_set(object):
-
+	"""
+	Used internally by Lr_parser to represent a set of items. Contains a set of 
+	Parser_item objects.
+	"""
+	
 	def __init__(self):
 		self.items = set([])
 		self.lookup = {}
 		self.end_rules = []
 		
 	def add(self, item):
+		"""
+		Adds a new Parser_item object to the set
+		"""
 		if not item in self.items:
 			self.items.add(item)
 			if item.get_next_symbol() != None:
@@ -1025,8 +1221,15 @@ class Item_set(object):
 		
 	
 class Lr_parser(object):
+	"""
+	An LR(0) parser implementation.
+	"""
 
 	def __init__(self, ruledefs):
+		"""
+		Initialises the parser with the given grammar definition. ruledefs should be
+		a list of rules in the syntax accepted by Rule_parser
+		"""
 	
 		self.action_handlers = {
 			"shift" : self._do_shift,
@@ -1237,6 +1440,9 @@ class Lr_parser(object):
 			self.current_token = None
 	
 	def parse(self, token_itr):
+		"""
+		Parses the given token iterator into a parse tree of Parser_symbol objects.
+		"""
 
 		self._reset()
 		self.token_itr = token_itr
@@ -1301,7 +1507,11 @@ class Lr_parser(object):
 		
 		
 class Lr_table_printer(Ascii_canvas):
-
+	"""
+	Class for printing out an ascii art representation of an Lr_parser object's 
+	parsing table.
+	"""
+	
 	def __init__(self):
 		Ascii_canvas.__init__(self)
 		self.state_order = []
@@ -1311,6 +1521,9 @@ class Lr_table_printer(Ascii_canvas):
 		return symbol!=None and symbol[0].isupper()
 		
 	def render_lr_table(self, table):
+		"""
+		Renders the given parse table to a string as ascii art. returns the string.
+		"""
 		states = set([])
 		terminals = set([])
 		nonterminals = set([])
@@ -1365,7 +1578,10 @@ class Lr_table_printer(Ascii_canvas):
 
 		return self.render()
 		
-	def print_lr_table(self, table):
+	def print_lr_table(self, table):	
+		"""
+		Prints out the ascii representation of the given parse table
+		"""
 		print self.render_lr_table(table)
 
 """
