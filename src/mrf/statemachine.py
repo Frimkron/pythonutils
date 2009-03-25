@@ -44,10 +44,12 @@ class StateMachine(object):
 		self.state = None
 		#find States defined in class and store new instance of each in states dict
 		self.states = {}
-		for membkey in self.__class__.__dict__:
-			memb = self.__class__.__dict__[membkey]
-			if type(memb) == type and issubclass(memb, StateMachine.State):                
-				self.states[membkey] = memb(self)                
+		for membkey in dir(self.__class__):
+			if not membkey.startswith("_"):
+				memb = getattr(self.__class__,membkey)
+				if( type(memb) == type and issubclass(memb, StateMachine.State)
+						and memb != StateMachine.State ):                
+					self.states[membkey] = memb(self)                
        
 	def __getattribute__(self, attr):
 		if attr != "state" and hasattr(self, "state") and self.state != None:
@@ -113,6 +115,12 @@ if __name__ == "__main__":
 		
 		def be_played_with(self):
 			return "cat not interested"
+		
+	class SneezyCat(Cat):
+		
+		class Sneezing(StateMachine.State):
+			
+			pass
 	
 	class Test(unittest.TestCase):
 
@@ -140,6 +148,10 @@ if __name__ == "__main__":
 			tiddles = Cat()
 			tiddles.change_state("Asleep")
 			self.assertEquals("Asleep", tiddles.get_state())
+			
+		def testInheritance(self):
+			ginger = SneezyCat()
+			self.assertEquals(4, len(ginger.states))
     		
 	unittest.main()
     		
