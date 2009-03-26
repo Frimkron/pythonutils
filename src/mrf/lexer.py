@@ -877,6 +877,34 @@ class Syntax_error(Exception):
 	"""
 	pass
 
+
+class Parser_symbol(object):
+	"""
+	Item in parse tree
+	"""
+	type = ""
+	data = ""
+	children = None
+	
+	def __init__(self, type, data):
+		self.type = type
+		self.data = data
+		self.children = []
+	
+	def __str__(self):
+		return str(self.type)+"("+str(self.data)+")"
+
+	def __repr__(self):
+		return self.__str__()	
+		
+
+class Token(Parser_symbol):
+	"""
+	Class representing the default token type output from Lexer
+	"""
+	pass
+	
+
 class Lexer(object):
 	"""
 	A simple lexical analyser which compiles a state machine from a number of 
@@ -888,14 +916,21 @@ class Lexer(object):
 	def __init__(self, token_defs):
 		"""
 		Initialises the object from the given list of token definitions. Each item
-		in the list should be a token definition consisting of a 2-item tuple: the 
-		token name followed by a regular expression describing its pattern.
+		in the list should be a token definition consisting of a tuple containing the 
+		token name followed by a regular expression describing its pattern, and 
+		optionally a token class to use in place of the default Token.
 		"""
 		"""
 		token_defs = [("myToken","a+"),("myOtherToken",[0-9]{0,3})]
 		"""
 		self.next_state=0
 		self.prepare("")
+		
+		# Store hash of token classes
+		self.token_classes = {}
+		for tdef in token_defs:
+			if len(tdef) > 2:
+				self.token_classes[tdef[0]] = tdef[2]
 		
 		self.dfa = self.make_dfa(token_defs)
 		
@@ -993,7 +1028,9 @@ class Lexer(object):
 				self._advance()
 		except State_error:
 			if self.dfa.is_at_end():
-				return (self.dfa.state_data[self.dfa.current_state][0], buffer)	
+				ttype = self.dfa.state_data[self.dfa.current_state][0]
+				tclass = self.token_classes[ttype] if self.token_classes.has_key(ttype) else Token
+				return tclass(ttype, buffer)
 			else:
 				raise Syntax_error("Syntax error at \"%s\"" % self._current_char())
 
@@ -1004,12 +1041,6 @@ Rule syntax:
 	Rhs -> T ("|" T)*
 	T -> (terminal|nonterminal)+
 """
-
-class Rule_symbol(object):
-	"""
-	Node in the rule parse tree
-	"""
-	pass
 
 class Rule_parser(object):
 	"""
@@ -1032,15 +1063,12 @@ class Rule_parser(object):
 		self.lexer.prepare(rule)
 		self._advance()
 		
-		out = Rule_symbol()
-		out.type = "rule"
-		out.children = []
+		out = Parser_symbol("rule","")
 		
 		if self._current_token_type() != "nonterminal":
 			raise Parse_error("Expected Non-terminal, found %s" % self._current_token_type())
-		lhs = Rule_symbol()
-		lhs.type="lhs"
-		lhs.data = self._current_token()
+		lhs = Parser_symbol("lhs","")
+		lhs.children.append(self._current_token())
 		out.children.append(lhs)
 		self._advance()	
 		
@@ -1058,9 +1086,7 @@ class Rule_parser(object):
 		return out
 		
 	def _parse_rhs(self):
-		out = Rule_symbol()
-		out.type = "rhs"
-		out.children = []
+		out = Parser_symbol("rhs","")
 		
 		while(True):
 			term = self._parse_term()
@@ -1074,15 +1100,13 @@ class Rule_parser(object):
 		return out
 		
 	def _parse_term(self):
-		out = Rule_symbol()
-		out.type = "term"
-		out.data = []
+		out = Parser_symbol("term","")
 		
 		if not self._current_token_type() in ["terminal","nonterminal"]:
 			raise Parse_error("Expected Terminal or Non-terminal, found %s" % self._current_token_type())
 		
 		while True:
-			out.data.append(self._current_token())
+			out.children.append(self._current_token())
 			self._advance()
 			
 			if not self._current_token_type() in ["terminal", "nonterminal"]:
@@ -1097,26 +1121,15 @@ class Rule_parser(object):
 		if self.current_token == None:
 			return None
 		else:
-			return self.current_token[0]	
+			return self.current_token.type
 	
 	def _advance(self):
 		# skip over whitespace 
 		while True:
 			self.current_token = self.lexer.next_token()
-			if self.current_token==None or self.current_token[0] != "whitespace":
+			if self.current_token==None or self.current_token.type != "whitespace":
 				break
-
-
-class Parser_symbol(object):
-	"""
-	Item in parse tree
-	"""
 	
-	def __str__(self):
-		return str(self.type)
-
-	def __repr__(self):
-		return self.__str__()	
 	
 class Parser_item(object):
 	"""
@@ -1227,8 +1240,12 @@ class Lr_parser(object):
 
 	def __init__(self, ruledefs):
 		"""
-		Initialises the parser with the given grammar definition. ruledefs should be
-		a list of rules in the syntax accepted by Rule_parser
+		Initialises the parser with the given symbol definitions. ruledefs should be
+		a list of symbol definitions. Each definition should be a string describing 
+		a rule for a nonterminal symbol, as parsed by Rule_parser. Or optionally a 
+		definition may be a tuple consisting of the rule string and an alternative 
+		symbol class to use in place of the default Parser_symbol class. The 
+		definitions must include a start rule with right hand side "S".
 		"""
 	
 		self.action_handlers = {
@@ -1238,7 +1255,7 @@ class Lr_parser(object):
 			"accept" : self._do_accept
 		}
 	
-		self.rules, terminals, nonterminals = self._make_rules(ruledefs)
+		self.rules, self.symbol_classes, terminals, nonterminals = self._make_rules(ruledefs)
 		
 		#for r in self.rules:
 		#	print "rule %s: %s" % (r,self.rules[r])
@@ -1261,28 +1278,38 @@ class Lr_parser(object):
 		self._reset()
 	
 	def _make_rules(self, ruledefs):
-		"""Returns 3 items tuple containing the new rule dict, the set of terminal
-			symbols and the set of nonterminal symbols"""
+		"""
+		Returns 4 items tuple containing the new rule dict, a dict of symbol 
+			classes, the set of terminal symbols and the set of nonterminal symbols
+		"""
 		rules = {}
+		symbol_classes = {}
 		terminals = set([])
 		nonterminals = set([])
 		ruleparser = Rule_parser()
 		rulenum = 0
 		for ruledef in ruledefs:
+			if type(ruledef)==tuple:
+				ruleclass = ruledef[1]
+				ruledef = ruledef[0]
+			else:
+				ruleclass = None
 			ruletree = ruleparser.parse_rule(ruledef)
-			nonterminals.add(ruletree.children[0].data[1])
+			nonterminals.add(ruletree.children[0].children[0].data)
+			if ruleclass != None:
+				symbol_classes[ruletree.children[0].children[0].data] = ruleclass
 			for rhs in ruletree.children[1].children:
 				rhs_items = []
-				for rhs_item in rhs.data:
-					rhs_items.append(rhs_item[1])
-					if self._is_nonterminal(rhs_item[1]):
-						nonterminals.add(rhs_item[1])
+				for rhs_item in rhs.children:
+					rhs_items.append(rhs_item.data)
+					if self._is_nonterminal(rhs_item.data):
+						nonterminals.add(rhs_item.data)
 					else:
-						terminals.add(rhs_item[1])
-				ruletuple = (ruletree.children[0].data[1], tuple(rhs_items))							
+						terminals.add(rhs_item.data)
+				ruletuple = (ruletree.children[0].children[0].data, tuple(rhs_items))							
 				rules[str(rulenum)] = ruletuple 
 				rulenum += 1		
-		return (rules,terminals,nonterminals)
+		return (rules,symbol_classes,terminals,nonterminals)
 	
 	def _make_table(self, rules, start_rule, terminals):
 		
@@ -1431,13 +1458,7 @@ class Lr_parser(object):
 			return None
 			
 	def _advance(self):
-		next_token = self.token_itr.next_token()
-		if next_token != None:
-			self.current_token = Parser_symbol()
-			self.current_token.type = next_token[0]
-			self.current_token.data = next_token[1]
-		else:
-			self.current_token = None
+		self.current_token = self.token_itr.next_token()
 	
 	def parse(self, token_itr):
 		"""
@@ -1485,8 +1506,11 @@ class Lr_parser(object):
 		for i in range(len(ruledata[1])):
 			children.insert(0,self.input_stack.pop())
 			self.state_stack.pop()
-		new_symb = Parser_symbol()
-		new_symb.type = ruledata[0]
+		if self.symbol_classes.has_key(ruledata[0]):
+			symbclass = self.symbol_classes[ruledata[0]]
+		else:
+			symbclass = Parser_symbol
+		new_symb = symbclass(ruledata[0],"")
 		new_symb.children = children
 		self.input_stack.append(new_symb)
 		
@@ -1584,44 +1608,52 @@ class Lr_table_printer(Ascii_canvas):
 		"""
 		print self.render_lr_table(table)
 
-"""
+
+class One(Token):
+	def eval(self):
+		return 1
+class Zero(Token):
+	def eval(self):
+		return 0
+class Plus(Token):
+	def eval(self,a,b):
+		return a + b
+class Times(Token):
+	def eval(self,a,b):
+		return a * b
+class Bee(Parser_symbol):
+	def eval(self):
+		return self.children[0].eval()
+class Eee(Parser_symbol):
+	def eval(self):
+		if len(self.children)>1:
+			return self.children[1].eval(
+					self.children[0].eval(),self.children[2].eval())
+		else:
+			return self.children[0].eval()
+class Ess(Parser_symbol):
+	def eval(self):
+		return self.children[0].eval()
+
 l = Lexer([
-	("times","\*"),
-	("plus","\+"),
-	("one","1"),
-	("zero","0")
+	("times","\*", Times),
+	("plus","\+", Plus),
+	("one","1", One),
+	("zero","0", Zero)
 ])
-"""
-l = Lexer([
-	("number","[0-9]+"),
-	("plus","\+"),
-	("times","\*"),
-	("lbracket","\("),
-	("rbracket","\)"),
-	("whitespace","[ \t\n\r]+")
-])		
+
 l.prepare(sys.argv[1])
-"""
+
 p = Lr_parser([
-	"S -> E",
-	"E -> E times B",
-	"E -> E plus B",
-	"E -> B",
-	"B -> one",
-	"B -> zero"
+	("S -> E", Ess),
+	("E -> E times B | E plus B | B", Eee),
+	("B -> one | zero", Bee)
 ])
-"""
-p = Lr_parser([
-	"S -> E",
-	"E -> T | E plus T",
-	"T -> F | F times N",
-	"F -> N",
-	"N -> number | lbracket E rbracket"
-])
+
 tree = p.parse(l)
 print_re_tree(tree)
 
-
+print "result: %d" % tree.eval()
 
 
 
