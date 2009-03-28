@@ -25,6 +25,47 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 class StateMachine(object):
 
+	"""
+	Classes may extends this class to implement the state pattern. When an 
+	instance is initialised, any members which are classes extending 
+	StateMachine.State are instantiated and stored internally. The current state
+	can be changed to any of these states by using the change_state method.
+	States can override the behaviour of any attribute of the class instance 
+	(apart from anything beginning with underscore) by declaring the same 
+	attribute themselves. States can access the parent instance by using their
+	"machine" attribute.
+	
+	Example:
+	
+	class ToggleSwitch(StateMachine):
+		
+		class OnState(StateMachine.State):
+			
+			def push(self):
+				self.machine.is_on = False
+				self.machine.change_state("OffState")
+				
+		class OffState(StateMachine.State):
+			
+			def push(self):
+				self.machine.is_on = True
+				self.machine.change_state("OnState")
+				
+		def __init__(self):
+			StateMachine.__init__(self)
+			self.change_state("OffState")
+				
+	toggler = ToggleSwitch()
+	print toggler.is_on
+	>>> False
+	toggler.push()
+	print toggler.is_on
+	>>> True
+	toggler.push()
+	print toggler.is_on
+	>>> False
+	"""
+
 	class State(object):
         
 		def __init__(self, mach):
@@ -52,7 +93,8 @@ class StateMachine(object):
 					self.states[membkey] = memb(self)                
        
 	def __getattribute__(self, attr):
-		if attr != "state" and hasattr(self, "state") and self.state != None:
+		if( not attr.startswith("_") and attr != "state" 
+				and hasattr(self, "state") and self.state != None ):
 			try:
 				return self.state.__getattribute__(attr)
 			except AttributeError, error:
@@ -120,7 +162,11 @@ if __name__ == "__main__":
 		
 		class Sneezing(StateMachine.State):
 			
-			pass
+			def __repr__(self):
+				return "ACHOOOOOOOOOOOO"
+			
+			def __str__(self):
+				return "ACHOOOOOOOOOOOO"
 	
 	class Test(unittest.TestCase):
 
@@ -152,6 +198,13 @@ if __name__ == "__main__":
 		def testInheritance(self):
 			ginger = SneezyCat()
 			self.assertEquals(4, len(ginger.states))
+			
+		def testMagicMethods(self):
+			ginger = SneezyCat()
+			ginger.change_state("Sneezing")
+			self.assertNotEquals("ACHOOOOOOOOOOOO",str(ginger))
+			self.assertNotEquals("ACHOOOOOOOOOOOO",ginger)
+			self.assertEquals(SneezyCat,ginger.__class__)
     		
 	unittest.main()
     		
