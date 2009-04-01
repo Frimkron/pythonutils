@@ -56,7 +56,8 @@ class Re_symbol(object):
 	"""
 	A node in the regular expression parse tree
 	"""
-	pass
+	def __str__(self):
+		return str(self.type) + ("("+str(self.data)+")" if hasattr(self,"data") else "()")
 
 class Re_parser(object):
 	"""
@@ -1609,51 +1610,106 @@ class Lr_table_printer(Ascii_canvas):
 		print self.render_lr_table(table)
 
 
-class One(Token):
-	def eval(self):
-		return 1
-class Zero(Token):
-	def eval(self):
-		return 0
-class Plus(Token):
-	def eval(self,a,b):
-		return a + b
-class Times(Token):
-	def eval(self,a,b):
-		return a * b
-class Bee(Parser_symbol):
-	def eval(self):
-		return self.children[0].eval()
-class Eee(Parser_symbol):
-	def eval(self):
-		if len(self.children)>1:
-			return self.children[1].eval(
-					self.children[0].eval(),self.children[2].eval())
-		else:
+# ----- Testing ----------------------------------------------------------------
+if __name__ == "__main__":
+	import unittest
+
+	class TestReParser(unittest.TestCase):
+		
+		def setUp(self):
+			self.parser = Re_parser()
+		
+		def testChars(self):
+			tree = self.parser.parse_re("a")
+			self.assertEquals("expression()",str(tree))
+			self.assertEquals("term()",str(tree.children[0]))
+			self.assertEquals("character(a)",str(tree.children[0].children[0]))
+			tree = self.parser.parse_re("\+")
+			self.assertEquals("character(+)",str(tree.children[0].children[0]))
+		
+		def testQuantifiers(self):
+			tree = self.parser.parse_re("a?")
+			self.assertEquals("character(a)",str(tree.children[0].children[0]))
+			self.assertEquals("quantifier((0, 1))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a+")
+			self.assertEquals("quantifier((1, -1))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a*")
+			self.assertEquals("quantifier((0, -1))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a{2}")
+			self.assertEquals("quantifier((2, 2))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a{2,3}")
+			self.assertEquals("quantifier((2, 3))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a{2,}")
+			self.assertEquals("quantifier((2, -1))",str(tree.children[0].children[1]))
+			self.assertRaises(Parse_error, self.parser.parse_re, "+")
+			
+		def testSets(self):
+			tree = self.parser.parse_re("[ab]")
+			self.assertEquals("set()",str(tree.children[0].children[0]))
+			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0]))
+			self.assertEquals("character(b)",str(tree.children[0].children[0].children[1]))
+			tree = self.parser.parse_re("[^a]")
+			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0]))
+			self.assertEquals(True, tree.children[0].children[0].negate)
+			self.assertRaises(Parse_error, self.parser.parse_re, "[a")
+			
+		def testGroups(self):
+			tree = self.parser.parse_re("(a|b)")
+			self.assertEquals("group()",str(tree.children[0].children[0]))
+			self.assertEquals("expression()",str(tree.children[0].children[0].children[0]))
+			self.assertEquals("term()",str(tree.children[0].children[0].children[0].children[0]))
+			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0].children[0].children[0]))
+			self.assertEquals("character(b)",str(tree.children[0].children[0].children[1].children[0].children[0]))
+			self.assertRaises(Parse_error, self.parser.parse_re, "(")
+			
+	unittest.main()
+
+	class One(Token):
+		def eval(self):
+			return 1
+	class Zero(Token):
+		def eval(self):
+			return 0
+	class Plus(Token):
+		def eval(self,a,b):
+			return a + b
+	class Times(Token):
+		def eval(self,a,b):
+			return a * b
+	class Bee(Parser_symbol):
+		def eval(self):
 			return self.children[0].eval()
-class Ess(Parser_symbol):
-	def eval(self):
-		return self.children[0].eval()
-
-l = Lexer([
-	("times","\*", Times),
-	("plus","\+", Plus),
-	("one","1", One),
-	("zero","0", Zero)
-])
-
-l.prepare(sys.argv[1])
-
-p = Lr_parser([
-	("S -> E", Ess),
-	("E -> E times B | E plus B | B", Eee),
-	("B -> one | zero", Bee)
-])
-
-tree = p.parse(l)
-print_re_tree(tree)
-
-print "result: %d" % tree.eval()
-
+	class Eee(Parser_symbol):
+		def eval(self):
+			if len(self.children)>1:
+				return self.children[1].eval(
+						self.children[0].eval(),self.children[2].eval())
+			else:
+				return self.children[0].eval()
+	class Ess(Parser_symbol):
+		def eval(self):
+			return self.children[0].eval()
+	
+	"""
+	l = Lexer([
+		("times","\*", Times),
+		("plus","\+", Plus),
+		("one","1", One),
+		("zero","0", Zero)
+	])
+	
+	l.prepare(sys.argv[1])
+	
+	p = Lr_parser([
+		("S -> E", Ess),
+		("E -> E times B | E plus B | B", Eee),
+		("B -> one | zero", Bee)
+	])
+	
+	tree = p.parse(l)
+	print_re_tree(tree)
+	
+	print "result: %d" % tree.eval()
+	"""
 
 
