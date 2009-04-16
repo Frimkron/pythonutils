@@ -56,7 +56,8 @@ class Re_symbol(object):
 	"""
 	A node in the regular expression parse tree
 	"""
-	pass
+	def __str__(self):
+		return str(self.type) + ("("+str(self.data)+")" if hasattr(self,"data") else "()")
 
 class Re_parser(object):
 	"""
@@ -1609,51 +1610,275 @@ class Lr_table_printer(Ascii_canvas):
 		print self.render_lr_table(table)
 
 
-class One(Token):
-	def eval(self):
-		return 1
-class Zero(Token):
-	def eval(self):
-		return 0
-class Plus(Token):
-	def eval(self,a,b):
-		return a + b
-class Times(Token):
-	def eval(self,a,b):
-		return a * b
-class Bee(Parser_symbol):
-	def eval(self):
-		return self.children[0].eval()
-class Eee(Parser_symbol):
-	def eval(self):
-		if len(self.children)>1:
-			return self.children[1].eval(
-					self.children[0].eval(),self.children[2].eval())
-		else:
+# ----- Testing ----------------------------------------------------------------
+if __name__ == "__main__":
+	import unittest
+
+	class TestReParser(unittest.TestCase):
+		
+		def setUp(self):
+			self.parser = Re_parser()
+		
+		def testChars(self):
+			tree = self.parser.parse_re("a")
+			self.assertEquals("expression()",str(tree))
+			self.assertEquals("term()",str(tree.children[0]))
+			self.assertEquals("character(a)",str(tree.children[0].children[0]))
+			tree = self.parser.parse_re("\+")
+			self.assertEquals("character(+)",str(tree.children[0].children[0]))
+		
+		def testQuantifiers(self):
+			tree = self.parser.parse_re("a?")
+			self.assertEquals("character(a)",str(tree.children[0].children[0]))
+			self.assertEquals("quantifier((0, 1))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a+")
+			self.assertEquals("quantifier((1, -1))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a*")
+			self.assertEquals("quantifier((0, -1))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a{2}")
+			self.assertEquals("quantifier((2, 2))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a{2,3}")
+			self.assertEquals("quantifier((2, 3))",str(tree.children[0].children[1]))
+			tree = self.parser.parse_re("a{2,}")
+			self.assertEquals("quantifier((2, -1))",str(tree.children[0].children[1]))
+			self.assertRaises(Parse_error, self.parser.parse_re, "+")
+			
+		def testSets(self):
+			tree = self.parser.parse_re("[ab]")
+			self.assertEquals("set()",str(tree.children[0].children[0]))
+			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0]))
+			self.assertEquals("character(b)",str(tree.children[0].children[0].children[1]))
+			tree = self.parser.parse_re("[^a]")
+			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0]))
+			self.assertEquals(True, tree.children[0].children[0].negate)
+			self.assertRaises(Parse_error, self.parser.parse_re, "[a")
+			
+		def testGroups(self):
+			tree = self.parser.parse_re("(a|b)")
+			self.assertEquals("group()",str(tree.children[0].children[0]))
+			self.assertEquals("expression()",str(tree.children[0].children[0].children[0]))
+			self.assertEquals("term()",str(tree.children[0].children[0].children[0].children[0]))
+			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0].children[0].children[0]))
+			self.assertEquals("character(b)",str(tree.children[0].children[0].children[1].children[0].children[0]))
+			self.assertRaises(Parse_error, self.parser.parse_re, "(")
+	
+	class TestNfa(unittest.TestCase):
+	
+		def testConstruction(self):
+			nfa = Nf_automaton()
+			self.assertEquals(0, len(nfa.get_states()))
+			nfa.add_state("one")
+			self.assert_("one" in nfa.get_states() and len(nfa.get_states())==1)
+			nfa.set_start_state("one")
+			self.assertEquals("one", nfa.get_start_state())
+			nfa.add_end_state("two")
+			self.assert_("two" in nfa.get_states() and len(nfa.get_states())==2)
+			self.assert_("two" in nfa.end_states and len(nfa.end_states)==1)
+			nfa.add_trans("one", "two", ["a","b"])
+			self.assertEquals(2, len(nfa.get_transitions()))
+			self.assert_(("one","two","a") in nfa.get_transitions())
+			self.assert_(("one","two","b") in nfa.get_transitions())
+			
+		def testMakeDfa(self):
+			nfa = Nf_automaton()
+			nfa.add_state("one")
+			nfa.add_state("two")
+			nfa.add_end_state("three")
+			nfa.set_start_state("one")
+			nfa.add_trans("one","two",[Nf_automaton.EMPTY])
+			nfa.add_trans("two","three",["a"])
+			nfa.add_trans("two","one",["a"])
+			dfa = nfa.make_dfa()
+			self.assertEquals(2, len(dfa.get_states()))
+			
+	class TestDfa(unittest.TestCase):
+	
+		def testConstruction(self):
+			dfa = Df_automaton()
+			dfa.add_state("one")
+			dfa.add_state("two")
+			dfa.add_state("three")
+			dfa.add_trans("one","two",["a"])
+			dfa.add_trans("one","three",["a"])
+			self.assertEquals(1, len(dfa.get_transitions()))
+			
+		def testMove(self):
+			dfa = Df_automaton()			
+			dfa.add_state("one")
+			dfa.set_start_state("one")
+			dfa.add_end_state("two")
+			dfa.add_trans("one","two",["a"])
+			self.assertRaises(State_error,dfa.move,"a")
+			dfa.reset()
+			self.assertRaises(State_error,dfa.move,"b")
+			self.assertEquals(False,dfa.is_at_end())
+			dfa.move("a")
+			self.assertEquals(True,dfa.is_at_end())
+			
+	class TestReCompiler(unittest.TestCase):
+	
+		def setUp(self):
+			self.parser = Re_parser()
+			self.compiler = Re_compiler()
+			
+		def testCharacter(self):
+			dfa = self.compiler.make_dfa(self.parser.parse_re("a"))
+			self.assertEquals(2,len(dfa.get_states()))
+			self.assertEquals(1,len(dfa.get_transitions()))
+			states = dfa.get_states()
+			self.assert_((states[0],states[1],"a") in dfa.get_transitions())
+			dfa.reset()
+			self.assertEquals(False,dfa.is_at_end())
+			self.assertRaises(State_error,dfa.move,"b")
+			dfa.move("a")
+			self.assertEquals(True,dfa.is_at_end())
+			
+		def testAnyCharacter(self):
+			dfa = self.compiler.make_dfa(self.parser.parse_re("."))
+			self.assertEquals(2, len(dfa.get_states()))
+			states = dfa.get_states()
+			self.assert_(len(dfa.get_transitions()) > 1)
+			self.assert_((states[0],states[1],"!") in dfa.get_transitions())
+			dfa.reset()
+			self.assertEquals(False,dfa.is_at_end())
+			dfa.move("~")
+			self.assertEquals(True,dfa.is_at_end())
+			
+		def testSet(self):
+			dfa = self.compiler.make_dfa(self.parser.parse_re("[ab]"))
+			self.assertEquals(2,len(dfa.get_states()))
+			self.assertEquals(2,len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(False,dfa.is_at_end())
+			self.assertRaises(State_error,dfa.move,"c")
+			dfa.move("a")
+			self.assertEquals(True,dfa.is_at_end())
+			dfa.reset()
+			dfa.move("b")
+			self.assertEquals(True,dfa.is_at_end())
+			
+		def testGroup(self):
+			dfa = self.compiler.make_dfa(self.parser.parse_re("(ab|c)"))
+			self.assertEquals(4,len(dfa.get_states()))
+			self.assertEquals(3,len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(False,dfa.is_at_end())
+			self.assertRaises(State_error,dfa.move,"b")
+			dfa.move("a")
+			self.assertEquals(False,dfa.is_at_end())
+			dfa.move("b")
+			self.assertEquals(True,dfa.is_at_end())
+			dfa.reset()
+			dfa.move("c")
+			self.assertEquals(True,dfa.is_at_end())
+			
+		def testTerm(self):
+			dfa = self.compiler.make_dfa(self.parser.parse_re("a?"))
+			self.assertEquals(2,len(dfa.get_states()))
+			self.assertEquals(1,len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(True, dfa.is_at_end())
+			self.assertRaises(State_error,dfa.move,"b")
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			self.assertRaises(State_error,dfa.move,"a")
+			
+			dfa = self.compiler.make_dfa(self.parser.parse_re("a+"))
+			self.assertEquals(2, len(dfa.get_states()))
+			self.assertEquals(2, len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(False, dfa.is_at_end())
+			self.assertRaises(State_error, dfa.move, "b")
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			
+			dfa = self.compiler.make_dfa(self.parser.parse_re("a*"))
+			self.assertEquals(2, len(dfa.get_states()))
+			self.assertEquals(2, len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(True, dfa.is_at_end())
+			self.assertRaises(State_error, dfa.move, "b")
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			
+			dfa = self.compiler.make_dfa(self.parser.parse_re("a{2}"))
+			self.assertEquals(3, len(dfa.get_states()))
+			self.assertEquals(2, len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(False, dfa.is_at_end())
+			self.assertRaises(State_error, dfa.move, "b")
+			dfa.move("a")
+			self.assertEquals(False, dfa.is_at_end())
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			self.assertRaises(State_error, dfa.move, "a")
+			
+			dfa = self.compiler.make_dfa(self.parser.parse_re("a{2,3}"))
+			self.assertEquals(4, len(dfa.get_states()))
+			self.assertEquals(3, len(dfa.get_transitions()))
+			dfa.reset()
+			self.assertEquals(False, dfa.is_at_end())
+			self.assertRaises(State_error, dfa.move, "b")
+			dfa.move("a")
+			self.assertEquals(False, dfa.is_at_end())
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			dfa.move("a")
+			self.assertEquals(True, dfa.is_at_end())
+			self.assertRaises(State_error, dfa.move, "a")
+			
+	unittest.main()
+
+	class One(Token):
+		def eval(self):
+			return 1
+	class Zero(Token):
+		def eval(self):
+			return 0
+	class Plus(Token):
+		def eval(self,a,b):
+			return a + b
+	class Times(Token):
+		def eval(self,a,b):
+			return a * b
+	class Bee(Parser_symbol):
+		def eval(self):
 			return self.children[0].eval()
-class Ess(Parser_symbol):
-	def eval(self):
-		return self.children[0].eval()
-
-l = Lexer([
-	("times","\*", Times),
-	("plus","\+", Plus),
-	("one","1", One),
-	("zero","0", Zero)
-])
-
-l.prepare(sys.argv[1])
-
-p = Lr_parser([
-	("S -> E", Ess),
-	("E -> E times B | E plus B | B", Eee),
-	("B -> one | zero", Bee)
-])
-
-tree = p.parse(l)
-print_re_tree(tree)
-
-print "result: %d" % tree.eval()
-
+	class Eee(Parser_symbol):
+		def eval(self):
+			if len(self.children)>1:
+				return self.children[1].eval(
+						self.children[0].eval(),self.children[2].eval())
+			else:
+				return self.children[0].eval()
+	class Ess(Parser_symbol):
+		def eval(self):
+			return self.children[0].eval()
+	
+	"""
+	l = Lexer([
+		("times","\*", Times),
+		("plus","\+", Plus),
+		("one","1", One),
+		("zero","0", Zero)
+	])
+	
+	l.prepare(sys.argv[1])
+	
+	p = Lr_parser([
+		("S -> E", Ess),
+		("E -> E times B | E plus B | B", Eee),
+		("B -> one | zero", Bee)
+	])
+	
+	tree = p.parse(l)
+	print_re_tree(tree)
+	
+	print "result: %d" % tree.eval()
+	"""
 
 
