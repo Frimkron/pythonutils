@@ -400,7 +400,18 @@ def render_tilemap(rect, tile_size, cam_pos, type_callback, draw_callback, zoom=
 				
 				# render the tile
 				draw_callback(tile_type, (stilex, stiley, stilew, stileh))
-				
+
+
+def tile_map_from_ascii(ascii, mapping):
+	
+	tiles = []
+	for line in ascii.split("\n")[1:]:
+		tile_row = []
+		for char in [line[x*2] for x in range(len(line)//2)]:			
+			tile_row.append(mapping[char])
+		tiles.append(tile_row)
+		
+	return tiles				
 
 
 #-------------------------------------------------------------------------------
@@ -671,6 +682,22 @@ if __name__ == "__main__":
 								(-1, 3),( 0, 3),( 1, 3),( 2, 3),( 3, 3) ], self.requested_lookups)
 			self.assertEquals([	(1,(18,14,8,8)), (1,(26,14,8,8)),
 								(1,(18,22,8,8)), (1,(26,22,8,8)) ], self.requested_draws)
+
+	class TestMapFromAscii(unittest.TestCase):
+		
+		def test(self):
+			
+			mapping = {" ":0,"#":1,"~":2,"O":3}
+			map = tile_map_from_ascii("""
+# # # # 
+#   O # 
+# ~ ~ # 
+# # # # """, mapping)
+			self.assertEquals([	[1,1,1,1],
+								[1,0,3,1],
+								[1,2,2,1],
+								[1,1,1,1] ],map)
+			
 
 	unittest.main()
 	
