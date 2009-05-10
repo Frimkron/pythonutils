@@ -47,34 +47,34 @@ Doesn't handle:
 	Quotation e.g. \Q, \E
 """
 
-class Parse_error(Exception):
+class ParseError(Exception):
 	"""
 	Error type thrown by the parser
 	"""
 	pass
 	
-class Re_symbol(object):
+class ReSymbol(object):
 	"""
 	A node in the regular expression parse tree
 	"""
 	def __str__(self):
 		return str(self.type) + ("("+str(self.data)+")" if hasattr(self,"data") else "()")
 
-class Re_parser(object):
+class ReParser(object):
 	"""
 	Class for parsing a regular expression into a parse tree.
 	"""
 	
 	def parse_re(self, input):
 		"""
-		Parses a regular expression string and returns a tree of Re_symbol objects
+		Parses a regular expression string and returns a tree of ReSymbol objects
 		"""
 		self.input = input
 		self.pos = 0
 		
 		exp = self._parse_expression()
 		if self._current_char() != None:
-			raise Parse_error("Expected end of input at char %d" % self.pos)		
+			raise ParseError("Expected end of input at char %d" % self.pos)		
 			
 		return exp
 		
@@ -85,7 +85,7 @@ class Re_parser(object):
 			return self.input[self.pos]
 			
 	def _parse_expression(self):
-		retval = Re_symbol()
+		retval = ReSymbol()
 		retval.type = "expression"
 		retval.children = []
 		while self._current_char() != None and not self._current_char() in [')','|']:
@@ -94,9 +94,9 @@ class Re_parser(object):
 			
 	def _parse_term(self):
 		if self._current_char() in ['+','*',']','?','}',')','|']:
-			raise Parse_error("Unexpected start of term '%s' at char %d" % (self._current_char(),self.pos))		
+			raise ParseError("Unexpected start of term '%s' at char %d" % (self._current_char(),self.pos))		
 		elif self._current_char() == '.':
-			item = Re_symbol()
+			item = ReSymbol()
 			item.type = "any_character"
 			self.pos+=1
 		elif self._current_char() == '[':
@@ -106,25 +106,25 @@ class Re_parser(object):
 		else:
 			item = self._parse_character()
 			
-		retval = Re_symbol()
+		retval = ReSymbol()
 		retval.type = "term"
 		retval.children = [item]
 		
 		if self._current_char() != None:
 			if self._current_char() == '?':
-				mod = Re_symbol()
+				mod = ReSymbol()
 				mod.type = "quantifier"
 				mod.data = (0,1)
 				retval.children.append(mod)
 				self.pos+=1
 			elif self._current_char() == '*':
-				mod = Re_symbol()
+				mod = ReSymbol()
 				mod.type = "quantifier"
 				mod.data = (0,-1)
 				retval.children.append(mod)
 				self.pos+=1
 			elif self._current_char() == '+':
-				mod = Re_symbol()
+				mod = ReSymbol()
 				mod.type = "quantifier"
 				mod.data = (1,-1)
 				retval.children.append(mod)
@@ -140,14 +140,14 @@ class Re_parser(object):
 		min = ""
 		max = ""
 		if self._current_char() == None:
-				raise Parse_error("Unexpected end of input at char %d" % self.pos)
+				raise ParseError("Unexpected end of input at char %d" % self.pos)
 		if not( ord('0') <= ord(self._current_char()) <= ord('9') ):
-			raise Parse_error("Expected value in quantifier at char %d" % self.pos)	 
+			raise ParseError("Expected value in quantifier at char %d" % self.pos)	 
 		while not self._current_char() in [',','}']:
 			if self._current_char() == None:
-				raise Parse_error("Unexpected end of input at char %d" % self.pos)
+				raise ParseError("Unexpected end of input at char %d" % self.pos)
 			if not( ord('0') <= ord(self._current_char()) <= ord('9') ):
-				raise Parse_error("Expected value in quantifier at char %d" % self.pos)
+				raise ParseError("Expected value in quantifier at char %d" % self.pos)
 			min += self._current_char()
 			self.pos+=1
 		min = int(min)
@@ -156,9 +156,9 @@ class Re_parser(object):
 			if self._current_char() != '}':
 				while not self._current_char()=='}':
 					if self._current_char() == None:
-						raise Parse_error("Unexpected end of input at char %d" % self.pos)
+						raise ParseError("Unexpected end of input at char %d" % self.pos)
 					if not( ord('0') <= ord(self._current_char()) <= ord('9') ):
-						raise Parse_error("Expected value in quantifier at char %d" % self.pos)
+						raise ParseError("Expected value in quantifier at char %d" % self.pos)
 					max += self._current_char()
 					self.pos+=1
 				max = int(max)
@@ -168,7 +168,7 @@ class Re_parser(object):
 			max = min
 		self.pos+=1
 		
-		retval = Re_symbol()
+		retval = ReSymbol()
 		retval.type = "quantifier"
 		retval.data = (min,max)
 		return retval
@@ -178,7 +178,7 @@ class Re_parser(object):
 		if self._current_char() == '\\':
 			return self._parse_escape()
 		else:
-			retval = Re_symbol()
+			retval = ReSymbol()
 			retval.type = "character"
 			retval.data = self._current_char()
 			self.pos+=1
@@ -187,27 +187,27 @@ class Re_parser(object):
 	def _parse_escape(self):
 		self.pos+=1
 		if self._current_char() == None:
-			raise Parse_error("Unexpected end of input at char %d" % self.pos)
+			raise ParseError("Unexpected end of input at char %d" % self.pos)
 		elif self._current_char() == 'n':
-			retval = Re_symbol()
+			retval = ReSymbol()
 			retval.type = "character"
 			retval.data = "\n"
 			self.pos+=1
 			return retval
 		elif self._current_char() == 'r':
-			retval = Re_symbol()
+			retval = ReSymbol()
 			retval.type = "character"
 			retval.data = "\r"
 			self.pos+=1
 			return retval
 		elif self._current_char() == 't':
-			retval = Re_symbol()
+			retval = ReSymbol()
 			retval.type = "character"
 			retval.data = "\t"
 			self.pos+=1
 			return retval
 		else:
-			retval = Re_symbol()
+			retval = ReSymbol()
 			retval.type = "character"
 			retval.data = self._current_char()
 			self.pos+=1
@@ -221,15 +221,15 @@ class Re_parser(object):
 		else:
 			negate = False
 		
-		retval = Re_symbol()
+		retval = ReSymbol()
 		retval.type = "set"
 		retval.negate = negate
 		retval.children = []
 		while self._current_char() != ']':
 			if self._current_char() == None:
-				raise Parse_error("Unexpected end of input at char %d" % self.pos)
+				raise ParseError("Unexpected end of input at char %d" % self.pos)
 			if self._current_char() == '-':
-				item = Re_symbol()
+				item = ReSymbol()
 				item.type = "range_marker"
 				retval.children.append(item)
 				self.pos+=1
@@ -237,27 +237,27 @@ class Re_parser(object):
 				retval.children.append(self._parse_character())
 			
 		if self._current_char() == None:
-			raise Parse_error("Unexpected end of input at char %d" % self.pos)
+			raise ParseError("Unexpected end of input at char %d" % self.pos)
 		
 		self.pos+=1
 		return retval
 		
 	def _parse_group(self):
 		self.pos+=1
-		retval = Re_symbol()
+		retval = ReSymbol()
 		retval.type = "group"
 		retval.children = []
 		
 		if self._current_char() != ')':
 			if self._current_char() == None:
-				raise Parse_error("Unexpected end of input at char %d" % self.pos)
+				raise ParseError("Unexpected end of input at char %d" % self.pos)
 			retval.children.append(self._parse_expression())
 		
 		while self._current_char() != ')':
 			if self._current_char() == None:
-				raise Parse_error("Unexpected end of input at char %d" % self.pos)
+				raise ParseError("Unexpected end of input at char %d" % self.pos)
 			elif self._current_char() != '|':
-				raise Parse_error("Expected '|' at char %d" % self.pos)
+				raise ParseError("Expected '|' at char %d" % self.pos)
 			self.pos+=1
 			retval.children.append(self._parse_expression())				
 				
@@ -267,7 +267,7 @@ class Re_parser(object):
 		
 def print_re_tree(re, indent=0):
 	"""
-	Prints out a parse tree obtained from Re_parser, Rule_parser or Lr_parser
+	Prints out a parse tree obtained from ReParser, RuleParser or LrParser
 	"""
 	s = "\t"*indent	
 	s += re.type
@@ -281,13 +281,13 @@ def print_re_tree(re, indent=0):
 			print_re_tree(c, indent+1)
 			
 
-class State_error(Exception):
+class StateError(Exception):
 	"""
 	Error type thrown by finite state automata classes
 	"""
 	pass
 
-class Nf_automaton(object):
+class NfAutomaton(object):
 	"""
 	A non-deterministic finite state automaton.
 	"""
@@ -344,11 +344,11 @@ class Nf_automaton(object):
 	def make_dfa(self):
 		"""
 		Generates a deterministic state automaton from this nfa. Returns a 
-		Df_automaton object
+		DfAutomaton object
 		"""
 		if self.start_state == None:
-			raise State_error("No start state")
-		dfa = Df_automaton()		
+			raise StateError("No start state")
+		dfa = DfAutomaton()		
 		new_start = self._make_dfa_state(dfa, [self.start_state])
 		dfa.set_start_state(new_start)
 		return dfa
@@ -377,7 +377,7 @@ class Nf_automaton(object):
 				dfa.add_state(state_name)
 			dfa.add_state_data(state_name, combined_data)
 			for t in combined_trans:
-				if not t == Nf_automaton.EMPTY:
+				if not t == NfAutomaton.EMPTY:
 					new_state_name = self._make_dfa_state(dfa, combined_trans[t])
 					dfa.add_trans(state_name, new_state_name, [t])
 			
@@ -387,7 +387,7 @@ class Nf_automaton(object):
 		for s in states:
 			state_set.add(s)
 			for t in self.states[s]:
-				if t == Nf_automaton.EMPTY:
+				if t == NfAutomaton.EMPTY:
 					for s2 in self.states[s][t]:
 						if not s2 in state_set:
 							self._make_closure(state_set, [s2])
@@ -417,13 +417,13 @@ class Nf_automaton(object):
 		return out
 	
 		
-class Df_automaton(Nf_automaton):
+class DfAutomaton(NfAutomaton):
 	"""
 	A deterministic finite state automaton.
 	"""
 		
 	def __init__(self):
-		Nf_automaton.__init__(self)
+		NfAutomaton.__init__(self)
 		self.current_state = None
 		self.reset()
 		
@@ -433,8 +433,8 @@ class Df_automaton(Nf_automaton):
 		'vals' 
 		"""
 		for v in vals:
-			if v == Nf_automaton.EMPTY:
-				raise State_error("deterministic automata may not use empty transitions")
+			if v == NfAutomaton.EMPTY:
+				raise StateError("deterministic automata may not use empty transitions")
 			self.states[fr][v] = to
 		
 	def reset(self):
@@ -447,15 +447,15 @@ class Df_automaton(Nf_automaton):
 		"""
 		Attempts to change state via an available transition with the given symbol. 
 		If no such transition exists from the current state or the current state is
-		invalid, a State_error is thrown.
+		invalid, a StateError is thrown.
 		"""
 		if self.current_state == None:
-			raise State_error("Not in state")
+			raise StateError("Not in state")
 		if not self.states[self.current_state].has_key(value):
-			raise State_error("No transition on \"%s\" in state \"%s\"" % (value,self.current_state))
+			raise StateError("No transition on \"%s\" in state \"%s\"" % (value,self.current_state))
 		new_state = self.states[self.current_state][value]
 		if not self.states.has_key(new_state):
-			raise State_error("State \"%s\" does not exist" % new_state)
+			raise StateError("State \"%s\" does not exist" % new_state)
 		self.current_state = new_state
 		
 	def is_at_end(self):
@@ -482,7 +482,7 @@ class Df_automaton(Nf_automaton):
 		return out
 		
 
-class Re_compiler(object):
+class ReCompiler(object):
 	"""
 	Class for compiling a regular expression parse tree into a deterministic 
 	finite state automaton.
@@ -507,11 +507,11 @@ class Re_compiler(object):
 	def make_nfa(self, tree):
 		"""
 		Compiles a given re parse tree into a non-deterministic finite state automaton.
-		Returns a Nf_automaton object.
+		Returns a NfAutomaton object.
 		"""
 		
 		self.tree = tree
-		nfa = Nf_automaton()
+		nfa = NfAutomaton()
 		
 		state_name = self._gen_state_name()
 		nfa.add_state(state_name)
@@ -524,7 +524,7 @@ class Re_compiler(object):
 	def make_dfa(self, tree):
 		"""
 		Compiles a given re parse tree into a deterministic finite state automaton.
-		Returns a Df_automaton object.
+		Returns a DfAutomaton object.
 		"""
 		nfa = self.make_nfa(tree)
 		dfa = nfa.make_dfa()
@@ -556,7 +556,7 @@ class Re_compiler(object):
 			min_times = quant.data[0]
 			max_times = quant.data[1]
 			if max_times!=-1 and max_times<min_times:
-				raise State_error("max quantity less than min quantity")
+				raise StateError("max quantity less than min quantity")
 		num_times = max_times
 		if max_times == -1:
 			if min_times > 0:
@@ -571,9 +571,9 @@ class Re_compiler(object):
 			link_trans_from = front_name
 			ti_start,ti_end = self._build_symbol(symbol.children[0],nfa,link_trans_from)			
 			if i >= min_times:
-				nfa.add_trans(ti_start,ti_end,[Nf_automaton.EMPTY])
+				nfa.add_trans(ti_start,ti_end,[NfAutomaton.EMPTY])
 			if i==num_times-1 and max_times==-1:
-				nfa.add_trans(ti_end,ti_start,[Nf_automaton.EMPTY])
+				nfa.add_trans(ti_end,ti_start,[NfAutomaton.EMPTY])
 			link_trans_from = ti_end
 			back_name = self._build_link_state(nfa, link_trans_from)			
 			term_end = back_name
@@ -598,7 +598,7 @@ class Re_compiler(object):
 		trans_from = self._build_link_state(nfa, trans_from)
 		state_name = self._gen_state_name()
 		nfa.add_state(state_name)
-		nfa.add_trans(trans_from,state_name,Re_compiler.ALL_CHARS)
+		nfa.add_trans(trans_from,state_name,ReCompiler.ALL_CHARS)
 		trans_from = state_name
 		trans_from = self._build_link_state(nfa, trans_from)
 		term_end = trans_from
@@ -614,7 +614,7 @@ class Re_compiler(object):
 			if( i+1 < len(symbol.children) and symbol.children[i+1].type == "range_marker"
 						and i+2 < len(symbol.children) ):
 				if ord(symbol.children[i].data) > ord(symbol.children[i+2].data):
-					raise Parse_error("Incorrect character order for character range in set")
+					raise ParseError("Incorrect character order for character range in set")
 				for c in range(ord(symbol.children[i].data),ord(symbol.children[i+2].data)+1):
 					chars.add(chr(c))
 				i+=3
@@ -626,7 +626,7 @@ class Re_compiler(object):
 				i+=1
 		if symbol.negate:
 			new_chars = set([])
-			for c in Re_compiler.ALL_CHARS:
+			for c in ReCompiler.ALL_CHARS:
 				if not c in chars:
 					new_chars.add(c)
 			chars = new_chars
@@ -647,13 +647,13 @@ class Re_compiler(object):
 		term_end = back_state
 		for e in symbol.children:
 			e_start,e_end = self._build_expression(e,nfa,trans_from)
-			nfa.add_trans(e_end,back_state,[Nf_automaton.EMPTY])
+			nfa.add_trans(e_end,back_state,[NfAutomaton.EMPTY])
 		return term_start,term_end
 		
 	def _build_link_state(self, nfa, trans_from):
 		state = self._gen_state_name()
 		nfa.add_state(state)
-		nfa.add_trans(trans_from,state,[Nf_automaton.EMPTY])
+		nfa.add_trans(trans_from,state,[NfAutomaton.EMPTY])
 		return state
 		
 	def _gen_state_name(self):
@@ -662,7 +662,7 @@ class Re_compiler(object):
 		return state_name
 		
 		
-class Re_matcher(object):		
+class ReMatcher(object):		
 		"""
 		Class for testing if a string matches a given regular expression.
 		"""
@@ -671,14 +671,14 @@ class Re_matcher(object):
 			"""
 			Constructs the object from the given regular expression string
 			"""				
-			p = Re_parser()
+			p = ReParser()
 			tree = p.parse_re(re)
 			#print_re_tree(tree)
 			#print "---------------------------"
 			
-			c = Re_compiler()
+			c = ReCompiler()
 			nfa = c.make_nfa(tree)
-			#pr = Sa_printer()
+			#pr = SaPrinter()
 			#pr.print_automaton(nfa)
 			#print "---------------------------"
 			
@@ -694,14 +694,14 @@ class Re_matcher(object):
 			try:
 				for c in input:
 					self.dfa.move(c)	
-			except State_error:
+			except StateError:
 				return False
 			if not self.dfa.is_at_end():
 				return False
 			return True
 		
 
-class Sa_printer(ascii.Canvas):
+class SaPrinter(ascii.Canvas):
 	"""
 	Class for representing a finite state automaton in ascii art
 	"""
@@ -712,7 +712,7 @@ class Sa_printer(ascii.Canvas):
 		
 	def render_automaton(self, automaton):
 		"""
-		Renders the given Nf_automaton or Df_automaton object to a string as ascii 
+		Renders the given NfAutomaton or DfAutomaton object to a string as ascii 
 		art. Returns the string representation.
 		"""
 		self.arrowed = set([])
@@ -800,20 +800,20 @@ class Sa_printer(ascii.Canvas):
 		
 	def print_automaton(self, automaton):
 		"""
-		Prints out an ascii art representation of the given Nf_automaton or 
-		Df_automaton object.
+		Prints out an ascii art representation of the given NfAutomaton or 
+		DfAutomaton object.
 		"""
 		print self.render_automaton(automaton)		
 		
 
-class Syntax_error(Exception):
+class SyntaxError(Exception):
 	"""
 	Error type thrown by Lexer class
 	"""
 	pass
 
 
-class Parser_symbol(object):
+class ParserSymbol(object):
 	"""
 	Item in parse tree
 	"""
@@ -833,7 +833,7 @@ class Parser_symbol(object):
 		return self.__str__()	
 		
 
-class Token(Parser_symbol):
+class Token(ParserSymbol):
 	"""
 	Class representing the default token type output from Lexer
 	"""
@@ -878,17 +878,17 @@ class Lexer(object):
 		
 	def make_dfa(self, token_defs):
 		"""
-		Returns a Df_automaton object representing the deterministic finite state
+		Returns a DfAutomaton object representing the deterministic finite state
 		automaton compiled by combining the regular expressions in the token 
 		definitions. Each end state in the automaton will have a token name in its
 		accompanying data.
 		"""
 	
 		self.next_state=0
-		parser = Re_parser()
-		compiler = Re_compiler()
+		parser = ReParser()
+		compiler = ReCompiler()
 		
-		nfa = Nf_automaton()
+		nfa = NfAutomaton()
 		start_state = self._make_state_name()
 		nfa.add_state(start_state)
 		nfa.set_start_state(start_state)
@@ -911,7 +911,7 @@ class Lexer(object):
 				else:
 					nfa.add_state(new_name)
 				if s == sub_nfa.get_start_state():
-					nfa.add_trans(start_state,state_mapping[s],[Nf_automaton.EMPTY])
+					nfa.add_trans(start_state,state_mapping[s],[NfAutomaton.EMPTY])
 					
 			for t in sub_nfa.get_transitions():
 				nfa.add_trans(state_mapping[t[0]], state_mapping[t[1]], [t[2]])
@@ -961,13 +961,13 @@ class Lexer(object):
 				self.dfa.move(self._current_char())
 				buffer += self._current_char()
 				self._advance()
-		except State_error:
+		except StateError:
 			if self.dfa.is_at_end():
 				ttype = self.dfa.state_data[self.dfa.current_state][0]
 				tclass = self.token_classes[ttype] if self.token_classes.has_key(ttype) else Token
 				return tclass(ttype, buffer)
 			else:
-				raise Syntax_error("Syntax error at \"%s\"" % self._current_char())
+				raise SyntaxError("Syntax error at \"%s\"" % self._current_char())
 
 """
 Rule syntax:
@@ -977,7 +977,7 @@ Rule syntax:
 	T -> (terminal|nonterminal)+
 """
 
-class Rule_parser(object):
+class RuleParser(object):
 	"""
 	Class for parsing grammar rules using a simple syntax
 	"""
@@ -998,17 +998,17 @@ class Rule_parser(object):
 		self.lexer.prepare(rule)
 		self._advance()
 		
-		out = Parser_symbol("rule","")
+		out = ParserSymbol("rule","")
 		
 		if self._current_token_type() != "nonterminal":
-			raise Parse_error("Expected Non-terminal, found %s" % self._current_token_type())
-		lhs = Parser_symbol("lhs","")
+			raise ParseError("Expected Non-terminal, found %s" % self._current_token_type())
+		lhs = ParserSymbol("lhs","")
 		lhs.children.append(self._current_token())
 		out.children.append(lhs)
 		self._advance()	
 		
 		if self._current_token_type() != "separator":
-			raise Parse_error("Expected separator, found %s" % self._current_token_type())
+			raise ParseError("Expected separator, found %s" % self._current_token_type())
 		self._advance()
 		
 		rhs = self._parse_rhs()
@@ -1016,12 +1016,12 @@ class Rule_parser(object):
 		self._advance()
 		
 		if self._current_token() != None:
-			raise Parse_error("Expected end of input ,found %s" % self._current_token_type())
+			raise ParseError("Expected end of input ,found %s" % self._current_token_type())
 			
 		return out
 		
 	def _parse_rhs(self):
-		out = Parser_symbol("rhs","")
+		out = ParserSymbol("rhs","")
 		
 		while(True):
 			term = self._parse_term()
@@ -1035,10 +1035,10 @@ class Rule_parser(object):
 		return out
 		
 	def _parse_term(self):
-		out = Parser_symbol("term","")
+		out = ParserSymbol("term","")
 		
 		if not self._current_token_type() in ["terminal","nonterminal"]:
-			raise Parse_error("Expected Terminal or Non-terminal, found %s" % self._current_token_type())
+			raise ParseError("Expected Terminal or Non-terminal, found %s" % self._current_token_type())
 		
 		while True:
 			out.children.append(self._current_token())
@@ -1066,9 +1066,9 @@ class Rule_parser(object):
 				break
 	
 	
-class Parser_item(object):
+class ParserItem(object):
 	"""
-	Used internally by Lr_parser to represent an item e.g. E -> E . plus B
+	Used internally by LrParser to represent an item e.g. E -> E . plus B
 	"""
 
 	def __init__(self, rules, rulename, position):
@@ -1091,7 +1091,7 @@ class Parser_item(object):
 		"""
 		if self.position < len(self.rules[self.rulename][1]):
 			next_pos = self.position + 1
-			return Parser_item(self.rules, self.rulename, next_pos)
+			return ParserItem(self.rules, self.rulename, next_pos)
 		else:
 			return None
 			
@@ -1124,10 +1124,10 @@ class Parser_item(object):
 	def __hash__(self):
 		return hash(str(id(self.rules))+str(hash(self.rulename))+str(hash(self.position)))
 	
-class Item_set(object):
+class ItemSet(object):
 	"""
-	Used internally by Lr_parser to represent a set of items. Contains a set of 
-	Parser_item objects.
+	Used internally by LrParser to represent a set of items. Contains a set of 
+	ParserItem objects.
 	"""
 	
 	def __init__(self):
@@ -1137,7 +1137,7 @@ class Item_set(object):
 		
 	def add(self, item):
 		"""
-		Adds a new Parser_item object to the set
+		Adds a new ParserItem object to the set
 		"""
 		if not item in self.items:
 			self.items.add(item)
@@ -1168,7 +1168,7 @@ class Item_set(object):
 		return set_hash
 		
 	
-class Lr_parser(object):
+class LrParser(object):
 	"""
 	An LR(0) parser implementation.
 	"""
@@ -1177,9 +1177,9 @@ class Lr_parser(object):
 		"""
 		Initialises the parser with the given symbol definitions. ruledefs should be
 		a list of symbol definitions. Each definition should be a string describing 
-		a rule for a nonterminal symbol, as parsed by Rule_parser. Or optionally a 
+		a rule for a nonterminal symbol, as parsed by RuleParser. Or optionally a 
 		definition may be a tuple consisting of the rule string and an alternative 
-		symbol class to use in place of the default Parser_symbol class. The 
+		symbol class to use in place of the default ParserSymbol class. The 
 		definitions must include a start rule with right hand side "S".
 		"""
 	
@@ -1203,11 +1203,11 @@ class Lr_parser(object):
 				self.start_rule = r
 				break
 		if self.start_rule == None:
-			raise Parse_error("Must specify start rule with lhs 'S'")
+			raise ParseError("Must specify start rule with lhs 'S'")
 		
 		self.table = self._make_table(self.rules, self.start_rule, terminals)
 		
-		#p = Lr_table_printer()
+		#p = LrTablePrinter()
 		#p.print_lr_table(self.table)
 		
 		self._reset()
@@ -1221,7 +1221,7 @@ class Lr_parser(object):
 		symbol_classes = {}
 		terminals = set([])
 		nonterminals = set([])
-		ruleparser = Rule_parser()
+		ruleparser = RuleParser()
 		rulenum = 0
 		for ruledef in ruledefs:
 			if type(ruledef)==tuple:
@@ -1252,7 +1252,7 @@ class Lr_parser(object):
 		item_sets = {}
 		
 		# make first item set: "0"		
-		first_item = Parser_item(rules, start_rule, 0)
+		first_item = ParserItem(rules, start_rule, 0)
 		first_closure = self._make_item_closure(first_item)
 		self._make_item_set(first_closure, item_sets)
 		
@@ -1274,7 +1274,7 @@ class Lr_parser(object):
 		"""Make an item set from set of items and add to dict under next available 
 			name. Returns a tuple containing the name of the new item set (or the name 
 			of an existing equivalent item set) and whether the item set is new or not."""
-		new_set = Item_set()
+		new_set = ItemSet()
 		for i in closure:
 			new_set.add(i)
 		if not new_set in item_sets.values():
@@ -1312,7 +1312,7 @@ class Lr_parser(object):
 					conflicting = new_action[0]+" "+dest_item_set_name
 					existing = table[(item_set_name,symbol)]
 					existing = str(existing[0])+" "+str(existing[1])
-					raise (Parse_error("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
+					raise (ParseError("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
 							% (symbol, item_set_name, str(item_set), conflicting, existing)))
 				table[(item_set_name,symbol)] = new_action			
 				if is_new:
@@ -1330,7 +1330,7 @@ class Lr_parser(object):
 									conflicting = "reduce "+str(end_rule)
 									existing = table[(dest_item_set_name,terminal)]
 									existing = str(existing[0])+" "+str(existing[1])
-									raise (Parse_error("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
+									raise (ParseError("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
 											% (terminal, dest_item_set_name, str(item_sets[dest_item_set_name]),conflicting,existing)))
 								#print "add reduce for %s, %s" % (dest_item_set_name,terminal)
 								table[(dest_item_set_name,terminal)] = ("reduce",end_rule)
@@ -1352,7 +1352,7 @@ class Lr_parser(object):
 			for r in more_rules:
 				# dont get into left recursion
 				if not r in visited_rules:
-					new_item = Parser_item(self.rules,r,0)
+					new_item = ParserItem(self.rules,r,0)
 					closure = closure.union(self._make_item_closure(new_item, visited_rules))
 					closure.add(new_item)	
 				#else:
@@ -1397,7 +1397,7 @@ class Lr_parser(object):
 	
 	def parse(self, token_itr):
 		"""
-		Parses the given token iterator into a parse tree of Parser_symbol objects.
+		Parses the given token iterator into a parse tree of ParserSymbol objects.
 		"""
 
 		self._reset()
@@ -1415,9 +1415,9 @@ class Lr_parser(object):
 				action = self.table[(self._current_state(),self._current_token_type())]
 			except KeyError:
 				if self._current_token_type() == None:
-					raise Parse_error("Unexpected end of input")
+					raise ParseError("Unexpected end of input")
 				else:
-					raise Parse_error("Unexpected %s token \"%s\""
+					raise ParseError("Unexpected %s token \"%s\""
 							% (self._current_token_type(), self._current_token_value()))
 	
 			self.action_handlers[action[0]](action[1])
@@ -1444,7 +1444,7 @@ class Lr_parser(object):
 		if self.symbol_classes.has_key(ruledata[0]):
 			symbclass = self.symbol_classes[ruledata[0]]
 		else:
-			symbclass = Parser_symbol
+			symbclass = ParserSymbol
 		new_symb = symbclass(ruledata[0],"")
 		new_symb.children = children
 		self.input_stack.append(new_symb)
@@ -1452,7 +1452,7 @@ class Lr_parser(object):
 		try:
 			goto = self.table[(self._current_state(),ruledata[0])]
 		except KeyError:
-			raise Parse_error("No goto found for state %s, symbol %s" 
+			raise ParseError("No goto found for state %s, symbol %s" 
 				% (self._current_state(),ruledata[0]))
 		self.action_handlers[goto[0]](goto[1])
 		
@@ -1465,9 +1465,9 @@ class Lr_parser(object):
 		self.accepted = True
 		
 		
-class Lr_table_printer(ascii.Canvas):
+class LrTablePrinter(ascii.Canvas):
 	"""
-	Class for printing out an ascii art representation of an Lr_parser object's 
+	Class for printing out an ascii art representation of an LrParser object's 
 	parsing table.
 	"""
 	
@@ -1551,7 +1551,7 @@ if __name__ == "__main__":
 	class TestReParser(unittest.TestCase):
 		
 		def setUp(self):
-			self.parser = Re_parser()
+			self.parser = ReParser()
 		
 		def testChars(self):
 			tree = self.parser.parse_re("a")
@@ -1575,7 +1575,7 @@ if __name__ == "__main__":
 			self.assertEquals("quantifier((2, 3))",str(tree.children[0].children[1]))
 			tree = self.parser.parse_re("a{2,}")
 			self.assertEquals("quantifier((2, -1))",str(tree.children[0].children[1]))
-			self.assertRaises(Parse_error, self.parser.parse_re, "+")
+			self.assertRaises(ParseError, self.parser.parse_re, "+")
 			
 		def testSets(self):
 			tree = self.parser.parse_re("[ab]")
@@ -1585,7 +1585,7 @@ if __name__ == "__main__":
 			tree = self.parser.parse_re("[^a]")
 			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0]))
 			self.assertEquals(True, tree.children[0].children[0].negate)
-			self.assertRaises(Parse_error, self.parser.parse_re, "[a")
+			self.assertRaises(ParseError, self.parser.parse_re, "[a")
 			
 		def testGroups(self):
 			tree = self.parser.parse_re("(a|b)")
@@ -1594,12 +1594,12 @@ if __name__ == "__main__":
 			self.assertEquals("term()",str(tree.children[0].children[0].children[0].children[0]))
 			self.assertEquals("character(a)",str(tree.children[0].children[0].children[0].children[0].children[0]))
 			self.assertEquals("character(b)",str(tree.children[0].children[0].children[1].children[0].children[0]))
-			self.assertRaises(Parse_error, self.parser.parse_re, "(")
+			self.assertRaises(ParseError, self.parser.parse_re, "(")
 	
 	class TestNfa(unittest.TestCase):
 	
 		def testConstruction(self):
-			nfa = Nf_automaton()
+			nfa = NfAutomaton()
 			self.assertEquals(0, len(nfa.get_states()))
 			nfa.add_state("one")
 			self.assert_("one" in nfa.get_states() and len(nfa.get_states())==1)
@@ -1614,12 +1614,12 @@ if __name__ == "__main__":
 			self.assert_(("one","two","b") in nfa.get_transitions())
 			
 		def testMakeDfa(self):
-			nfa = Nf_automaton()
+			nfa = NfAutomaton()
 			nfa.add_state("one")
 			nfa.add_state("two")
 			nfa.add_end_state("three")
 			nfa.set_start_state("one")
-			nfa.add_trans("one","two",[Nf_automaton.EMPTY])
+			nfa.add_trans("one","two",[NfAutomaton.EMPTY])
 			nfa.add_trans("two","three",["a"])
 			nfa.add_trans("two","one",["a"])
 			dfa = nfa.make_dfa()
@@ -1628,7 +1628,7 @@ if __name__ == "__main__":
 	class TestDfa(unittest.TestCase):
 	
 		def testConstruction(self):
-			dfa = Df_automaton()
+			dfa = DfAutomaton()
 			dfa.add_state("one")
 			dfa.add_state("two")
 			dfa.add_state("three")
@@ -1637,14 +1637,14 @@ if __name__ == "__main__":
 			self.assertEquals(1, len(dfa.get_transitions()))
 			
 		def testMove(self):
-			dfa = Df_automaton()			
+			dfa = DfAutomaton()			
 			dfa.add_state("one")
 			dfa.set_start_state("one")
 			dfa.add_end_state("two")
 			dfa.add_trans("one","two",["a"])
-			self.assertRaises(State_error,dfa.move,"a")
+			self.assertRaises(StateError,dfa.move,"a")
 			dfa.reset()
-			self.assertRaises(State_error,dfa.move,"b")
+			self.assertRaises(StateError,dfa.move,"b")
 			self.assertEquals(False,dfa.is_at_end())
 			dfa.move("a")
 			self.assertEquals(True,dfa.is_at_end())
@@ -1652,8 +1652,8 @@ if __name__ == "__main__":
 	class TestReCompiler(unittest.TestCase):
 	
 		def setUp(self):
-			self.parser = Re_parser()
-			self.compiler = Re_compiler()
+			self.parser = ReParser()
+			self.compiler = ReCompiler()
 			
 		def testCharacter(self):
 			dfa = self.compiler.make_dfa(self.parser.parse_re("a"))
@@ -1663,7 +1663,7 @@ if __name__ == "__main__":
 			self.assert_((states[0],states[1],"a") in dfa.get_transitions())
 			dfa.reset()
 			self.assertEquals(False,dfa.is_at_end())
-			self.assertRaises(State_error,dfa.move,"b")
+			self.assertRaises(StateError,dfa.move,"b")
 			dfa.move("a")
 			self.assertEquals(True,dfa.is_at_end())
 			
@@ -1684,7 +1684,7 @@ if __name__ == "__main__":
 			self.assertEquals(2,len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(False,dfa.is_at_end())
-			self.assertRaises(State_error,dfa.move,"c")
+			self.assertRaises(StateError,dfa.move,"c")
 			dfa.move("a")
 			self.assertEquals(True,dfa.is_at_end())
 			dfa.reset()
@@ -1697,7 +1697,7 @@ if __name__ == "__main__":
 			self.assertEquals(3,len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(False,dfa.is_at_end())
-			self.assertRaises(State_error,dfa.move,"b")
+			self.assertRaises(StateError,dfa.move,"b")
 			dfa.move("a")
 			self.assertEquals(False,dfa.is_at_end())
 			dfa.move("b")
@@ -1712,17 +1712,17 @@ if __name__ == "__main__":
 			self.assertEquals(1,len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(True, dfa.is_at_end())
-			self.assertRaises(State_error,dfa.move,"b")
+			self.assertRaises(StateError,dfa.move,"b")
 			dfa.move("a")
 			self.assertEquals(True, dfa.is_at_end())
-			self.assertRaises(State_error,dfa.move,"a")
+			self.assertRaises(StateError,dfa.move,"a")
 			
 			dfa = self.compiler.make_dfa(self.parser.parse_re("a+"))
 			self.assertEquals(2, len(dfa.get_states()))
 			self.assertEquals(2, len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(False, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "b")
+			self.assertRaises(StateError, dfa.move, "b")
 			dfa.move("a")
 			self.assertEquals(True, dfa.is_at_end())
 			dfa.move("a")
@@ -1733,7 +1733,7 @@ if __name__ == "__main__":
 			self.assertEquals(2, len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(True, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "b")
+			self.assertRaises(StateError, dfa.move, "b")
 			dfa.move("a")
 			self.assertEquals(True, dfa.is_at_end())
 			dfa.move("a")
@@ -1744,26 +1744,26 @@ if __name__ == "__main__":
 			self.assertEquals(2, len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(False, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "b")
+			self.assertRaises(StateError, dfa.move, "b")
 			dfa.move("a")
 			self.assertEquals(False, dfa.is_at_end())
 			dfa.move("a")
 			self.assertEquals(True, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "a")
+			self.assertRaises(StateError, dfa.move, "a")
 			
 			dfa = self.compiler.make_dfa(self.parser.parse_re("a{2,3}"))
 			self.assertEquals(4, len(dfa.get_states()))
 			self.assertEquals(3, len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(False, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "b")
+			self.assertRaises(StateError, dfa.move, "b")
 			dfa.move("a")
 			self.assertEquals(False, dfa.is_at_end())
 			dfa.move("a")
 			self.assertEquals(True, dfa.is_at_end())
 			dfa.move("a")
 			self.assertEquals(True, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "a")
+			self.assertRaises(StateError, dfa.move, "a")
 			
 	unittest.main()
 
@@ -1779,17 +1779,17 @@ if __name__ == "__main__":
 	class Times(Token):
 		def eval(self,a,b):
 			return a * b
-	class Bee(Parser_symbol):
+	class Bee(ParserSymbol):
 		def eval(self):
 			return self.children[0].eval()
-	class Eee(Parser_symbol):
+	class Eee(ParserSymbol):
 		def eval(self):
 			if len(self.children)>1:
 				return self.children[1].eval(
 						self.children[0].eval(),self.children[2].eval())
 			else:
 				return self.children[0].eval()
-	class Ess(Parser_symbol):
+	class Ess(ParserSymbol):
 		def eval(self):
 			return self.children[0].eval()
 	
@@ -1803,7 +1803,7 @@ if __name__ == "__main__":
 	
 	l.prepare(sys.argv[1])
 	
-	p = Lr_parser([
+	p = LrParser([
 		("S -> E", Ess),
 		("E -> E times B | E plus B | B", Eee),
 		("B -> one | zero", Bee)
