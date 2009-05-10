@@ -24,6 +24,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import sys
+import ascii
 
 """
 RE syntax:
@@ -700,74 +701,7 @@ class Re_matcher(object):
 			return True
 		
 
-class Ascii_canvas(object):
-	"""
-	Class facilitating ascii art by allowing characters at arbitrary coordinates to
-	be set and then the full character space be printed out line by line.
-	"""
-	
-	def __init__(self):
-		self.clear()
-		
-	def clear(self):
-		"""
-		Clears the canvas
-		"""
-		self.grid = {}
-		self.width = 0
-		self.height = 0
-		
-	def set(self, x, y, char):
-		"""
-		Sets the position at x,y to the given character
-		"""
-		self.grid[(x,y)] = char
-		if x >= self.width:
-			self.width = x+1
-		if y >= self.height:
-			self.height = y+1
-	
-	def get(self, x, y):
-		"""
-		Returns the character at position x,y
-		"""
-		if self.grid.has_key((x,y)):
-			return self.grid[(x,y)]
-		else:
-			return ' '
-			
-	def write(self, x,y, text, maxlength=-1):
-		"""
-		Writes a sequence of characters into the space, starting at x,y and writing 
-		left to right. maxlength can be specified to cut short the text at a maximum
-		length
-		"""
-		i = 0
-		for c in text:
-			if maxlength!=-1 and i>=maxlength:
-				break
-			self.set(x,y,c)
-			x+=1
-			i+=1
-	
-	def render(self):
-		"""
-		Returns a string representation of the full canvas
-		"""
-		str = ""
-		for j in range(self.height):
-			for i in range(self.width):		
-				str += self.get(i,j)
-			str += "\n"
-		return str
-			
-	def print_out(self):
-		"""
-		Prints the full canvas
-		"""
-		print self.render()
-
-class Sa_printer(Ascii_canvas):
+class Sa_printer(ascii.Canvas):
 	"""
 	Class for representing a finite state automaton in ascii art
 	"""
@@ -1531,14 +1465,14 @@ class Lr_parser(object):
 		self.accepted = True
 		
 		
-class Lr_table_printer(Ascii_canvas):
+class Lr_table_printer(ascii.Canvas):
 	"""
 	Class for printing out an ascii art representation of an Lr_parser object's 
 	parsing table.
 	"""
 	
 	def __init__(self):
-		Ascii_canvas.__init__(self)
+		ascii.Canvas.__init__(self)
 		self.state_order = []
 		self.symbol_order = []
 		
