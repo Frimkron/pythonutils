@@ -102,6 +102,9 @@ class StateMachine(object):
 		else:
 			return object.__getattribute__(self, attr)
         
+	def get_state(self):
+		return None
+        
 	def change_state(self, statename):
 		if self.state != None:
 			self.state.exit_state()
@@ -162,6 +165,9 @@ if __name__ == "__main__":
 		
 		class Sneezing(StateMachine.State):
 			
+			def be_played_with(self):
+				return Cat.__getattribute__(self.machine, "be_played_with")(self.machine)
+			
 			def __repr__(self):
 				return "ACHOOOOOOOOOOOO"
 			
@@ -192,6 +198,7 @@ if __name__ == "__main__":
 			
 		def testStateName(self):
 			tiddles = Cat()
+			self.assertEquals(None, tiddles.get_state())
 			tiddles.change_state("Asleep")
 			self.assertEquals("Asleep", tiddles.get_state())
 			

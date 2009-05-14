@@ -226,14 +226,16 @@ class Behaviour(Behavable):
         Returns list of BehaviourChainItem instances, one for each behaviour 
         function defined in this behaviour.
         """                    
+        # cache the behaviour functions in the behaviour's class
         if not hasattr(self.__class__, "beh_functions"):
             funcs = []
-            for membkey in self.__class__.__dict__:
-                member = self.__class__.__dict__[membkey]
-                if( callable(member)
-                        and hasattr(member,"beh_function")
-                        and issubclass(member.beh_function.__class__, BehaviourFunction) ):
-                    funcs.append(member)
+            for membkey in dir(self.__class__):
+            	if not membkey.startswith("_"):
+	                member = getattr(self.__class__, membkey)
+	                if( callable(member)
+	                        and hasattr(member,"beh_function")
+	                        and isinstance(member.beh_function, BehaviourFunction) ):
+	                    funcs.append(member)
             self.__class__.beh_functions = funcs    
         
         items = []
