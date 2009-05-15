@@ -1584,7 +1584,7 @@ if __name__ == "__main__":
 			self.assertEquals("quantifier((2, 3))",str(delve(tree,"0/1")))
 			tree = self.parser.parse_re("a{2,}")
 			self.assertEquals("quantifier((2, -1))",str(delve(tree,"0/1")))
-			self.assertRaises(Parse_error, self.parser.parse_re, "+")
+			self.assertRaises(ParseError, self.parser.parse_re, "+")
 
 			
 		def testSets(self):
@@ -1595,7 +1595,7 @@ if __name__ == "__main__":
 			tree = self.parser.parse_re("[^a]")
 			self.assertEquals("character(a)",str(delve(tree,"0/0/0")))
 			self.assertEquals(True, delve(tree,"0/0/negate"))
-			self.assertRaises(Parse_error, self.parser.parse_re, "[a")
+			self.assertRaises(ParseError, self.parser.parse_re, "[a")
 			
 		def testGroups(self):
 			tree = self.parser.parse_re("(a|b)")
@@ -1604,7 +1604,7 @@ if __name__ == "__main__":
 			self.assertEquals("term()",str(delve(tree,"0/0/0/0")))
 			self.assertEquals("character(a)",str(delve(tree,"0/0/0/0/0")))
 			self.assertEquals("character(b)",str(delve(tree,"0/0/1/0/0")))
-			self.assertRaises(Parse_error, self.parser.parse_re, "(")
+			self.assertRaises(ParseError, self.parser.parse_re, "(")
 
 	
 	class TestNfa(unittest.TestCase):
@@ -1781,7 +1781,7 @@ if __name__ == "__main__":
 			self.assertEquals(3, len(dfa.get_transitions()))
 			dfa.reset()
 			self.assertEquals(False, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "b")
+			self.assertRaises(StateError, dfa.move, "b")
 			dfa.move("a")
 			self.assertEquals(False, dfa.is_at_end())
 			dfa.move("a")
@@ -1802,7 +1802,7 @@ if __name__ == "__main__":
 			dfa.reset()
 			dfa.move("c")
 			self.assertEquals(False, dfa.is_at_end())
-			self.assertRaises(State_error, dfa.move, "a")
+			self.assertRaises(StateError, dfa.move, "a")
 			dfa.move("c")
 			self.assertEquals(True, dfa.is_at_end())
 			dfa.move("c")
@@ -1825,7 +1825,7 @@ if __name__ == "__main__":
 					[x.data for x in tokens])
 			l.prepare("0x99q")
 			l.next()
-			self.assertRaises(Syntax_error,l.next)
+			self.assertRaises(SyntaxError,l.next)
 					
 		def testCustomClass(self):
 		
@@ -1847,7 +1847,7 @@ if __name__ == "__main__":
 	class TestRuleParser(unittest.TestCase):
 	
 		def testConstruction(self):
-			p = Rule_parser()
+			p = RuleParser()
 			t = p.parse_rule("S -> A b | c")
 			self.assertEquals(("nonterminal","S"), (delve(t,"0/0/type"),delve(t,"0/0/data")))
 			self.assertEquals(("nonterminal","A"), (delve(t,"1/0/0/type"),delve(t,"1/0/0/data")))
@@ -1860,7 +1860,7 @@ if __name__ == "__main__":
 			rules = {
 				"0" : ("S",("A","b"))
 			}
-			i = Parser_item(rules, "0", 0)
+			i = ParserItem(rules, "0", 0)
 			self.assertEquals("A",i.get_next_symbol())
 			i2 = i.make_next_item()
 			self.assertEquals("b",i2.get_next_symbol())
@@ -1874,10 +1874,10 @@ if __name__ == "__main__":
 			self.rules = {
 				"0": ("S",("A","b"))
 			}
-			self.i = Parser_item(self.rules,"0",0)
-			self.i2 = Parser_item(self.rules,"0",2)
-			self.i3 = Parser_item(self.rules,"0",2)
-			self.s = Item_set()
+			self.i = ParserItem(self.rules,"0",0)
+			self.i2 = ParserItem(self.rules,"0",2)
+			self.i3 = ParserItem(self.rules,"0",2)
+			self.s = ItemSet()
 	
 		def testAdding(self):
 			self.s.add(self.i)
@@ -1906,7 +1906,7 @@ if __name__ == "__main__":
 				("one","1"),
 				("plus","\+")
 			])
-			self.p = Lr_parser([
+			self.p = LrParser([
 				"S -> E",
 				"E -> E plus B | B",
 				"B -> one"
@@ -1923,11 +1923,11 @@ if __name__ == "__main__":
 			
 		def testCustomClasses(self):
 		
-			class Foo(Parser_symbol):
+			class Foo(ParserSymbol):
 				def __str__(self):
-					return "{%s}" % Parser_symbol.__str__(self)
+					return "{%s}" % ParserSymbol.__str__(self)
  		
-			self.p = Lr_parser([
+			self.p = LrParser([
 				"S -> E",
 				"E -> E plus B | B",
 				("B -> one", Foo)
