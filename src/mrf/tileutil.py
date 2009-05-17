@@ -267,14 +267,19 @@ class TilePathfinder(AStar):
 		AStar.__init__(self)
 		self.tilecost_func = tilecost_func
 		
-	def search(self, start, finish):
+	def search(self, start, finish, max_iterations=0):
 		"""
 		Performs the search, taking two 2-item tuples of x and y tile coordinates 
 		for the start position and the end position respectively, and returning a 
 		list of 2-item tuples representing the pairs of x-y tile coordinates 
 		making up the path from the start position to the end position.
+		max_iterations may be specified to limit the number of nodes expanded
+		for this call. If algorithm has not completed after this many, False is
+		returned and search may be resumed by calling the method again. The 
+		discard method may be used to abandon a search in progress prior to 
+		calling search.
 		"""
-		return AStar.search(self, start, finish)
+		return AStar.search(self, start, finish, max_iterations)
 		
 	def cost(self, state):
 		diag = False
@@ -590,7 +595,15 @@ if __name__ == "__main__":
 			path = self.search.search((9, 6), (8, 7))
 			self.assertEquals([(9, 6), (9, 5), (8, 4), (7, 4), (6, 4), (6, 5), (6, 6), (7, 7), (8, 7)], path)
 
-
+		def testIterations(self):
+			path = self.search.search((9,2),(0,0),2)
+			self.assertEquals(False, path)
+			while path==False:
+				path = self.search.resume(2)
+			self.assertEquals([(9, 2), (9, 1), (9, 0), (8, 0), (7, 0), (6, 0), (5, 0), (5, 1),
+							   (5, 2), (5, 3), (5, 4), (5, 5), (5, 6), (5, 7), (5, 8), (5, 9),
+							   (4, 9), (3, 9), (3, 8), (3, 7), (3, 6), (3, 5), (2, 5), (1, 5),
+							   (0, 5), (0, 4), (0, 3), (0, 2), (0, 1), (0, 0)], path)
 
 	class TestTileRender(unittest.TestCase):
 		
