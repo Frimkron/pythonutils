@@ -847,13 +847,49 @@ class Lexer(object):
 	"""
 	
 	END_OF_INPUT = 0
+	
+	@staticmethod
+	def cb_ignore(state_info, type, data, clazz):
+		return None
+
+	@staticmethod
+	def cb_indent(state_info, type, data, clazz):
+		curr_indent = state_info["indent_level"] if state_info.has_key("indent_level") else 0
+		new_indent = len(data)-1
+		if new_indent > curr_indent:
+			state_info["indent_level"] = new_indent
+			toks = []
+			for i in range(new_indent-curr_indent):
+				toks.append(clazz("indent",data))
+			return toks
+		elif new_indent < curr_indent:
+			state_info["indent_level"] = new_indent
+			toks = []
+			for i in range(curr_indent-new_indent):
+				toks.append(clazz("unindent",data))
+			return toks
+		else:
+			return None
 
 	def __init__(self, token_defs):
 		"""
 		Initialises the object from the given list of token definitions. Each item
 		in the list should be a token definition consisting of a tuple containing the 
 		token name followed by a regular expression describing its pattern, and 
-		optionally a token class to use in place of the default Token.
+		optionally a token class to use in place of the default Token, and a callback
+		function to inject logic into the token creation process.
+		
+		Callback:
+		
+			parameters:
+				state_info	- a dictionary for storing state information
+				token_type	- the token type to be created
+				token_data	- the captured token string
+				token_class	- token class to use
+				
+			returns:
+				an instance of token_class, or a sequence of such instances, 
+				or None if the token should be ignored
 		"""
 		"""
 		token_defs = [("myToken","a+"),("myOtherToken",[0-9]{0,3})]
@@ -864,8 +900,14 @@ class Lexer(object):
 		# Store hash of token classes
 		self.token_classes = {}
 		for tdef in token_defs:
-			if len(tdef) > 2:
+			if len(tdef) > 2 and tdef[2]!=None:
 				self.token_classes[tdef[0]] = tdef[2]
+				
+		# Store hash of token callbacks
+		self.token_callbacks = {}
+		for tdef in token_defs:
+			if len(tdef) > 3 and tdef[3]!=None:
+				self.token_callbacks[tdef[0]] = tdef[3]
 		
 		self.dfa = self.make_dfa(token_defs)
 		
@@ -875,6 +917,8 @@ class Lexer(object):
 		"""
 		self.input = input
 		self.pos = 0
+		self.state_info = {}
+		self.token_queue = []
 		
 	def make_dfa(self, token_defs):
 		"""
@@ -949,9 +993,13 @@ class Lexer(object):
 		
 	def next_token(self):
 		"""
-		Advances the lexer by one token and returns the next token, or None, of no
+		Advances the lexer by one token and returns the next token, or None, if no
 		more tokens are available
 		"""
+		# check queue for queued up tokens
+		if len(self.token_queue) > 0:
+			return self.token_queue.pop(0)
+			
 		if self._current_char() == Lexer.END_OF_INPUT:
 			return None
 		self.dfa.reset()
@@ -965,7 +1013,17 @@ class Lexer(object):
 			if self.dfa.is_at_end():
 				ttype = self.dfa.state_data[self.dfa.current_state][0]
 				tclass = self.token_classes[ttype] if self.token_classes.has_key(ttype) else Token
-				return tclass(ttype, buffer)
+				if self.token_callbacks.has_key(ttype):
+					cbresult = self.token_callbacks[ttype](self.state_info,ttype,buffer,tclass)
+					if isinstance(cbresult,Token):
+						return cbresult	
+					elif cbresult==None:
+						return self.next_token()			
+					else:
+						self.token_queue.extend(cbresult[1:])
+						return cbresult[0]
+				else:
+					return tclass(ttype, buffer)
 			else:
 				raise SyntaxError("Syntax error at \"%s\"" % self._current_char())
 
@@ -1937,7 +1995,7 @@ if __name__ == "__main__":
 			self.assertEquals("E()",str(delve(t,"0")))
 			self.assertEquals("{B()}",str(delve(t,"0/2")))
 	
-	unittest.main()
+	#unittest.main()
 
 	class One(Token):
 		def eval(self):
@@ -1987,4 +2045,26 @@ if __name__ == "__main__":
 	print "result: %d" % tree.eval()
 	"""
 
+	def cb_test(state_info, type, data, clazz):
+		return [clazz(type,data),clazz(type,data),clazz(type,data)]
+
+	l = Lexer([
+		("group", "group"),
+		("item", "item"),
+		("indent", "\n\t*",None,Lexer.cb_indent),
+		("whitespace","( +|\t+)",None,Lexer.cb_ignore)
+	])
+	input = open("lexer_input.txt","r").read()
+	l.prepare(input)
+	#for t in l:
+	#	print t.type
+	
+	p = LrParser([
+		("S -> G"),
+		("G -> group indent C unindent"),
+		("C -> G | item | C item | C G")
+	])
+	#printer = LrTablePrinter()
+	#printer.print_lr_table(p.table)
+	print_re_tree(p.parse(l))
 
