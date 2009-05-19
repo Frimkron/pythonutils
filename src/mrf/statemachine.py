@@ -32,9 +32,9 @@ def statemethod(fn):
 	def new_fn(self, *args, **kargs):
 		fname = fn.__name__
 		if hasattr(self,"state") and self.state!=None:
-			try:
+			if hasattr(self.state, fname):
 				return getattr(self.state, fname)(*args,**kargs)
-			except AttributeError, error:
+			else:
 				return fn(self,*args,**kargs)
 		else:
 			return fn(self,*args,**kargs)
