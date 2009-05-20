@@ -19,6 +19,17 @@ class Or(FuzzySymbol):
 		
 class Is(FuzzySymbol):
 
+	def _get_doms_for_input(self, classes, input_name, input_value, cache):
+		if cache.has_key(input_name):
+			return cache[input_name]
+		else:
+			doms = {}
+			for cname, c in enumerate(classes[input_name]):
+				d = c.get_dom(input_value)
+				doms[cname] = d
+			cache[input_name] = doms
+			return doms 
+
 	def evaluate(self):
 		pass
 		
@@ -140,8 +151,9 @@ class RuleSet(object):
 		
 	def _evaluate_rules(self, ruleset, classes, input_values):
 		# evaluate rules concerning a particular output
-		pass
-		
+		doms_cache = {}
+		for r in ruleset:
+			r.evaluate()
 		
 		
 			
