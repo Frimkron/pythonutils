@@ -1902,6 +1902,32 @@ if __name__ == "__main__":
 			self.assertEquals("number(0)",str(tokens[1]))
 			self.assertEquals("{hex(0xFF)}",str(tokens[2]))
 			
+		def testCallbacks(self):
+			
+			def cb(state_info, type, data, clazz):
+				return clazz(type,data[1:-1])
+				
+			l = Lexer([
+				("whitespace","( +|\t+)",None,Lexer.cb_ignore),
+				("indent","\n\t*",None,Lexer.cb_indent),
+				("node","n"),
+				("name","\"[a-zA-Z0-9]*\"",None,cb)
+			])
+			l.prepare("""n "foo"
+	n "bar"     
+	n "wah"
+		n "fah"  
+			n "nah"
+	n "gah"				
+""")
+			tokens = [x.type for x in l]
+			self.assertEquals(["node","name",
+				"indent","node","name","node","name",
+				"indent","node","name",
+				"indent","node","name",
+				"unindent","unindent","node","name",
+				"unindent"], tokens)
+			
 	class TestRuleParser(unittest.TestCase):
 	
 		def testConstruction(self):
@@ -1995,8 +2021,9 @@ if __name__ == "__main__":
 			self.assertEquals("E()",str(delve(t,"0")))
 			self.assertEquals("{B()}",str(delve(t,"0/2")))
 	
-	#unittest.main()
+	unittest.main()
 
+	"""
 	class One(Token):
 		def eval(self):
 			return 1
@@ -2023,7 +2050,6 @@ if __name__ == "__main__":
 		def eval(self):
 			return self.children[0].eval()
 	
-	"""
 	l = Lexer([
 		("times","\*", Times),
 		("plus","\+", Plus),
@@ -2044,27 +2070,4 @@ if __name__ == "__main__":
 	
 	print "result: %d" % tree.eval()
 	"""
-
-	def cb_test(state_info, type, data, clazz):
-		return [clazz(type,data),clazz(type,data),clazz(type,data)]
-
-	l = Lexer([
-		("group", "group"),
-		("item", "item"),
-		("indent", "\n\t*",None,Lexer.cb_indent),
-		("whitespace","( +|\t+)",None,Lexer.cb_ignore)
-	])
-	input = open("lexer_input.txt","r").read()
-	l.prepare(input)
-	#for t in l:
-	#	print t.type
-	
-	p = LrParser([
-		("S -> G"),
-		("G -> group indent C unindent"),
-		("C -> G | item | C item | C G")
-	])
-	#printer = LrTablePrinter()
-	#printer.print_lr_table(p.table)
-	print_re_tree(p.parse(l))
 
