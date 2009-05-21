@@ -84,6 +84,12 @@ class FuzzyClass(object):
 	def get_dom(self, input_val):
 		pass
 		
+	def get_start(self):
+		pass
+		
+	def get_end(self):
+		pass
+		
 class TriangularClass(FuzzyClass):
 
 	def __init__(self, centre, width):
@@ -106,6 +112,12 @@ class TriangularClass(FuzzyClass):
 		# right side
 		else:
 			return 1.0 - (input_val-self.centre) / (self.width/2)
+			
+	def get_start(self):
+		return self.start
+		
+	def get_end(self):
+		return self.end
 
 RULE_PARSER = RuleParser()
 
@@ -145,15 +157,32 @@ class RuleSet(object):
 		ev_output = {}
 		# for each output
 		for output, ruleset in enumerate(self.rules):
-			ev_output[output] = self._evaluate_rules(ruleset, self.flvs, input_values)
+			ev_output[output] = self._evaluate_rules(output, ruleset, self.flvs, input_values)
 			
 		return ev_output
 		
-	def _evaluate_rules(self, ruleset, classes, input_values):
+	def _evaluate_rules(self, output_name, ruleset, classes, input_values):
 		# evaluate rules concerning a particular output
 		doms_cache = {}
+		out_doms = {}
+		for cname in classes[output_name]:
+			out_doms[cname] = 0.0
 		for r in ruleset:
-			r.evaluate()
+			r_doms = r.evaluate()
+			for cname in r_doms:
+				out_doms[cname] += r_doms[cname]
+				
+		return self._fuzzy_centroid(out_doms, classes[output_name])
+		
+	def _fuzzy_centroid(self, doms, classes):
+		# find range of classes
+		start = min([classes[cname].get_start() for cname in classes])
+		end = max([classes[cname].get_end() for cname in classes])
+		
+		# do integration
+		for i in range(100):
+			v = start + (end-start)/100*i
+			dom = max([min(classes[cname].get_dom(v),doms[cname]) for cname in classes])
 		
 		
 			
