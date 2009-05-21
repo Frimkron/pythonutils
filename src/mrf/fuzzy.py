@@ -4,52 +4,70 @@ import sys
 
 class FuzzySymbol(lexer.ParserSymbol):
 
-	def evaluate(self):
+	def evaluate(self, classes, input_values, cache):
 		pass
 
 class And(FuzzySymbol):
 
-	def evaluate(self):
-		pass
+	def evaluate(self, classes, input_values, cache):
+		lhs = self.children[0].evaluate(classes, input_values, cache)
+		rhs = self.children[2].evaluate(classes, input_values, cache)
+		return min(lhs, rhs)
 		
 class Or(FuzzySymbol):
 	
-	def evaluate(self):
-		pass
+	def evaluate(self, classes, input_values, cache):
+		lhs = self.children[0].evaluate(classes, input_values, cache)
+		rhs = self.children[2].evaluate(classes, input_values, cache)
+		return max(lhs, rhs)
 		
 class Is(FuzzySymbol):
 
-	def _get_doms_for_input(self, classes, input_name, input_value, cache):
-		if cache.has_key(input_name):
-			return cache[input_name]
+	def _get_dom_for_input_class(self, classes, input_name, input_value, class_name, cache):
+		if cache.has_key((input_name,class_name)):
+			return cache[(input_name,class_name)]
 		else:
-			doms = {}
-			for cname, c in enumerate(classes[input_name]):
-				d = c.get_dom(input_value)
-				doms[cname] = d
-			cache[input_name] = doms
-			return doms 
+			dom = classes[class_name].get_dom(input_value)
+			cache[(input_name,class_name)] = dom
+			return dom 
 
-	def evaluate(self):
-		pass
+	def evaluate(self, classes, input_values, cache):
+		return self._get_dom_for_input_class(classes, self.get_flv_name(),
+			input_values[self.get_flv_name()], self.get_class_name(), cache)
+	
+	def get_flv_name(self):
+		return self.children[0].data
+	
+	def get_class_name(self):
+		return self.children[2].data
 		
 class  Term(FuzzySymbol):
 	
-	def evaluate(self):
-		pass
+	def evaluate(self, classes, input_values, cache):
+		if isinstance(self.children[0],Is):
+			return self.children[0].evaluate(classes, input_values, cache)
+		else:
+			return self.children[1].evaluate(classes, input_values, cache)
 		
 class Expression(FuzzySymbol):
 
-	def evaluate(self):
-		pass
+	def evaluate(self, classes, input_values, cache):
+		return self.children[0].evaluate(classes, input_values, cache)
 		
 class Rule(FuzzySymbol):
 
-	def evaluate(self):
-		pass
+	def evaluate(self, classes, input_values, cache):
+		# evaluate a rule and return output class dom
+		return self.children[1].evaluate(classes, input_values, cache)
+		
+	def _get_output_is(self):
+		return self.children[3]
+		
+	def get_output_class(self):
+		return self._get_output_is().get_class_name()
 		
 	def get_output_name(self):
-		return self.children[3].children[0].data
+		return self._get_output_is().get_flv_name()
 
 class RuleParser(object):
 
@@ -155,22 +173,24 @@ class RuleSet(object):
 	def evaluate(self, input_values):
 		
 		ev_output = {}
+		cache = {}
 		# for each output
 		for output, ruleset in enumerate(self.rules):
-			ev_output[output] = self._evaluate_rules(output, ruleset, self.flvs, input_values)
+			ev_output[output] = self._evaluate_rules(output, ruleset, self.flvs, 
+					input_values, cache)
 			
 		return ev_output
 		
-	def _evaluate_rules(self, output_name, ruleset, classes, input_values):
+	def _evaluate_rules(self, output_name, ruleset, classes, input_values, cache):
 		# evaluate rules concerning a particular output
 		doms_cache = {}
 		out_doms = {}
 		for cname in classes[output_name]:
 			out_doms[cname] = 0.0
 		for r in ruleset:
-			r_doms = r.evaluate()
-			for cname in r_doms:
-				out_doms[cname] += r_doms[cname]
+			r_dom = r.evaluate(classes, input_values, cache)
+			cname = r.get_output_class()
+			out_doms[cname] += r_dom
 				
 		return self._fuzzy_centroid(out_doms, classes[output_name])
 		
@@ -180,11 +200,45 @@ class RuleSet(object):
 		end = max([classes[cname].get_end() for cname in classes])
 		
 		# do integration
+		total_area = 0.0
+		weighted_values = 0.0
 		for i in range(100):
 			v = start + (end-start)/100*i
 			dom = max([min(classes[cname].get_dom(v),doms[cname]) for cname in classes])
-		
-		
+			weighted_values += dom * v
+			total_area += dom
+			
+		return weighted_values / total_area
+			
+
+r = RuleSet()
+
+r.add_flv("health")
+r.add_class("health","low",(2,4))
+r.add_class("health","medium",(6,6))
+r.add_class("health","high",(10,4))
+
+r.add_flv("danger")
+r.add_class("danger","low",(0.1,0.3))
+r.add_class("danger","medium",(0.5,0.4))
+r.add_class("danger","high",(0.8,0.4))
+
+r.add_flv("flee")
+r.add_class("flee","flee",(0.2, 0.4))
+r.add_class("flee","fight",(0.8, 0.4))
+
+r.add_flv("stealth")
+r.add_class("stealth","quiet",(0.2, 0.4))
+r.add_class("stealth","normal",(0.5, 0.5))
+r.add_class("stealth","loud",(0.8, 0.4))
+
+print r.flvs
+
+r.add_rule("IF danger IS high OR health IS low THEN stealth IS quiet")
+r.add_rule("IF danger IS high THEN flee IS flee")
+r.add_rule("IF danger IS low AND health IS high THEN flee IS fight")
+
+print r.evaluate({"health":8, "danger":0.2})		
 			
 
 		
