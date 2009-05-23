@@ -27,7 +27,7 @@ class Is(FuzzySymbol):
 		if cache.has_key((input_name,class_name)):
 			return cache[(input_name,class_name)]
 		else:
-			dom = classes[class_name].get_dom(input_value)
+			dom = classes[input_name][class_name].get_dom(input_value)
 			cache[(input_name,class_name)] = dom
 			return dom 
 
@@ -166,6 +166,7 @@ class RuleSet(object):
 	def add_rule(self, rule):
 		parsed = RULE_PARSER.parse(rule)
 		output_name = parsed.get_output_name()
+		#print "rule output name: %s" % output_name
 		if not self.rules.has_key(output_name):
 			self.rules[output_name] = []
 		self.rules[output_name].append(parsed)
@@ -175,7 +176,9 @@ class RuleSet(object):
 		ev_output = {}
 		cache = {}
 		# for each output
-		for output, ruleset in enumerate(self.rules):
+		print self.rules
+		for output in self.rules:
+			ruleset = self.rules[output]
 			ev_output[output] = self._evaluate_rules(output, ruleset, self.flvs, 
 					input_values, cache)
 			
@@ -195,9 +198,12 @@ class RuleSet(object):
 		return self._fuzzy_centroid(out_doms, classes[output_name])
 		
 	def _fuzzy_centroid(self, doms, classes):
+		print "doms %s" % doms
+	
 		# find range of classes
 		start = min([classes[cname].get_start() for cname in classes])
 		end = max([classes[cname].get_end() for cname in classes])
+		print "start %f, end %f" % (start,end)
 		
 		# do integration
 		total_area = 0.0
@@ -207,6 +213,7 @@ class RuleSet(object):
 			dom = max([min(classes[cname].get_dom(v),doms[cname]) for cname in classes])
 			weighted_values += dom * v
 			total_area += dom
+		print "wv: %f, total: %f" % (weighted_values,total_area)
 			
 		return weighted_values / total_area
 			
@@ -231,8 +238,6 @@ r.add_flv("stealth")
 r.add_class("stealth","quiet",(0.2, 0.4))
 r.add_class("stealth","normal",(0.5, 0.5))
 r.add_class("stealth","loud",(0.8, 0.4))
-
-print r.flvs
 
 r.add_rule("IF danger IS high OR health IS low THEN stealth IS quiet")
 r.add_rule("IF danger IS high THEN flee IS flee")
