@@ -21,6 +21,16 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------------
+
+LR Parser module
+
+Contains classes for parsing strings into parse trees. Points of interest:
+
+	ReCompiler	- a simple regular expression compiler
+	Lexer		- a lexical analyser
+	LrParser	- an LR(0) parser implementation	
 """
 
 import sys

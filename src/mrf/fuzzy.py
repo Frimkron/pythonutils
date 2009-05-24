@@ -1,8 +1,38 @@
+"""
+Copyright (c) 2009 Mark Frimston
 
-import lexer
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+---------------
+
+Fuzzy Logic module
+
+Contains RuleSet class for evaluating fuzzy logic rules.
+"""
+
+import mrf.parser
 import sys
 
-class FuzzySymbol(lexer.ParserSymbol):
+class FuzzySymbol(mrf.parser.ParserSymbol):
 
 	def evaluate(self, classes, input_values, cache):
 		pass
@@ -72,8 +102,8 @@ class Rule(FuzzySymbol):
 class RuleParser(object):
 
 	def __init__(self):
-		self.lexer = lexer.Lexer([
-			("whitespace","[ \n\r\t]+",None,lexer.Lexer.cb_ignore),
+		self.lexer = mrf.parser.Lexer([
+			("whitespace","[ \n\r\t]+",None,mrf.parser.Lexer.cb_ignore),
 			("if","IF"),
 			("and","AND"),
 			("or","OR"),
@@ -83,7 +113,7 @@ class RuleParser(object):
 			("lbracket","\("),
 			("rbracket","\)")			
 		])
-		self.parser = lexer.LrParser([
+		self.parser = mrf.parser.LrParser([
 			("S -> R"),
 			("R -> if E then I", Rule),
 			("I -> name is name", Is),
@@ -140,7 +170,11 @@ class TriangularClass(FuzzyClass):
 RULE_PARSER = RuleParser()
 
 class RuleSet(object):
-
+	"""
+	Represents a set of fuzzy logic rules. Fuzzy linguistic variables with 
+	multiple fuzzy classes can be created along with rules to determine the 
+	value of output variables from input variables.
+	"""
 	TRIANGULAR = 0
 	LEFT_SHOULDER = 1
 	RIGHT_SHOULDER = 2
@@ -154,16 +188,38 @@ class RuleSet(object):
 		self.rules = {}
 		
 	def add_flv(self, name):
+		"""
+		Adds a new fuzzy linguistic variable with the given name
+		"""
 		self.flvs[name] = {}
 		
 	def add_class(self, flv, name, position, type=TRIANGULAR):
-	
+		"""
+		Adds a new flv class with the given name for the given flv. 
+		type parameter determines the class shape. By default this is a
+		symmetrical triangle.
+		position is a tuple providing the size and position parameters for the 
+		class. These depend on what the shape is. For a triangular class, the 
+		parameters are the centre position and the width.
+		"""
 		if type == RuleSet.TRIANGULAR:
 			fclass = TriangularClass(*position)
 			
 		self.flvs[flv][name] = fclass
 		
 	def add_rule(self, rule):
+		"""
+		Adds a new rule which is parsed from the given string. Rules should be 
+		of the form:
+		
+			<rule> := IF <expression> THEN <is>
+			<expression> := <term> | <expression> AND <term> | <expression> OR <term>
+			<term> := <is> | ( <expression> )
+			<is> := flv IS class
+			
+		For example:
+			IF health IS low AND nearby_enemies IS high THEN speed IS fast
+		"""
 		parsed = RULE_PARSER.parse(rule)
 		output_name = parsed.get_output_name()
 		#print "rule output name: %s" % output_name
@@ -172,15 +228,25 @@ class RuleSet(object):
 		self.rules[output_name].append(parsed)
 		
 	def evaluate(self, input_values):
-		
+		"""
+		Evaluates the given input values against the rule set to determine the 
+		output values. 
+		input_values is a dictionary of values hashed by flv name. Values for 
+		all inputs must be provided.
+		Returns a dictionary of output values hashed by flv name. 
+		Note that if no rule is defined to describe the value of an output 
+		for the given input values, then this output will not be present in the 
+		dictionary.
+		"""
 		ev_output = {}
 		cache = {}
 		# for each output
-		print self.rules
 		for output in self.rules:
 			ruleset = self.rules[output]
-			ev_output[output] = self._evaluate_rules(output, ruleset, self.flvs, 
+			rules_result = self._evaluate_rules(output, ruleset, self.flvs, 
 					input_values, cache)
+			if rules_result != None:
+				ev_output[output] = rules_result 
 			
 		return ev_output
 		
@@ -197,13 +263,10 @@ class RuleSet(object):
 				
 		return self._fuzzy_centroid(out_doms, classes[output_name])
 		
-	def _fuzzy_centroid(self, doms, classes):
-		print "doms %s" % doms
-	
+	def _fuzzy_centroid(self, doms, classes):	
 		# find range of classes
 		start = min([classes[cname].get_start() for cname in classes])
 		end = max([classes[cname].get_end() for cname in classes])
-		print "start %f, end %f" % (start,end)
 		
 		# do integration
 		total_area = 0.0
@@ -213,37 +276,101 @@ class RuleSet(object):
 			dom = max([min(classes[cname].get_dom(v),doms[cname]) for cname in classes])
 			weighted_values += dom * v
 			total_area += dom
-		print "wv: %f, total: %f" % (weighted_values,total_area)
 			
-		return weighted_values / total_area
+		if total_area > 0:			
+			return weighted_values / total_area
+		else:
+			return None
 			
-
-r = RuleSet()
-
-r.add_flv("health")
-r.add_class("health","low",(2,4))
-r.add_class("health","medium",(6,6))
-r.add_class("health","high",(10,4))
-
-r.add_flv("danger")
-r.add_class("danger","low",(0.1,0.3))
-r.add_class("danger","medium",(0.5,0.4))
-r.add_class("danger","high",(0.8,0.4))
-
-r.add_flv("flee")
-r.add_class("flee","flee",(0.2, 0.4))
-r.add_class("flee","fight",(0.8, 0.4))
-
-r.add_flv("stealth")
-r.add_class("stealth","quiet",(0.2, 0.4))
-r.add_class("stealth","normal",(0.5, 0.5))
-r.add_class("stealth","loud",(0.8, 0.4))
-
-r.add_rule("IF danger IS high OR health IS low THEN stealth IS quiet")
-r.add_rule("IF danger IS high THEN flee IS flee")
-r.add_rule("IF danger IS low AND health IS high THEN flee IS fight")
-
-print r.evaluate({"health":8, "danger":0.2})		
 			
+# ------------------------------------------------------------------------------
+# Testing
+# ------------------------------------------------------------------------------			
 
+if __name__ == "__main__":
+	
+	import unittest
+	
+	class TestRuleParser(unittest.TestCase):
+	
+		def testParsing(self):
+			
+			r = RuleParser()
+			rule = r.parse("IF foo IS high THEN bar IS low")
+			self.assertEquals("if", rule.children[0].type)
+			self.assertEquals("E", rule.children[1].type)
+			self.assertEquals("T", rule.children[1].children[0].type)
+			self.assertEquals("I", rule.children[1].children[0].children[0].type)
+			self.assertEquals("name", rule.children[1].children[0].children[0].children[0].type)
+			self.assertEquals("foo", rule.children[1].children[0].children[0].children[0].data)
+			self.assertEquals("is", rule.children[1].children[0].children[0].children[1].type)
+			self.assertEquals("name", rule.children[1].children[0].children[0].children[2].type)
+			self.assertEquals("high", rule.children[1].children[0].children[0].children[2].data)
+			self.assertEquals("then", rule.children[2].type)
+			self.assertEquals("I", rule.children[3].type)
+			self.assertEquals("name", rule.children[3].children[0].type)
+			self.assertEquals("bar", rule.children[3].children[0].data)
+			self.assertEquals("is", rule.children[3].children[1].type)
+			self.assertEquals("name", rule.children[3].children[2].type)
+			self.assertEquals("low", rule.children[3].children[2].data)
+			
+			rule = r.parse("IF foo IS high AND bar IS low THEN wah IS flibble")
+			self.assertEquals("E", rule.children[1].type)
+			self.assertEquals("A", rule.children[1].children[0].type)
+			self.assertEquals("E", rule.children[1].children[0].children[0].type)
+			self.assertEquals("T", rule.children[1].children[0].children[0].children[0].type)
+			self.assertEquals("T", rule.children[1].children[0].children[2].type)
+	
+	class TestRuleSet(unittest.TestCase):
 		
+		def setUp(self):
+			
+			self.r = RuleSet()
+			""" 
+			|    .    .    .
+			|   /|\  /|\  /|\
+			|  / | \/ | \/ | \
+			+-+-+-+'+-+-+'+-+-+-+
+			0 1 2 3 4 5 6 7 8 9 10 
+			"""
+			self.r.add_flv("alpha")
+			self.r.add_class("alpha","low",(2.5,3.0))
+			self.r.add_class("alpha","med",(5.0,3.0))
+			self.r.add_class("alpha","high",(7.5,3.0))
+			
+			self.r.add_flv("beta")
+			self.r.add_class("beta","low",(2.5,3.0))
+			self.r.add_class("beta","med",(5.0,3.0))
+			self.r.add_class("beta","high",(7.5,3.0))
+			
+			self.r.add_flv("gamma")
+			self.r.add_class("gamma","tall",(2.5,3.0))
+			self.r.add_class("gamma","regular",(5.0,3.0))
+			self.r.add_class("gamma","grande",(7.5,3.0))
+			
+			self.r.add_rule("IF alpha IS low THEN beta IS high") 
+			self.r.add_rule("IF alpha IS med THEN beta IS med") 
+			self.r.add_rule("IF alpha IS high THEN beta IS low")
+			self.r.add_rule("IF alpha IS low AND beta IS high THEN gamma IS tall") 
+			self.r.add_rule("IF alpha IS high AND beta IS low THEN gamma IS grande") 
+			self.r.add_rule("IF alpha IS med OR beta IS med THEN gamma IS regular")
+		
+		def testRuleSet(self):
+			
+			out = self.r.evaluate({"alpha":2.5,"beta":7.5})
+			self.assertAlmostEquals(2.5, out["gamma"], 2)
+			self.assertAlmostEquals(7.5, out["beta"], 2)
+			
+			out = self.r.evaluate({"alpha":5.0,"beta":5.0})
+			self.assertAlmostEquals(5.0, out["beta"], 2)
+			self.assertAlmostEquals(5.0, out["gamma"], 2)
+			
+			out = self.r.evaluate({"alpha":3.75, "beta":6.25})
+			self.assertAlmostEquals(6.25, out["beta"], 2)
+			self.assertAlmostEquals(3.75, out["gamma"], 2)
+			
+			out = self.r.evaluate({"alpha":0.5, "beta":3.75})
+			self.assertAlmostEquals(5.0, out["gamma"], 2)
+			self.assertFalse(out.has_key("beta"))
+	
+	unittest.main()

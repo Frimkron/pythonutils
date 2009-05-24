@@ -21,6 +21,17 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+------------------------
+
+Tile Utilities Module
+
+Contains utilities for dealing with tile maps:
+
+	tile_ray_cast		- function for calulating where and how a ray intersects
+							tiles on a tile map
+	TilePathfinder		- class for performing A* searches on a tile map
+	render_tilemap		- function for rendering a tile map
 """
  
 from mrf.search import *

@@ -21,6 +21,15 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+-------------------
+
+State Machine Module 
+
+Utils for implementing the state machine pattern:
+
+	StateMachine	- class which can be extended to create stateful objects 
+						by overriding __getattribute__
 """
 
 def statemethod(fn):
