@@ -167,6 +167,97 @@ class TriangularClass(FuzzyClass):
 	def get_end(self):
 		return self.end
 
+class TrapezoidClass(FuzzyClass):
+
+	def __init__(self, centre, bottom_width, top_width):
+		FuzzyClass.__init__(self)
+		self.centre = centre
+		self.bottom_width = bottom_width
+		self.top_width = top_width
+		self.start = centre-bottom_width/2
+		self.end = centre+bottom_width/2
+		self.top_start = centre-top_width/2
+		self.top_end = centre+top_width/2
+		
+	def get_dom(self, input_val):
+		
+		# outside trapezoid
+		if input_val < self.start or input_val > self.end:
+			return 0.0
+			
+		# flat middle section
+		elif self.top_start <= input_val <= self.top_end:
+			return 1.0
+			
+		# left side
+		elif input_val < self.top_start:
+			return (input_val-self.start) / (self.top_width/2)	
+			
+		# right_side
+		else:
+			return 1.0 - (input_val-self.top_end) / (self.top_width/2)
+		
+	def get_start(self): 
+		return self.start
+		
+	def get_end(self):
+		return self.end
+
+class LeftShoulderClass(FuzzyClass):
+
+	def __init__(self, start, top, bottom):
+		self.start = start
+		self.top_end = top
+		self.end = bottom
+		
+	def get_dom(self, input_val):
+		
+		# outside of shape
+		if input_val < self.start or input_val > self.end:
+			return 0.0
+			
+		# flat area
+		elif input_val <= self.top_end:
+			return 1.0
+			
+		# sloped area
+		else:
+			return 1.0 - (input_val-self.top_end) / (self.end-self.top_end)	
+		
+	def get_start(self):
+		return self.start
+		
+	def get_end(self):
+		return self.end
+		
+class RightShoulderClass(FuzzyClass):
+
+	def __init__(self, bottom, top, end):
+		self.start = bottom
+		self.top_start = top
+		self.end = end
+		
+	def get_dom(self, input_val):
+		
+		# outside of shape
+		if input_val < self.start or input_val > self.end: 
+			return 0.0
+			
+		# flat area
+		elif input_val >= self.top_start:
+			return 1.0
+			
+		# sloped area
+		else:
+			return (input_val-self.start) / (self.top_start-self.start)	
+					
+	def get_start(self):
+		return self.start
+		
+	def get_end(self):
+		return self.end
+		
+
 RULE_PARSER = RuleParser()
 
 class RuleSet(object):
@@ -179,7 +270,6 @@ class RuleSet(object):
 	LEFT_SHOULDER = 1
 	RIGHT_SHOULDER = 2
 	TRAPEZOID = 3
-	BELL = 4
 
 	def __init__(self):
 		# dicts of classes hashed by flv name
@@ -204,6 +294,12 @@ class RuleSet(object):
 		"""
 		if type == RuleSet.TRIANGULAR:
 			fclass = TriangularClass(*position)
+		elif type == RuleSet.TRAPEZOID:
+			fclass = TrapezoidClass(*position)
+		elif type == RuleSet.LEFT_SHOULDER:
+			fclass = LeftShoulderClass(*position)
+		elif type == RuleSet.RIGHT_SHOULDER:
+			fclass = RightShoulderClass(*position)
 			
 		self.flvs[flv][name] = fclass
 		
@@ -290,6 +386,50 @@ class RuleSet(object):
 if __name__ == "__main__":
 	
 	import unittest
+	
+	class TestClasses(unittest.TestCase):
+	
+		def testTriangular(self):
+		
+			c = TriangularClass(0,2)
+			self.assertAlmostEquals(0.0, c.get_dom(-1.5), 2)
+			self.assertAlmostEquals(0.0, c.get_dom(-1), 2)
+			self.assertAlmostEquals(0.25, c.get_dom(-0.75), 2)
+			self.assertAlmostEquals(0.75, c.get_dom(-0.25), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(0), 2)
+			self.assertAlmostEquals(0.75, c.get_dom(0.25), 2)
+			self.assertAlmostEquals(0.25, c.get_dom(0.75), 2)
+			self.assertAlmostEquals(0.0, c.get_dom(1), 2)
+			self.assertAlmostEquals(0.0, c.get_dom(1.5), 2)
+			
+		def testTrapezoid(self):
+			
+			c = TrapezoidClass(0,4,2)
+			self.assertAlmostEquals(0.0, c.get_dom(-2.5), 2)
+			self.assertAlmostEquals(0.0, c.get_dom(-2.0), 2)
+			self.assertAlmostEquals(0.25, c.get_dom(-1.75), 2)
+			self.assertAlmostEquals(0.75, c.get_dom(-1.25), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(-1),2)
+			self.assertAlmostEquals(1.0, c.get_dom(-0.5), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(0),2)
+			self.assertAlmostEquals(1.0, c.get_dom(0.5), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(1), 2)
+			self.assertAlmostEquals(0.75, c.get_dom(1.25), 2)
+			self.assertAlmostEquals(0.25, c.get_dom(1.75), 2)
+			self.assertAlmostEquals(0, c.get_dom(2), 2)
+			self.assertAlmostEquals(0, c.get_dom(2.5), 2)
+			
+		def testLeftShoulder(self):
+		
+			c = LeftShoulderClass(-1,1,2)
+			self.assertAlmostEquals(0.0, c.get_dom(-2), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(-1), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(0), 2)
+			self.assertAlmostEquals(1.0, c.get_dom(1), 2)
+			self.assertAlmostEquals(0.75, c.get_dom(1.25), 2)
+			self.assertAlmostEquals(0.25, c.get_dom(1.75), 2)
+			self.assertAlmostEquals(0, c.get_dom(2), 2)
+			self.assertAlmostEquals(0, c.get_dom(2.5), 2)
 	
 	class TestRuleParser(unittest.TestCase):
 	
