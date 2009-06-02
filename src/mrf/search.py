@@ -172,6 +172,20 @@ class AStar(object):
 		
 		return self.path if self.completed else False
 	
+	def discard(self):
+		"""
+		Discards a search which was not completed after restricting the max 
+		number of iterations. Further calls to search_in_progress will return
+		False until a new search is started with search
+		"""
+		self._reset()
+	
+	def search_in_progress(self):
+		"""
+		Returns true if an unfinished search is available to be resumed.
+		"""
+		return not self.completed
+	
 	def _make_path(self, finish_state):
 		path = [finish_state.value]
 		next = finish_state.previous

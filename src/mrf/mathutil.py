@@ -37,173 +37,259 @@ import unittest
 
 
 class Angle(object):
-    
-    def __init__(self, rad=0):
-        self.val = rad
-        self._normalise()
-    
-    def __add__(self, w):
-        if type(w)==Angle:
-            return Angle(self.val + w.val)
-        else:
-            return Angle(self.val + w)
-    
-    def __sub__(self, w):
-        if type(w)==Angle:
-            return Angle(self.val - w.val)
-        else:
-            return Angle(self.val - w)
-    
-    def __mul__(self, w):
-        return Angle(self.val * w)
-    
-    def __div__(self, w):
-        return Angle(self.val / w)
-    def __truediv__(self, w):
-        return Angle(self.val / w)
-    
-    def _normalise(self):
-        while(self.val > math.pi):
-            self.val -= math.pi*2
-        while(self.val < -math.pi):
-            self.val += math.pi*2
-    
-    def to_rad(self):
-        return self.val
+	
+	def __init__(self, rad=0):
+		self.val = rad
+		self._normalise()
+	
+	def __add__(self, w):
+		if type(w)==Angle:
+			return Angle(self.val + w.val)
+		else:
+			return Angle(self.val + w)
+	
+	def __sub__(self, w):
+		if type(w)==Angle:
+			return Angle(self.val - w.val)
+		else:
+			return Angle(self.val - w)
+	
+	def __mul__(self, w):
+		return Angle(self.val * w)
+	
+	def __div__(self, w):
+		return Angle(self.val / w)
+	def __truediv__(self, w):
+		return Angle(self.val / w)
+	
+	def _normalise(self):
+		while(self.val > math.pi):
+			self.val -= math.pi*2
+		while(self.val < -math.pi):
+			self.val += math.pi*2
+	
+	def to_rad(self):
+		return self.val
 
-    def to_deg(self):
-        return self.val * (180.0/math.pi)
-    
-    def abs(self):
-        return Angle(math.abs(self.val))
-    
-    def __eq__(self,w):
-        if not hasattr(w, "val"): return False
-        return self.val == w.val
-    
-    def __ne__(self,w):
-        if not hasattr(w, "val"): return True
-        return self.val != w.val
-    
-    def __lt__(self,w):
-        if not hasattr(w, "val"): raise TypeError("expected val attribute")
-        return self.val < w.val
-    
-    def __le__(self,w):
-        if not hasattr(w, "val"): raise TypeError("expected val attribute")
-        return self.val <= w.val
-    
-    def __gt__(self,w):
-        if not hasattr(w, "val"): raise TypeError("expected val attribute")
-        return self.val > w.val
-    
-    def __ge__(self,w):
-        if not hasattr(w, "val"): raise TypeError("expected val attribute")
-        return self.val >= w.val
-    
-    def __str__(self):
-        return "%f rad" % self.val
-    
-    def __repr__(self):
-        return "Angle(%f)" % self.val
+	def to_deg(self):
+		return self.val * (180.0/math.pi)
+	
+	def abs(self):
+		return Angle(math.abs(self.val))
+	
+	def __eq__(self,w):
+		if not hasattr(w, "val"): return False
+		return self.val == w.val
+	
+	def __ne__(self,w):
+		if not hasattr(w, "val"): return True
+		return self.val != w.val
+	
+	def __lt__(self,w):
+		if not hasattr(w, "val"): raise TypeError("expected val attribute")
+		return self.val < w.val
+	
+	def __le__(self,w):
+		if not hasattr(w, "val"): raise TypeError("expected val attribute")
+		return self.val <= w.val
+	
+	def __gt__(self,w):
+		if not hasattr(w, "val"): raise TypeError("expected val attribute")
+		return self.val > w.val
+	
+	def __ge__(self,w):
+		if not hasattr(w, "val"): raise TypeError("expected val attribute")
+		return self.val >= w.val
+	
+	def __str__(self):
+		return "%f rad" % self.val
+	
+	def __repr__(self):
+		return "Angle(%f)" % self.val
 
 
 class Vector2d(object):
-    
-    def __init__(self, i=0, j=0, dir=0, mag=0):
-        if dir!=0 or mag!=0:
-            if hasattr(dir, "to_rad"):
-                dir = dir.to_rad()
-            self.i = math.cos(dir) * mag
-            self.j = math.sin(dir) * mag
-        else:
-            self.i = i
-            self.j = j
-                
-    def __add__(self, w):
-        return Vector2d(self.i + w.i, self.j + w.j)
+	
+	def __init__(self, i=0, j=0, dir=0, mag=0):
+		if dir!=0 or mag!=0:
+			if hasattr(dir, "to_rad"):
+				dir = dir.to_rad()
+			self.i = math.cos(dir) * mag
+			self.j = math.sin(dir) * mag
+		else:
+			self.i = i
+			self.j = j
+				
+	def __add__(self, w):
+		return Vector2d(self.i + w.i, self.j + w.j)
 
-    def __sub__(self, w):
-        return Vector2d(self.i - w.i, self.j - w.j)
-    
-    def __mul__(self, w):
-        return Vector2d(self.i * w, self.j * w)
-    
-    def __div__(self, w):
-        return Vector2d(self.i / w, self.j / w)
-    def __truediv__(self, w):
-        return Vector2d(self.i / w, self.j / w)
-    
-    def dot(self, w):
-        return self.i*w.i + self.j*w.j
-    
-    def __str__(self):
-        return "vec(%f, %f)" % (self.i,self.j) 
-    
-    def __eq__(self,w):
-        if type(w) != Vector2d: 
-            raise TypeError("expected Vector2d type")
-        return self.i == w.i and self.j == w.j
-    
-    def __ne__(self,w):
-        if type(w) != Vector2d:
-            raise TypeError("expected Vector2d type")
-        return self.i != w.i or self.j != w.j
-    
-    def __repr__(self):
-        return "Vector2d(%f,%f)" % (self.i,self.j)
-    
-    def get_dir(self):
-        return Angle(math.atan2(self.j,self.i))
-        
-    def get_mag(self):
-        return math.sqrt(math.pow(self.i,2)+math.pow(self.j,2))
-    
-    def unit(self):
-        return self / self.get_mag()
-    
-    def to_tuple(self):
-        return (self.i, self.j)
-    
-    
-class line(object):
-    
-    def __init__(self, a, b):
-        self.a = a
-        self.b = b
-        
-class polygon(object):
-    
-    def __init__(self, points):
-        self.points = points
+	def __sub__(self, w):
+		return Vector2d(self.i - w.i, self.j - w.j)
+	
+	def __mul__(self, w):
+		return Vector2d(self.i * w, self.j * w)
+	
+	def __div__(self, w):
+		return Vector2d(self.i / w, self.j / w)
+	def __truediv__(self, w):
+		return Vector2d(self.i / w, self.j / w)
+	
+	def dot(self, w):
+		return self.i*w.i + self.j*w.j
+	
+	def __str__(self):
+		return "vec(%f, %f)" % (self.i,self.j) 
+	
+	def __eq__(self,w):
+		if type(w) != Vector2d: 
+			raise TypeError("expected Vector2d type")
+		return self.i == w.i and self.j == w.j
+	
+	def __ne__(self,w):
+		if type(w) != Vector2d:
+			raise TypeError("expected Vector2d type")
+		return self.i != w.i or self.j != w.j
+	
+	def __repr__(self):
+		return "Vector2d(%f,%f)" % (self.i,self.j)
+	
+	def get_dir(self):
+		return Angle(math.atan2(self.j,self.i))
+		
+	def get_mag(self):
+		return math.sqrt(math.pow(self.i,2)+math.pow(self.j,2))
+	
+	def unit(self):
+		return self / self.get_mag()
+	
+	def to_tuple(self):
+		return (self.i, self.j)
+	
+	def __getitem__(self, index):
+		if index == 0:
+			return self.i
+		elif index == 1:
+			return self.j
+		else:
+			raise IndexError("Index must be 0 or 1")
+		
+	def __setitem__(self, index, value):
+		if index == 0:
+			self.i = value
+		elif index == 1:
+			self.j = value
+		else:
+			raise IndexError("Index must be 0 or 1")
+	
+	
+def sigmoid(x):
+	"""
+	S-curve function. sigmoid(0) is almost 0 and sigmoid(1) is almost 1, with
+	an S-shaped curve in between.
+	"""
+	return 1.0/(1.0+math.exp(-(x-0.5)*12.0))
+	
+def dist_to_line(line, point):
+	"""
+	Finds a point's distance from a line of infinite length. To find a point's
+	distance from a line segment, use dist_to_line_seg instead.
+	 
+	line: ((lx0,ly0), (lx1,ly1)) Two points on the line
+	point: (px, py) The point to find the distance from
+	
+	returns: the distance between the point and the line
+	"""
+	x1,y1 = line[0]
+	x2,y2 = line[1]
+	x3,y3 = point
+	
+	# where on line the perpendicular is
+	u = ( ((x3-x1)*(x2-x1) + (y3-y1)*(y2-y1))
+			/  (math.pow(x1-x2,2) + math.pow(y1-y2,2)) )
+	
+	# intersection point
+	x = x1 + u*(x2-x1)
+	y = y1 + u*(y2-y1)
+	
+	dist = math.sqrt(math.pow(x-x3,2)+math.pow(y-y3,2))
+	
+	return dist
+	
+def dist_to_line_seg(line, point):
+	"""
+	Finds a point's distance from a line segment. To find a point's distance
+	from a line of infinite length, use dist_to_line instead.
+	
+	line: ((lx0,ly0), (lx1,ly1)) The start and end points of the line segment
+	point: (px,py) The point to find the distance from
+	
+	returns: the distance between the point and the line
+	"""
+	x1,y1 = line[0]
+	x2,y2 = line[1]
+	x3,y3 = point
+	
+	# where on line the perpendicular is
+	u = ( ((x3-x1)*(x2-x1) + (y3-y1)*(y2-y1))
+			/ (math.pow(x1-x2,2) + math.pow(y1-y2,2)) )
+	
+	# closet to mid section or an end point?
+	if 0.0 <= u <= 1.0:		
+		x = x1 + u*(x2-x1)
+		y = y1 + u*(y2-y1)
+		
+	elif u < 0:		
+		x,y = x1,y1
+		
+	else:
+		x,y = x2,y2
+		
+	dist = math.sqrt(math.pow(x-x3,2)+math.pow(y-y3,2))
+	
+	return dist
+	
+class Line(object):
+	
+	def __init__(self, a, b):
+		self.a = a
+		self.b = b
+	
+	def dist_to_point(self, point):
+		"""
+		Find the given point's distance from this line segment. point should be
+		a Vector2d instance. Returns the distance between the point and the line
+		segment.
+		"""
+		return dist_to_line_seg((a.to_tuple(),b.to_tuple()), point.to_tuple())
 
-    
+"""		
+class Polygon(object):
+	
+	def __init__(self, points):
+		self.points = points
+"""
+	
 #---------------------------------------------------------------------------------
 # Testing
 #---------------------------------------------------------------------------------
 if __name__ == '__main__':
-    
-    class Test(unittest.TestCase):
-        
-        def testAngles(self):
-            self.assertEqual(Angle(math.pi/2) + Angle(math.pi), Angle(-math.pi/2))
-            self.assertEqual(Angle(-math.pi/2) - Angle(math.pi), Angle(math.pi/2))
-            self.assertAlmostEqual(Angle(math.pi/2).to_deg(), 90, 4) 
-            
-        def testVector2dMath(self):
-            self.assertEqual(Vector2d(1,2) + Vector2d(2,3), Vector2d(3,5))
-            self.assertEqual(Vector2d(1,2) - Vector2d(2,3), Vector2d(-1,-1))
-            self.assertEqual(Vector2d(1,2) * 5, Vector2d(5,10))
-            self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).i, Vector2d(0,2).i, 4)
-            self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).j, Vector2d(0,2).j, 4)
-            self.assertAlmostEqual(Vector2d(3,4).get_mag(), 5, 4)
-            self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
-            self.assertAlmostEqual(Vector2d(3,4).unit().get_mag(), 1.0, 4)
-    
-    unittest.main()
-    
-    
-    
-    
-    
-    
+	
+	class Test(unittest.TestCase):
+		
+		def testAngles(self):
+			self.assertEqual(Angle(math.pi/2) + Angle(math.pi), Angle(-math.pi/2))
+			self.assertEqual(Angle(-math.pi/2) - Angle(math.pi), Angle(math.pi/2))
+			self.assertAlmostEqual(Angle(math.pi/2).to_deg(), 90, 4) 
+			
+		def testVector2dMath(self):
+			self.assertEqual(Vector2d(1,2) + Vector2d(2,3), Vector2d(3,5))
+			self.assertEqual(Vector2d(1,2) - Vector2d(2,3), Vector2d(-1,-1))
+			self.assertEqual(Vector2d(1,2) * 5, Vector2d(5,10))
+			self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).i, Vector2d(0,2).i, 4)
+			self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).j, Vector2d(0,2).j, 4)
+			self.assertAlmostEqual(Vector2d(3,4).get_mag(), 5, 4)
+			self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
+			self.assertAlmostEqual(Vector2d(3,4).unit().get_mag(), 1.0, 4)
+	
+	unittest.main()
+	
