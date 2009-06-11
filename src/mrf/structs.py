@@ -51,7 +51,7 @@ class TicketQueue(object):
 		
 	def advance(self):
 		self.queue.pop(0)
-		if len(self.queue)==0 or len(self.queue[-1])>0:
+		if len(self.queue)==0:
 			self.queue.append(set([]))
 		
 # -- Testing -----------------------------
@@ -74,14 +74,18 @@ if __name__ == "__main__":
 			q.advance()
 			self.assertTrue(q.at_front(t3))
 			t4 = q.enter()
-			self.assertFalse(q.at_front(t4))
-			q.advance()
+			t5 = q.enter()
 			self.assertTrue(q.at_front(t4))
+			self.assertFalse(q.at_front(t5))
+			q.advance()
+			self.assertTrue(q.at_front(t5))
 			q.advance()
 			q.advance()
 			self.assertEquals(1,len(q.queue))
 	
 	unittest.main()
+	
+	
 
 
 
