@@ -53,6 +53,20 @@ class TicketQueue(object):
 		self.queue.pop(0)
 		if len(self.queue)==0:
 			self.queue.append(set([]))
+			
+			
+def isiterable(item):
+	try:
+		iter(item)
+		return True
+	except TypeError:
+		return False
+		
+def iscollection(item):
+	if isinstance(item,basestring):
+		return False
+	return isiterable(item)
+		
 		
 # -- Testing -----------------------------
 
