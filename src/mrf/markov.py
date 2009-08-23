@@ -64,14 +64,14 @@ class Markov(object):
 		self.evaluate_probs(fr)
 		
 	def add_seq(self, seq):
-		# TODO: higher order adds		
-		if len(seq) > 0:
-			self.add(Markov.START,seq[0])
-			for i in xrange(len(seq)-1):
-				self.add(seq[i],seq[i+1])
-			self.add(seq[len(seq)-1],Markov.END)
-		else:
-			self.add(Markov.START,Markov.END)
+		# add enough start items to start
+		newseq = [Markov.START]*self.order + seq		
+		# add sequence items
+		for i in xrange(len(seq)):
+			seqindex = self.order+i
+			self.add(newseq[seqindex-self.order:seqindex],newseq[seqindex])
+		# add end
+		self.add(newseq[-self.order:],Markov.END)
 		
 	def evaluate_probs(self, fr):
 		fr = self.prepare_from(fr)
@@ -105,6 +105,7 @@ class Markov(object):
 		return mathutil.weighted_roulette(items,normalised=True)
 		
 	def random_chain(self):
+		# TODO: higher order chains
 		chain = []		
 		next = Markov.START
 		while next != Markov.END:
