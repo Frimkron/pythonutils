@@ -1,3 +1,5 @@
+# foobar
+
 
 import mathutil
 import structs
@@ -103,17 +105,23 @@ class Markov(object):
 		self.make_from(fr)
 		items = dict(((t,self.graph[fr]["tos"][t]["prob"]) for t in self.graph[fr]["tos"]))
 		return mathutil.weighted_roulette(items,normalised=True)
-		
-	def random_chain(self):
-		# TODO: higher order chains
+	
+	def chain(self, strat):
 		chain = []		
-		next = Markov.START
-		while next != Markov.END:
-			next = self.weighted_roulette(next)
-			if next != None and next != Markov.END:
-				chain.append(next)
-		return chain
-				
+		fr = [Markov.START]*self.order
+		t = None
+		while t != Markov.END:
+			t = strat(fr)
+			if t != None and t != Markov.END:
+				chain.append(t)
+				fr = fr[1:] + [t]
+		return chain		
+
+	def random_chain(self):
+		return self.chain(self.weighted_roulette)
+		
+	def best_chain(self):
+		return self.chain(self.most_probable)
 	
 #-----------------------------------------------------------------------
 # Testing
@@ -142,5 +150,12 @@ if __name__ == "__main__":
 				results[result] += 1
 			self.assertAlmostEquals(float(results["shop"])/10000.0,2.0/3.0,1)
 			self.assertAlmostEquals(float(results["mark"])/10000.0,1.0/3.0,1)
-	
+		
+		def testHigherOrder(self):
+			self.m = Markov(2)
+			self.m.add_seq("book shop book mark book shop".split())
+
+			self.assertAlmostEquals(self.m.get_prob(("book","shop"),"book"),1.0/2.0,1)
+			self.assertEquals(self.m.most_probable(("shop","book")),"mark")
+
 	unittest.main()
