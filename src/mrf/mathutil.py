@@ -268,6 +268,45 @@ class Polygon(object):
 	def __init__(self, points):
 		self.points = points
 """
+
+def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
+	"""
+	Given the displacement, speed and direction of a moving target, and the speed
+	of a projectile, returns the angle at which to fire in order to intercept the
+	target. If no such angle exists (for example if the projectile is slower than
+	the target), then None is returned.
+	"""
+	"""
+	                               One can imagine the gun, target and point of 
+  target                           collision at some time t forming a triangle
+  --o-.-.-.---  St     collision   of which one side has length St*t where St is
+	  .    /' ' ' ' . . . o        the target speed, and another has length Sb*t
+	    . /z            . .        where Sb is the bullet speed. We can eliminate
+	      .           .  .         t by scaling all sides of the triangle equally
+	        .      A.    .         leaving one side St and another Sb. This 
+	          .   .     .  Sb      triangle can be split into 2 right-angled
+	            .   a__ .          triangles which share line A. Angle z can then
+	              . /  .           be calculated and length A found 
+	                .  .           (A = sin(z)/St), and from this angle a can be
+	             -----o-----       found (a = arcsin(A/Sb) leading to the
+	                 gun	       calculation of the firing angle.                    
+	"""	
+	# Check for situations with no solution
+	if target_speed > bullet_speed:
+		return None
+	if target_disp[0]==0 and target_disp[1]==0:
+		return None
+	
+	# Find angle to target
+	ang_to_targ = math.atan2(target_disp[1],target_disp[0])
+	
+	# Calculate angle
+	return math.asin(target_speed/bullet_speed*math.sin(
+			ang_to_targ-target_angle-math.pi
+		)) + ang_to_targ
+	
+	
+
 	
 #---------------------------------------------------------------------------------
 # Testing
@@ -290,6 +329,12 @@ if __name__ == '__main__':
 			self.assertAlmostEqual(Vector2d(3,4).get_mag(), 5, 4)
 			self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
 			self.assertAlmostEqual(Vector2d(3,4).unit().get_mag(), 1.0, 4)
+			
+		def testLeadAngle(self):
+			ang = lead_angle((math.sqrt(2),math.sqrt(2)),math.sqrt(2),math.pi,math.sqrt(2))
+			self.assertAlmostEquals(math.pi/2.0,ang,2)
+			self.assertEquals(None,lead_angle((0.0,0.0),1.0,0.0,1.0))
+			self.assertEquals(None,lead_angle((1.0,1.0),1.0,0.0,0.9))
 	
 	unittest.main()
 	
