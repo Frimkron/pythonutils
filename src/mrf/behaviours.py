@@ -43,13 +43,21 @@ class BehaviourError(Exception):
 class Behavable(object):
     """
     A behavable object may change the way it works depending on the behaviours
-    that are attached to it at runtime.
+    that are attached to it at runtime. Behaviours may be added to a Behavable
+    instance or to the Behavable class itself thereby modifying a template which
+    may be instantiated with those behaviours already attached.
     """
     
+    beh_chains = {}
+    behaviours = {}
+
     def __init__(self):
+        # TODO: clone classes dictionaries here
         self.beh_chains = {}
         self.behaviours = {}
     
+    # TODO: make the self parameter optional here, allowing addition of 
+    # behaviours to class itself.
     def add_behaviour(self, beh):
         """
         Adds the given behaviour to this behavable. Beh should be a behaviour 
