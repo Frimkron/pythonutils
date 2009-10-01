@@ -52,9 +52,23 @@ class Behavable(object):
 	behaviours = {}
 
 	def __init__(self):
-		# deep clone class's behaviours
-		self.beh_chains = copy.deepcopy(self.beh_chains)
+		# clone class's behaviours
+		self.beh_chains = copy.copy(self.beh_chains)
+		for itemname in self.beh_chains:
+			item = self.beh_chains[itemname]
 		self.behaviours = copy.deepcopy(self.behaviours)
+		
+		"""
+		behaviour - ref to beh instance
+		name - the item name, where it is categorised
+		function - ref to the function to call
+		owner - ref to the owning behavable
+		next_item - ref to next item in chain
+		priority - the priority level
+
+		Clone is relatively trivial aside from the function ref. Need to find
+		equivalent function in instance.
+		"""
 		
 		# set chain items' owner references
 		for chain_name in self.beh_chains:
@@ -199,6 +213,7 @@ class BehaviourChainItem(object):
 	"""
 	
 	def __init__(self, behaviour, function):
+		self.owner = None
 		self.next_item = None
 		self.behaviour = behaviour
 		self.function = function
@@ -227,7 +242,8 @@ class BehaviourChainItem(object):
 				self.next_item = item
 			return self
 		
-		item.concept = self.concept
+		# Not sure what this was for
+		#item.concept = self.concept
 		
 	
 	def __call__(self, *params, **kwparams):
