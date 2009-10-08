@@ -52,30 +52,50 @@ class Behavable(object):
 	behaviours = {}
 
 	def __init__(self):
-		# clone class's behaviours
-		self.beh_chains = copy.copy(self.beh_chains)
+		# clone class's behaviour lookup
+		new_behaviours = {}
+		for beh in self.behaviours:
+			new_behaviours[beh] = copy.copy(self.behaviours[beh])		
+		self.behaviours = new_behaviours
+
+		# clone class's chains
+		new_chains = {}
 		for itemname in self.beh_chains:
-			item = self.beh_chains[itemname]
-		self.behaviours = copy.deepcopy(self.behaviours)
+			curritem = self.beh_chains[itemname]
+			firstnewitem = None
+			lastnewitem = None
+			while curritem:
+				newitem = copy.copy(curritem)
+				newitem.behaviour = self.behaviours[newitem.behaviour.__class__]
+				newitem.owner = self				
+				# append to new chain
+				if not firstnewitem:
+					firstnewitem = newitem
+				else:
+					lastnewitem.next_item = newitem
+				lastnewitem = newitem	
+				# advance
+				curritem = curritem.next_item		
+			new_chains[itemname] = firstnewitem
+		self.beh_chains = new_chains
+
+		# TODO: need to clone chain-starter functions.
 		
 		"""
 		behaviour - ref to beh instance
 		name - the item name, where it is categorised
-		function - ref to the function to call
+		function - ref to the function to call. Unbound func in class.
 		owner - ref to the owning behavable
 		next_item - ref to next item in chain
 		priority - the priority level
-
-		Clone is relatively trivial aside from the function ref. Need to find
-		equivalent function in instance.
 		"""
 		
 		# set chain items' owner references
-		for chain_name in self.beh_chains:
-			item = self.beh_chains[chain_name]
-			while item != None:
-				item.owner = self
-				item = item.next_item
+		#for chain_name in self.beh_chains:
+		#	item = self.beh_chains[chain_name]
+		#	while item != None:
+		#		item.owner = self
+		#		item = item.next_item
 	
 	@staticmethod
 	def _add_beh_to(beh, target):
