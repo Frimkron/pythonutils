@@ -30,7 +30,6 @@ Module for implementing runtime-changable object behaviours - a system similar t
 the Decorator pattern, but with some differences.
 """
 
-import new
 import copy
 
 class BehaviourError(Exception):
@@ -96,10 +95,11 @@ class Behavable(object):
 				if not target.beh_chains.has_key(item.name):
 					target.beh_chains[item.name] = item
 					# create new instance method to expose the chain as a function
-					target.__setattr__(item.name, new.instancemethod(
-								Behavable._make_beh_chain_starter(item.name, target),
-								target, 
-								target if isinstance(target,type) else target.__class__))
+					if isinstance(target, type):
+						setattr(target, item.name, Behavable._make_beh_chain_starter(item.name, target))					
+					else:
+						setattr(target, item.name, types.MethodType(
+								Behavable._make_beh_chain_starter(item.name, target), target, target.__class__))
 				else:
 					target.beh_chains[item.name] = target.beh_chains[item.name].insert_item(item)
 		else:
