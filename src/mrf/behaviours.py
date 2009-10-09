@@ -368,7 +368,7 @@ if __name__ == "__main__":
 			self.strength -= power
 	
 	class TestBehaviours(unittest.TestCase):
-		
+			
 		def setUp(self):
 			self.fred = Behavable()
 		
@@ -413,6 +413,23 @@ if __name__ == "__main__":
 			self.assertEqual(self.gail.get_health(), 85)
 			self.assertEqual(self.fred.get_health(), 85)
 	
+		class TestClassLevel(unittest.TestCase):					
+
+			def testAdding(self):
+				Person = type("Person", (Behavable,), {})
+				anne = Person()
+				self.assertRaises(AttributeError, lambda: anne.get_health())
+				self.Person.add_behaviour_to_class(TestLiving(100))
+				self.assertRaises(BehaviourError, self.Person.add_behaviour, TestLiving(100))
+				bob = Person()
+				self.assertEquals(100, bob.get_health())
+
+			def testHasBeh(self):
+				Person = type("Person", (Behavable,), {})
+				
+
 	unittest.main()
 
 	
+
+
