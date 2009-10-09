@@ -30,6 +30,15 @@ Module for implementing runtime-changable object behaviours - a system similar t
 the Decorator pattern, but with some differences.
 """
 
+"""
+NOTE TO SELF - abandoning the class-level behaviour line of thinking, as 
+subclassing Behavable didn't work as expected. Behavable and it's subclass share 
+the same "beh_chains" and "behaviours" dictionaries, so behaviours added to a 
+subclass are also added to Behavable, defeating the point. There's probably a 
+way to override the way subclasses are created, but at this point it's getting
+way too magic and I'm going to just go for the BehavableRecipe idea instead.
+"""
+
 # TODO: Ability to remove behaviours
 # TODO: Tests for class-level behaviours
 
@@ -399,19 +408,26 @@ if __name__ == "__main__":
 			self.assertEqual(self.gail.get_health(), 85)
 			self.assertEqual(self.fred.get_health(), 85)
 	
-		class TestClassLevel(unittest.TestCase):					
+	class TestClassLevel(unittest.TestCase):					
 
-			def testAdding(self):
-				Person = type("Person", (Behavable,), {})
-				anne = Person()
-				self.assertRaises(AttributeError, lambda: anne.get_health())
-				self.Person.add_behaviour_to_class(TestLiving(100))
-				self.assertRaises(BehaviourError, self.Person.add_behaviour, TestLiving(100))
-				bob = Person()
-				self.assertEquals(100, bob.get_health())
+		def testAdding(self):
+			Person = type("Person", (Behavable,), {})
+			anne = Person()
+			self.assertRaises(AttributeError, lambda: anne.get_health())
+			Person.add_behaviour_to_class(TestLiving(100))
+			self.assertRaises(BehaviourError, self.Person.add_behaviour, TestLiving(100))
+			bob = Person()
+			self.assertEquals(100, bob.get_health())
 
-			def testHasBeh(self):
-				Person = type("Person", (Behavable,), {})
+		def testHasBeh(self):
+			Person = type("Person", (Behavable,), {})
+			self.assertEquals(Person.class_has_behaviour(TestLiving), False)
+			anne = Person()
+			self.assertEquals(anne.has_behaviour(TestLiving), False)
+			Person.add_behaviour_to_class(TestLiving(100))
+			self.assertEquals(Person.class_has_behaviour(TestLiving), True)
+			bob = Person()
+			self.assertEquals(bob.has_behaviour(TestLiving), True)
 				
 
 	unittest.main()
