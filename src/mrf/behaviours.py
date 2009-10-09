@@ -30,7 +30,11 @@ Module for implementing runtime-changable object behaviours - a system similar t
 the Decorator pattern, but with some differences.
 """
 
+# TODO: Ability to remove behaviours
+# TODO: Tests for class-level behaviours
+
 import copy
+import types
 
 class BehaviourError(Exception):
 	"""
@@ -78,24 +82,6 @@ class Behavable(object):
 			new_chains[itemname] = firstnewitem
 		self.beh_chains = new_chains
 
-		# TODO: need to clone chain-starter functions.
-		
-		"""
-		behaviour - ref to beh instance
-		name - the item name, where it is categorised
-		function - ref to the function to call. Unbound func in class.
-		owner - ref to the owning behavable
-		next_item - ref to next item in chain
-		priority - the priority level
-		"""
-		
-		# set chain items' owner references
-		#for chain_name in self.beh_chains:
-		#	item = self.beh_chains[chain_name]
-		#	while item != None:
-		#		item.owner = self
-		#		item = item.next_item
-	
 	@staticmethod
 	def _add_beh_to(beh, target):
 		"""
@@ -116,10 +102,10 @@ class Behavable(object):
 					target.beh_chains[item.name] = item
 					# create new instance method to expose the chain as a function
 					if isinstance(target, type):
-						setattr(target, item.name, Behavable._make_beh_chain_starter(item.name, target))					
+						setattr(target, item.name, Behavable._make_beh_chain_starter(item.name))					
 					else:
 						setattr(target, item.name, types.MethodType(
-								Behavable._make_beh_chain_starter(item.name, target), target, target.__class__))
+								Behavable._make_beh_chain_starter(item.name), target, target.__class__))
 				else:
 					target.beh_chains[item.name] = target.beh_chains[item.name].insert_item(item)
 		else:
@@ -139,14 +125,14 @@ class Behavable(object):
 		Behavable._add_beh_to(beh, cls)
 	
 	@staticmethod
-	def _make_beh_chain_starter(chain_name, target):
+	def _make_beh_chain_starter(chain_name):
 		"""
 		Internal function for creating the function which is called to start the 
 		behaviour function chain
 		"""
-		return lambda s, *p, **kp: target.beh_chains[chain_name].function(
-					target.beh_chains[chain_name].behaviour, s, 
-					target.beh_chains[chain_name], *p, **kp) 
+		return lambda s, *p, **kp: s.beh_chains[chain_name].function(
+					s.beh_chains[chain_name].behaviour, s, 
+					s.beh_chains[chain_name], *p, **kp) 
 	
 	@staticmethod
 	def _has_behaviour(beh, target):
