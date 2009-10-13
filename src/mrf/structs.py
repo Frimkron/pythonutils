@@ -29,6 +29,7 @@ Data Structures Module
 Contains data structures:
 
 	TicketQueue - queue for restricting actions to x per frame
+	IntrospectType - metaclass which invokes setup method on classes created
 	
 """
 class TicketQueue(object):
@@ -66,6 +67,14 @@ def iscollection(item):
 	if isinstance(item,basestring):
 		return False
 	return isiterable(item)
+	
+	
+class IntrospectType(type):
+	
+	def __new__(typ, *args, **kargs):
+		cls = type.__new__(typ, *args, **kargs)
+		cls._class_init()
+		return cls 
 		
 		
 # -- Testing -----------------------------

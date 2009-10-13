@@ -31,14 +31,10 @@ the Decorator pattern, but with some differences.
 """
 
 # TODO: Removing behaviours
-# TODO: Ability to define behaviour functions in Behavables as well as Behaviours
-# 		so that Behavables can begin life with chain items before any Behaviours
-#		are added. This means giving Behaviour and Behavable a common base class
-#		and gathering behaviour functions when the first instance is created
-#		(rather than in get_chain_items). The Behavable would replace each of 
-#		it's behaviour function defs with a lambda which starts the chain  
+# TODO: Test Behavables' behaviour functions 
 
 import types
+import structs
 
 
 class BehaviourError(Exception):
@@ -54,9 +50,57 @@ class Behavable(object):
 	that are attached to it at runtime.
 	"""
 	
+	__metaclass__ = structs.IntrospectType
+	
+	@classmethod
+	def _class_init(cls):
+		# called by metaclass when class created
+		cls._cache_behaviour_functions()
+	
+	@classmethod
+	def _cache_behaviour_functions(cls):
+		# examine the class functions and catalog behaviour functions
+		funcs = []
+		for membkey in dir(cls):
+			if not membkey.startswith("_"):
+				member = getattr(cls, membkey)
+				if( callable(member)
+						and hasattr(member,"beh_function")
+						and isinstance(member.beh_function, BehaviourFunction) ):
+					funcs.append(member)
+		cls.beh_functions = funcs	
+	
 	def __init__(self):
 		self.beh_chains = {}
 		self.behaviours = {}
+		
+		#set up own behaviour functions as chains
+		self._add_behavable_chain_items(self)
+	
+	def _get_chain_items(self):
+		"""
+		Returns list of BehaviourChainItem instances, one for each behaviour 
+		function defined in this Behavable.
+		"""							
+		items = []
+		for f in self.__class__.beh_functions:
+			items.append(BehaviourChainItem(self, f))
+		
+		return items
+	
+	def _add_behavable_chain_items(self, able):
+		for item in able._get_chain_items():
+			#set behavable reference
+			item.owner = self
+			#add to chain
+			if not self.beh_chains.has_key(item.name):
+				self.beh_chains[item.name] = item
+				#create new instance method to expose the chain as a function					
+				setattr(self, item.name, types.MethodType(
+						self._make_beh_chain_starter(item.name),
+						self, self.__class__))
+			else:
+				self.beh_chains[item.name] = self.beh_chains[item.name].insert_item(item)	
 	
 	def add_behaviour(self, beh):
 		"""
@@ -68,18 +112,8 @@ class Behavable(object):
 			#record behaviour instance
 			self.behaviours[beh.__class__] = beh
 			#update chains
-			for item in beh.get_chain_items():
-				#set behavable reference
-				item.owner = self
-				#add to chain
-				if not self.beh_chains.has_key(item.name):
-					self.beh_chains[item.name] = item
-					#create new instance method to expose the chain as a function					
-					setattr(self, item.name, types.MethodType(
-							self._make_beh_chain_starter(item.name),
-							self, self.__class__))
-				else:
-					self.beh_chains[item.name] = self.beh_chains[item.name].insert_item(item)
+			self._add_behavable_chain_items(beh)
+			
 		else:
 			raise BehaviourError("Behaviour %s already added" % beh.__class__.__name__)
 		  
@@ -230,30 +264,8 @@ class Behaviour(Behavable):
 	
 	Note that Behaviour is itself a subclass of Behavable as such may have 
 	behaviours attached to it. 
-	"""
-	
-	def get_chain_items(self):
-		"""
-		Returns list of BehaviourChainItem instances, one for each behaviour 
-		function defined in this behaviour.
-		"""					
-		# cache the behaviour functions in the behaviour's class
-		if not hasattr(self.__class__, "beh_functions"):
-			funcs = []
-			for membkey in dir(self.__class__):
-				if not membkey.startswith("_"):
-					member = getattr(self.__class__, membkey)
-					if( callable(member)
-							and hasattr(member,"beh_function")
-							and isinstance(member.beh_function, BehaviourFunction) ):
-						funcs.append(member)
-			self.__class__.beh_functions = funcs	
-		
-		items = []
-		for f in self.__class__.beh_functions:
-			items.append(BehaviourChainItem(self, f))
-		
-		return items
+	"""	
+	pass
    
    
 class BehavableRecipe(object):
