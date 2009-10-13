@@ -31,6 +31,12 @@ the Decorator pattern, but with some differences.
 """
 
 # TODO: Removing behaviours
+# TODO: Ability to define behaviour functions in Behavables as well as Behaviours
+# 		so that Behavables can begin life with chain items before any Behaviours
+#		are added. This means giving Behaviour and Behavable a common base class
+#		and gathering behaviour functions when the first instance is created
+#		(rather than in get_chain_items). The Behavable would replace each of 
+#		it's behaviour function defs with a lambda which starts the chain  
 
 import types
 
