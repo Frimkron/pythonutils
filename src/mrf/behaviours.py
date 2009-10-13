@@ -113,7 +113,6 @@ class Behavable(object):
 			self.behaviours[beh.__class__] = beh
 			#update chains
 			self._add_behavable_chain_items(beh)
-			
 		else:
 			raise BehaviourError("Behaviour %s already added" % beh.__class__.__name__)
 		  
@@ -134,7 +133,7 @@ class Behavable(object):
 		false if it doesn't. The beh parameter may be a behaviour class or 
 		instance.
 		"""
-		if type(beh)==type:
+		if isinstance(beh,type):
 			return self.behaviours.has_key(beh)
 		else:
 			return self.behaviours.has_key(beh.__class__)
@@ -330,8 +329,7 @@ if __name__ == "__main__":
 			self.health = health
 		
 		@BehaviourFunction(priority=1.0)
-		def get_health(self, owner, nested):
-			nested()
+		def get_health(self, owner, nested):			
 			return self.health
 		
 		@BehaviourFunction(priority=1.0)
@@ -367,52 +365,57 @@ if __name__ == "__main__":
 			Behavable.__init__(self)
 			self.title = title
 			self.age = age
+
+		@BehaviourFunction(priority=0.5)
+		def get_health(self, owner, nested):
+			return 10
 	
 	class TestBehaviours(unittest.TestCase):
 		
-		def setUp(self):
-			self.fred = Behavable()
-		
 		def testAdding(self):
-			self.assertRaises(AttributeError, lambda: self.fred.get_health())
-			self.fred.add_behaviour(TestLiving(100))
-			self.assertEqual(self.fred.get_health(), 100)
-			self.assertRaises(BehaviourError, self.fred.add_behaviour, TestLiving(100))
+			fred = Behavable()
+			self.assertRaises(AttributeError, lambda: fred.get_health())
+			fred.add_behaviour(TestLiving(100))
+			self.assertEqual(fred.get_health(), 100)
+			self.assertRaises(BehaviourError, fred.add_behaviour, TestLiving(100))
 			
 		def testHasBeh(self):
-			self.assertEqual(self.fred.has_behaviour(TestLiving), False)
-			self.assertEqual(self.fred.has_behaviour(TestLiving(100)), False)
-			self.fred.add_behaviour(TestLiving(100))
-			self.assertEqual(self.fred.has_behaviour(TestLiving), True)
-			self.assertEqual(self.fred.has_behaviour(TestLiving(100)), True)
+			fred = Behavable()
+			self.assertEqual(fred.has_behaviour(TestLiving), False)
+			self.assertEqual(fred.has_behaviour(TestLiving(100)), False)
+			fred.add_behaviour(TestLiving(100))
+			self.assertEqual(fred.has_behaviour(TestLiving), True)
+			self.assertEqual(fred.has_behaviour(TestLiving(100)), True)
 			
 		def testChained(self):
-			self.fred.add_behaviour(TestLiving(100))
-			self.assertEqual(self.fred.get_health(), 100)
-			self.fred.hurt(10)
-			self.assertEqual(self.fred.get_health(), 90)
-			self.fred.add_behaviour(TestArmoured(100))
-			self.fred.hurt(10)
-			self.assertEqual(self.fred.get_health(), 85)
+			fred = Behavable()
+			fred.add_behaviour(TestLiving(100))
+			self.assertEqual(fred.get_health(), 100)
+			fred.hurt(10)
+			self.assertEqual(fred.get_health(), 90)
+			fred.add_behaviour(TestArmoured(100))
+			fred.hurt(10)
+			self.assertEqual(fred.get_health(), 85)
 			
 		def testInstances(self):
-			self.fred.add_behaviour(TestLiving(100))
-			self.gail = Behavable()
-			self.gail.add_behaviour(TestLiving(100))
-			self.assertEqual(self.fred.get_health(), 100)
-			self.fred.hurt(10)
-			self.assertEqual(self.fred.get_health(), 90)
-			self.assertEqual(self.gail.get_health(), 100)
-			self.gail.hurt(10)
-			self.assertEqual(self.gail.get_health(), 90)
-			self.fred.add_behaviour(TestArmoured(100))
-			self.fred.hurt(10)
-			self.assertEqual(self.fred.get_health(),85)
-			self.assertEqual(self.gail.get_health(),90)
-			self.gail.add_behaviour(TestArmoured(100))
-			self.gail.hurt(10)
-			self.assertEqual(self.gail.get_health(), 85)
-			self.assertEqual(self.fred.get_health(), 85)
+			fred = Behavable()
+			fred.add_behaviour(TestLiving(100))
+			gail = Behavable()
+			gail.add_behaviour(TestLiving(100))
+			self.assertEqual(fred.get_health(), 100)
+			fred.hurt(10)
+			self.assertEqual(fred.get_health(), 90)
+			self.assertEqual(gail.get_health(), 100)
+			gail.hurt(10)
+			self.assertEqual(gail.get_health(), 90)
+			fred.add_behaviour(TestArmoured(100))
+			fred.hurt(10)
+			self.assertEqual(fred.get_health(),85)
+			self.assertEqual(gail.get_health(),90)
+			gail.add_behaviour(TestArmoured(100))
+			gail.hurt(10)
+			self.assertEqual(gail.get_health(), 85)
+			self.assertEqual(fred.get_health(), 85)
 
 		def testRecipe(self):
 			recipe = BehavableRecipe(TestGuy, "Mr", age=25)
@@ -435,6 +438,13 @@ if __name__ == "__main__":
 			simon = recipe.create()
 			simon.hurt(20)
 			self.assertEquals(simon.get_health(), 90)
+		
+		def testBehavableFunctions(self):
+			bob = TestGuy("Mr", 25)
+			self.assertEquals(True, hasattr(bob, "get_health"))
+			self.assertEquals(10, bob.get_health())
+			bob.add_behaviour(TestLiving(100))
+			self.assertEquals(100, bob.get_health())
 	
 	unittest.main()
 
