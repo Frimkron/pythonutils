@@ -30,8 +30,7 @@ Module for implementing runtime-changable object behaviours - a system similar t
 the Decorator pattern, but with some differences.
 """
 
-# TODO: Removing behaviours
-# TODO: Test Behavables' behaviour functions 
+# TODO: Removing behaviours 
 
 import types
 import structs
