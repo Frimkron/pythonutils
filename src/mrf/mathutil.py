@@ -1,4 +1,4 @@
-"""
+"""	
 Copyright (c) 2009 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
@@ -30,11 +30,14 @@ Math utilities. Notably:
 
 	Angle		- angle class
 	Vector2d	- 2D vector class
+	Line		- 2D line
+	Polygon		- 2D shape
+	Rectangle	- 2D rectangle
 """
 
 import math
 import unittest
-
+import random
 
 class Angle(object):
 
@@ -141,13 +144,13 @@ class Vector2d(object):
 		return "vec(%f, %f)" % (self.i,self.j) 
 	
 	def __eq__(self,w):
-		if type(w) != Vector2d: 
-			raise TypeError("expected Vector2d type")
+		if type(w) != type(self): 
+			return False
 		return self.i == w.i and self.j == w.j
 	
 	def __ne__(self,w):
-		if type(w) != Vector2d:
-			raise TypeError("expected Vector2d type")
+		if type(w) != type(self):
+			return False
 		return self.i != w.i or self.j != w.j
 	
 	def __repr__(self):
@@ -183,14 +186,14 @@ class Vector2d(object):
 	
 	
 def sigmoid(x):
-	"""
+	"""	
 	S-curve function. sigmoid(0) is almost 0 and sigmoid(1) is almost 1, with
 	an S-shaped curve in between.
 	"""
 	return 1.0/(1.0+math.exp(-(x-0.5)*12.0))
 	
 def dist_to_line(line, point):
-	"""
+	"""	
 	Finds a point's distance from a line of infinite length. To find a point's
 	distance from a line segment, use dist_to_line_seg instead.
 	 
@@ -216,7 +219,7 @@ def dist_to_line(line, point):
 	return dist
 	
 def dist_to_line_seg(line, point):
-	"""
+	"""	
 	Finds a point's distance from a line segment. To find a point's distance
 	from a line of infinite length, use dist_to_line instead.
 	
@@ -247,36 +250,139 @@ def dist_to_line_seg(line, point):
 	dist = math.sqrt(math.pow(x-x3,2)+math.pow(y-y3,2))
 	
 	return dist
+
 	
 class Line(object):
 	
 	def __init__(self, a, b):
+		"""	
+		Takes 2 vectors - the start and end points of the line
+		"""
 		self.a = a
 		self.b = b
 	
 	def dist_to_point(self, point):
-		"""
+		"""	
 		Find the given point's distance from this line segment. point should be
 		a Vector2d instance. Returns the distance between the point and the line
 		segment.
 		"""
 		return dist_to_line_seg((a.to_tuple(),b.to_tuple()), point.to_tuple())
 
-"""		
+	def __repr__(self):
+		return "Line(%s,%s)" % (repr(self.a),repr(self.b))
+
+	def __eq__(self, other):
+		if type(self) != type(other): return False
+		return self.a == other.a and self.b == other.b
+
+	def __ne__(self, other):
+		if type(self) != type(other): return True
+		return self.a != other.a or self.b != other.b
+
 class Polygon(object):
-	
+	"""	
+	A 2-dimensional shape
+	"""
+
 	def __init__(self, points):
+		"""	
+		points is a list of vectors representing the vertices of the shape
+		"""
 		self.points = points
-"""
+
+	def get_points(self):
+		return self.points
+
+	def get_lines(self):
+		lines = []
+		for i in range(len(self.points)-1):
+			a = self.points[i]
+			b = self.points[i+1]
+			lines.append(Line(a,b))
+		a = self.points[-1]
+		b = self.points[0]
+		lines.append(Line(a,b))
+		return lines
+
+	def __repr__(self):
+		return "Polygon(%s)" % repr(self.get_points())
+
+	def __eq__(self, other):
+		if type(self) != type(other): return False
+		return self.points == other.points
+
+	def __ne__(self, other):
+		if type(self) != type(other): return True
+		return self.points != other.points
+
+
+class Rectangle(Polygon):
+	"""	
+	A 2-dimensional, axis-aligned shape with 2 pairs of parallel sides. 
+	"""
+
+	def __init__(self, a, b):
+		"""	
+		Takes 2 vectors - opposite corners of the rectangle	
+		"""
+		self.a = a
+		self.b = b
+		self.left = min(self.a[0],self.b[0])
+		self.right = max(self.a[0],self.b[0])
+		self.top = min(self.a[1],self.b[1])
+		self.bottom = max(self.a[1],self.b[1])	
+		self.points = (
+			Vector2d(self.left, self.top),
+			Vector2d(self.right, self.top),
+			Vector2d(self.right, self.bottom),
+			Vector2d(self.left, self.bottom)
+		)
+	
+	def get_width(self):
+		return self.right - self.left
+
+	def get_height(self):
+		return self.bottom - self.top
+
+	def point_inside(self, point):
+		return( point[0] >= self.left and point[0] < self.right
+			and point[1] >= self.top and point[1] < self.bottom )
+
+	def intersects(self, rect):
+		"""	
+		Return True if this Rectangle overlaps the given Rectangle rect.
+		"""
+		return ( rect.right >= self.left and rect.left < self.right
+			and rect.bottom >= self.top and rect.top < self.bottom )
+			
+
+	def intersection(self, rect):
+		"""	
+		Returns a new Rectangle representing the area where this Rectangle
+		and rect overlap, or None if they do not overlap
+		"""
+		if not self.intersects(rect):
+			return None
+		else:
+			in_left = max(self.left, rect.left)
+			in_right = min(self.right, rect.right)
+			in_top = max(self.top, rect.top)
+			in_bottom = min(self.bottom, rect.bottom)
+			return Rectangle(
+				Vector2d(in_left,in_top),
+				Vector2d(in_right,in_bottom)
+			)
+			
 
 def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
-	"""
+	"""	
 	Given the displacement, speed and direction of a moving target, and the speed
 	of a projectile, returns the angle at which to fire in order to intercept the
 	target. If no such angle exists (for example if the projectile is slower than
 	the target), then None is returned.
 	"""
-	"""
+	"""	
 	                               One can imagine the gun, target and point of 
   target                           collision at some time t forming a triangle
   --o-.-.-.---  St     collision   of which one side has length St*t where St is
@@ -329,6 +435,7 @@ def weighted_roulette(item_dict, normalised=False):
 	return None	
 	
 
+
     
 #---------------------------------------------------------------------------------
 # Testing
@@ -340,11 +447,18 @@ if __name__ == '__main__':
 	class Test(unittest.TestCase):
 
 		def testAngles(self):
+			self.assertEqual(Angle(0), Angle(0))
+			self.assertEqual(Angle(10),Angle(10))
+			self.assertNotEqual(Angle(0),Angle(10))
+
 			self.assertEqual(Angle(math.pi/2) + Angle(math.pi), Angle(-math.pi/2))
 			self.assertEqual(Angle(-math.pi/2) - Angle(math.pi), Angle(math.pi/2))
 			self.assertAlmostEqual(Angle(math.pi/2).to_deg(), 90, 4) 
 
 		def testVector2dMath(self):
+			self.assertEqual(Vector2d(0,0), Vector2d(0,0))
+			self.assertNotEqual(Vector2d(0,0), Vector2d(0,1))
+
 			self.assertEqual(Vector2d(1,2) + Vector2d(2,3), Vector2d(3,5))
 			self.assertEqual(Vector2d(1,2) - Vector2d(2,3), Vector2d(-1,-1))
 			self.assertEqual(Vector2d(1,2) * 5, Vector2d(5,10))
@@ -379,6 +493,77 @@ if __name__ == '__main__':
 			self.assertAlmostEquals(math.pi/2.0,ang,2)
 			self.assertEquals(None,lead_angle((0.0,0.0),1.0,0.0,1.0))
 			self.assertEquals(None,lead_angle((1.0,1.0),1.0,0.0,0.9))
+
+		
+		def testLine(self):
+			line1 = Line(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
+			line2 = Line(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
+			line3 = Line(Vector2d(0.0,0.0),Vector2d(1.0,0.0))
+			self.assertEquals(line1, line2)
+			self.assertNotEquals(line2, line3)
+			self.assertNotEquals(line3, line1)
+		
+		def testPolygon(self):
+			p = Polygon([Vector2d(0.0,0.0), Vector2d(1.0,0.0), Vector2d(1.0,1.0)])
+			lines = [
+				Line(Vector2d(0.0,0.0),Vector2d(1.0,0.0)),
+				Line(Vector2d(1.0,0.0),Vector2d(1.0,1.0)),
+				Line(Vector2d(1.0,1.0),Vector2d(0.0,0.0))
+			]
+			self.assertEquals(lines, p.get_lines())
+
+		def testRectangle(self):
+			r1 = Rectangle(Vector2d(0.0,0.0), Vector2d(5.0,10.0))
+			r2 = Rectangle(Vector2d(0.0,0.0), Vector2d(5.0,10.0))
+			r3 = Rectangle(Vector2d(-2.0,-3.0),Vector2d(5.0,5.0))
+
+			self.assertEqual(r1, r2)
+			self.assertNotEqual(r2, r3)
+			self.assertNotEqual(r3, r1)
+
+			noisec = [
+				Rectangle(Vector2d(-4.0,-4.0),Vector2d(-2.0,-2.0)),
+				Rectangle(Vector2d(2.0,-4.0),Vector2d(3.0,-2.0)),
+				Rectangle(Vector2d(7.0,-4.0),Vector2d(9.0,-2.0)),
+				Rectangle(Vector2d(-4.0,2.0),Vector2d(-2.0,8.0)),
+				Rectangle(Vector2d(7.0,2.0),Vector2d(9.0,8.0)),
+				Rectangle(Vector2d(-4.0,12.0),Vector2d(-2.0,14.0)),
+				Rectangle(Vector2d(2.0,12.0),Vector2d(3.0,14.0)),
+				Rectangle(Vector2d(7.0,12.0),Vector2d(9.0,14.0)),	
+
+				Rectangle(Vector2d(-2.0,-4.0),Vector2d(7.0,-2.0)),
+				Rectangle(Vector2d(-2.0,12.0),Vector2d(7.0,14.0)),
+				Rectangle(Vector2d(-4.0,-2.0),Vector2d(-2.0,12.0)),
+				Rectangle(Vector2d(7.0,-2.0),Vector2d(9.0,12.0))
+			]
+			yesisec = [
+				Rectangle(Vector2d(-2.0,-2.0),Vector2d(2.0,2.0)),
+				Rectangle(Vector2d(2.0,-2.0),Vector2d(3.0,2.0)),
+				Rectangle(Vector2d(3.0,-2.0),Vector2d(7.0,2.0)),
+				Rectangle(Vector2d(-2.0,2.0),Vector2d(2.0,8.0)),
+				Rectangle(Vector2d(2.0,2.0),Vector2d(3.0,8.0)),
+				Rectangle(Vector2d(3.0,2.0),Vector2d(7.0,8.0)),
+				Rectangle(Vector2d(-2.0,8.0),Vector2d(2.0,12.0)),
+				Rectangle(Vector2d(2.0,8.0),Vector2d(3.0,12.0)),
+				Rectangle(Vector2d(3.0,8.0),Vector2d(7.0,12.0)),
+
+				Rectangle(Vector2d(-2.0,-2.0),Vector2d(7.0,2.0)),
+				Rectangle(Vector2d(-2.0,2.0),Vector2d(7.0,8.0)),
+				Rectangle(Vector2d(-2.0,8.0),Vector2d(7.0,12.0)),
+				Rectangle(Vector2d(-2.0,-2.0),Vector2d(2.0,12.0)),
+				Rectangle(Vector2d(2.0,-2.0),Vector2d(3.0,12.0)),
+				Rectangle(Vector2d(3.0,-2.0),Vector2d(7.0,12.0))
+			]
+	
+			for r in yesisec:
+				self.assertTrue(r1.intersects(r))
+			for r in noisec:
+				self.assertFalse(r1.intersects(r))
+
+			isect = Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,5.0))
+			self.assertEqual(isect, r1.intersection(r3))
+			self.assertEqual(r1, r1.intersection(r2))
+
 	unittest.main()
     
     
