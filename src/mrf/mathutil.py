@@ -34,7 +34,7 @@ Math utilities. Notably:
 
 import math
 import unittest
-
+import random
 
 class Angle(object):
 
@@ -75,7 +75,7 @@ class Angle(object):
 		return self.val * (180.0/math.pi)
 
 	def abs(self):
-		return Angle(math.abs(self.val))
+		return Angle(math.fabs(self.val))
 
 	def __eq__(self,w):
 		if not hasattr(w, "val"): return False
@@ -306,7 +306,7 @@ def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
 		)) + ang_to_targ
 
 
-def weighted_roulette(item_dict, normalised=False):
+def weighted_roulette(item_dict, normalised=False, rand=None):
 	d = item_dict.copy()
 	
 	if not normalised:
@@ -320,7 +320,10 @@ def weighted_roulette(item_dict, normalised=False):
 			d[k] = float(d[k])/total
 		
 	# get random value and find where this lands
-	val = random.random()
+	if rand == None:
+		val = random.random()
+	else:
+		val = rand.random()
 	count = 0.0
 	for k in d:
 		count += d[k]
@@ -329,7 +332,6 @@ def weighted_roulette(item_dict, normalised=False):
 	return None	
 	
 
-    
 #---------------------------------------------------------------------------------
 # Testing
 #---------------------------------------------------------------------------------
