@@ -1,4 +1,4 @@
-"""
+"""	
 Copyright (c) 2009 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
@@ -37,14 +37,14 @@ import structs
 
 
 class BehaviourError(Exception):
-	"""
+	"""	
 	Thrown by functions in this module
 	"""
 	pass
 
 
 class Behavable(object):
-	"""
+	"""	
 	A behavable object may change the way it works depending on the behaviours
 	that are attached to it at runtime.
 	"""
@@ -77,10 +77,10 @@ class Behavable(object):
 		self._add_behavable_chain_items(self)
 	
 	def _get_chain_items(self):
-		"""
+		"""	
 		Returns list of BehaviourChainItem instances, one for each behaviour 
 		function defined in this Behavable.
-		"""							
+		"""
 		items = []
 		for f in self.__class__.beh_functions:
 			items.append(BehaviourChainItem(self, f))
@@ -102,11 +102,11 @@ class Behavable(object):
 				self.beh_chains[item.name] = self.beh_chains[item.name].insert_item(item)	
 	
 	def add_behaviour(self, beh):
-		"""
+		"""	
 		Adds the given behaviour to this behavable. Beh should be a behaviour 
 		instance. Only one instance of a behaviour type may be added to a 
 		behavable instance - further instances are ignored
-		"""	  
+		"""
 		if not self.behaviours.has_key(beh.__class__):
 			#record behaviour instance
 			self.behaviours[beh.__class__] = beh
@@ -117,7 +117,7 @@ class Behavable(object):
 		  
 	
 	def _make_beh_chain_starter(self, chain_name):
-		"""
+		"""	
 		Internal function for creating the function which is called to start the 
 		behaviour function chain
 		"""
@@ -127,7 +127,7 @@ class Behavable(object):
 	
 	
 	def has_behaviour(self, beh):
-		"""
+		"""	
 		Returns true if the behavable already has the given behaviour type, or 
 		false if it doesn't. The beh parameter may be a behaviour class or 
 		instance.
@@ -140,7 +140,7 @@ class Behavable(object):
 
 
 class BehaviourFunction(object):
-	"""
+	"""	
 	Decorator for indicating which methods of a Behaviour class are behaviour
 	functions which should be added, chained together, to a behavable when the 
 	behaviour is applied.
@@ -195,7 +195,7 @@ class BehaviourFunction(object):
 
 
 class BehaviourChainItem(object):
-	"""
+	"""	
 	Object for creating the chains of behaviour functions inside a behavable as
 	behaviours are added to it
 	"""
@@ -212,7 +212,7 @@ class BehaviourChainItem(object):
 		
 		
 	def insert_item(self, item):
-		"""
+		"""	
 		Inserts a new BehaviourChainItem into the chain according to its priority.
 		Returns the item which should replace it
 		"""
@@ -233,7 +233,7 @@ class BehaviourChainItem(object):
 		
 	
 	def __call__(self, *params, **kwparams):
-		"""
+		"""	
 		Calling the class like a function invokes the function of the next item
 		in the chain, if one exists, or does nothing otherwise
 		"""
@@ -245,7 +245,7 @@ class BehaviourChainItem(object):
 		
 
 class Behaviour(Behavable):
-	"""
+	"""	
 	A Behaviour is designed to encapsulate some functionality which could be 
 	applied to many different Behavable objects at runtime to dynamically change 
 	the way they work. This is acheived by marking certain methods of the 
@@ -262,18 +262,18 @@ class Behaviour(Behavable):
 	
 	Note that Behaviour is itself a subclass of Behavable as such may have 
 	behaviours attached to it. 
-	"""	
+	"""
 	pass
    
    
 class BehavableRecipe(object):
-	"""
+	"""	
 	Class for creating templates to which behaviours can be added and from which
 	Behavable instances can be created with all of the behaviours already added
 	"""
 	
 	def __init__(self, base, *base_args, **base_kargs):
-		"""
+		"""	
 		base - the Behavable class to instantiate with Behaviours attached
 		*base_args - arguments to pass into Behavable when instantiating
 		**base_kargs - keyword args to pass into Behavable when instantiating
@@ -284,7 +284,7 @@ class BehavableRecipe(object):
 		self.behs = []
 		
 	def add_behaviour(self, beh, *beh_args, **beh_kargs):
-		"""
+		"""	
 		Adds a behaviour to the recipe which will be added to Behavable 
 		instances created from this recipe.
 		beh - the Behaviour class to instantiate and add to each Behavable
@@ -304,7 +304,7 @@ class BehavableRecipe(object):
 		return False
 		
 	def create(self):
-		"""
+		"""	
 		Returns a new instance of the Behavable with the specified Behaviours
 		instantiated and added to it.
 		"""
@@ -444,7 +444,51 @@ if __name__ == "__main__":
 			self.assertEquals(10, bob.get_health())
 			bob.add_behaviour(TestLiving(100))
 			self.assertEquals(100, bob.get_health())
-	
+		
+		def testInheritance(self):
+
+			class Cat(Behavable):
+				@BehaviourFunction()
+				def meow(self, owner, nested):
+					return "meow"	
+				@BehaviourFunction()
+				def purr(self, owner, nested):
+					return "purr"
+
+			c = Cat()
+			self.assertEquals("meow",c.meow())
+			self.assertEquals("purr",c.purr())
+			
+			class Tiddles(Cat):
+				@BehaviourFunction()
+				def meow_louder(self, owner, nested):
+					return "MEOW"
+				@BehaviourFunction()
+				def purr(self, owner, nested):
+					return "*ahem* "+Cat.purr(self,owner,nested)
+
+			t = Tiddles()
+			self.assertEquals("meow",t.meow())
+			self.assertEquals("MEOW",t.meow_louder())
+			self.assertEquals("*ahem* purr",t.purr())
+
+			class MeowWhenPurr(Behaviour):
+				@BehaviourFunction()
+				def purr(self,owner,nested):
+					return owner.meow()+" "+nested()+" "+owner.meow()
+
+			t.add_behaviour(MeowWhenPurr())
+			self.assertEquals("meow *ahem* purr meow",t.purr())
+			
+			class MeowWhenPurrThenMew(MeowWhenPurr):
+				@BehaviourFunction()
+				def purr(self,owner,nested):
+					return MeowWhenPurr.purr(self,owner,nested)+" mew"
+
+			t2 = Tiddles()
+			t2.add_behaviour(MeowWhenPurrThenMew())
+			self.assertEquals("meow *ahem* purr meow mew",t2.purr())
+
 	unittest.main()
 
 	
