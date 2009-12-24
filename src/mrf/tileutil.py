@@ -430,6 +430,52 @@ def tile_map_from_ascii(ascii, mapping):
 	return tiles				
 
 
+class Dir4(object):
+	
+	dirs = {}
+	
+	def __init__(self, val, name, fwd_offset, side_offset):
+		self._val = val
+		self._name = name
+		self._fwd_offset = fwd_offset
+		self._side_offset = side_offset
+		Dir4.dirs[val] = self
+		setattr(Dir4, name, self)
+	
+	def turn_cw(self, amount=1):
+		return Dir4.dirs[(self._val + 4 + amount) % 4]
+	
+	def turn_acw(self, amount=1):
+		return self.turn_cw(-amount)
+	
+	def turn_180(self):
+		return self.turn_cw(2)
+	
+	def __repr__(self):
+		return "Dir4.%s" % self._name
+	
+	def __str__(self):
+		return self._name
+	
+	def move(self, pos=(0,0), rel=(0,1)):
+		return (pos[0]+self._fwd_offset[0]*rel[1]+self._side_offset[0]*rel[0], 
+				pos[1]+self._fwd_offset[1]*rel[1]+self._side_offset[1]*rel[0])
+		
+	def rel(self, dir):
+		return self.turn_cw(dir._val)
+		
+	def get_val(self):
+		return self._val
+		
+	@classmethod
+	def from_val(cls, val):
+		return cls.dirs[val]
+
+Dir4(0, "NORTH", ( 0,-1), ( 1, 0))
+Dir4(1, "EAST",  ( 1, 0), ( 0, 1))
+Dir4(2, "SOUTH", ( 0, 1), (-1, 0))
+Dir4(3, "WEST",  (-1, 0), ( 0,-1))
+
 #-------------------------------------------------------------------------------
 # Testing
 #-------------------------------------------------------------------------------
@@ -734,7 +780,28 @@ if __name__ == "__main__":
 								[1,2,2,1],
 								[1,1,1,1] ],map)
 			
-
+	class TestDir4(unittest.TestCase):
+		
+		def test_rot(self):
+			
+			d = Dir4.NORTH
+			self.assertEquals(Dir4.EAST, d.turn_cw())
+			self.assertEquals(Dir4.WEST, d.turn_acw())
+			self.assertEquals(Dir4.SOUTH, d.turn_cw(2))
+			self.assertEquals(Dir4.SOUTH, d.turn_180())
+			
+		def test_str(self):
+			self.assertEquals("EAST", str(Dir4.EAST))
+			
+		def test_repr(self):
+			self.assertEquals("Dir4.EAST", repr(Dir4.EAST))
+			
+		def test_move(self):
+			self.assertEquals((2,0), Dir4.EAST.move(rel=(0,2)))
+			self.assertEquals((0,1), Dir4.WEST.move(pos=(1,1)))
+			self.assertEquals((3,7), Dir4.SOUTH.move((3,2),(0,5)))
+			self.assertEquals((3,3), Dir4.EAST.move(pos=(1,2),rel=(1,2)))
+		
 	unittest.main()
 	
 	
