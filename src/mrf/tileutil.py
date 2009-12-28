@@ -1,4 +1,4 @@
-"""
+"""	
 Copyright (c) 2009 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
@@ -140,7 +140,7 @@ def _trc_move_collide(axis, pos, inc, dir, grid_size, end_grid_pos, end_pos, col
 	
 
 def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
-	"""
+	"""	
 	Function to determine where a ray, projected across a grid of blocking and 
 	non-blocking squares, should stop.
 	
@@ -261,7 +261,7 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 
 
 class TilePathfinder(AStar):
-	"""
+	"""	
 	An A* search implementation for navigating a map of square tiles. Uses a 
 	callback to determine the cost of moving to different tiles.
 	"""
@@ -269,7 +269,7 @@ class TilePathfinder(AStar):
 	DIAG_VAL = math.sqrt(2)
 	
 	def __init__(self, tilecost_func):
-		"""
+		"""	
 		tilecost_func should be a function returning the cost of moving to a 
 		given tile position. It should take 2 parameters: the x and y positions 
 		of a tile respectively, and return the cost value as a float value. If
@@ -279,7 +279,7 @@ class TilePathfinder(AStar):
 		self.tilecost_func = tilecost_func
 		
 	def search(self, start, finish, max_iterations=0):
-		"""
+		"""	
 		Performs the search, taking two 2-item tuples of x and y tile coordinates 
 		for the start position and the end position respectively, and returning a 
 		list of 2-item tuples representing the pairs of x-y tile coordinates 
@@ -332,7 +332,7 @@ class TilePathfinder(AStar):
 
 
 def render_tilemap(rect, tile_size, cam_pos, type_callback, draw_callback, zoom=1.0):
-	"""
+	"""	
 	Function for rendering a 2d square-tiled scrolling tilemap in a rectangular 
 	window.
 	
@@ -475,6 +475,84 @@ Dir4(0, "NORTH", ( 0,-1), ( 1, 0))
 Dir4(1, "EAST",  ( 1, 0), ( 0, 1))
 Dir4(2, "SOUTH", ( 0, 1), (-1, 0))
 Dir4(3, "WEST",  (-1, 0), ( 0,-1))
+
+
+class LosMap(object):
+	
+	@staticmethod
+	def generate(xdist, ydist):
+		"""	
+		Generate a new line of sight map which extends horizontally xdist tiles and
+		vertically ydist tiles from the player
+		"""
+		data = {}
+		for j in range(ydist):
+			for i in range(xdist):
+				deps = []
+				# cast a ray from top left tile to this tile, recording the tiles passed
+				# through using the collision-check callback
+				tile_ray_cast((0.5,0.5), end_pos, (1.0,1.0),
+					lambda chpos,chtile: LosMap._los_callback(deps, chtile))
+				# record the dependencies in the map
+				data[(i,j)] = deps
+		
+		return LosMap(data)		
+
+	@staticmethod
+	def _los_callback(deps, tile):
+		deps.append(tile)
+		return False
+
+	@staticmethod
+	def load(filename):
+		"""	
+		Create a line of sight map by loading the map from a file 
+		"""
+		# TODO
+		pass
+
+	def __init__(self, data):
+		self.data = data
+
+	def save(self, filename):
+		"""	
+		Save the line of sight map to file
+		"""
+		# TODO
+		pass
+
+	def is_tile_visible(self, tile, from_tile, seethru_callback):
+		"""	
+		Tests whether the centre of tile is in line-of-sight from the centre of 
+		from_tile. seethru_callback should be a function to determine if a tile
+		in the tile map can be seen through or not.
+		
+		seethru_callback
+			params:
+				tile - a 2-item tuple indicating the tile in the tile 
+					map to check
+			return:
+				Should return True if a line of sight can pass through 
+				this tile, or False if the tile blocks visibility
+		"""
+		# TODO
+		pass
+
+	def get_deps(self, relpos):
+		deps = self.data[map(int,map(math.fabs,relpos))]
+		if relpos[0] < 0:
+			deps = [(-d[0],d[1]) for d in deps]
+		if relpos[1] < 0:
+			deps = [(d[0],-d[1]) for d in deps]
+		return deps
+
+	def _tile_vis(self, relpos, checked=None):
+		if checked == None:
+			checked = {}
+		if checked.has_key(relpos):
+			return checked[relpos]
+		
+		
 
 #-------------------------------------------------------------------------------
 # Testing
@@ -781,7 +859,8 @@ if __name__ == "__main__":
 								[1,1,1,1] ],map)
 			
 	class TestDir4(unittest.TestCase):
-		
+		"""
+		"""
 		def test_rot(self):
 			
 			d = Dir4.NORTH
@@ -802,6 +881,33 @@ if __name__ == "__main__":
 			self.assertEquals((3,7), Dir4.SOUTH.move((3,2),(0,5)))
 			self.assertEquals((3,3), Dir4.EAST.move(pos=(1,2),rel=(1,2)))
 		
+	class TestLosMap(unittest.TestCase):
+
+		def test_generate(self):
+			"""	
+			   0  1  2
+			0 [X][ ][ ]
+			1 [ ][ ][ ]
+			2 [ ][ ][ ]
+			"""
+			expected = {
+				(0,0) = [(0,0)],
+				(1,0) = [(1,0),(0,0)],
+				(2,0) = [(2,0),(1,0),(0,0)],
+				(0,1) = [(0,1),(0,0)],
+				(1,1) = [(1,1),(1,0),(0,1),(0,0)],
+				(2,1) = [(2,1),(1,1),(1,0),(0,0)],
+				(0,2) = [(0,2),(0,1),(0,0)],
+				(1,2) = [(1,2),(1,1),(0,1),(0,0)],
+				(2,2) = [(2,2),(2,1),(1,2),(1,1),(1,0),(0,1),(0,0)]
+			}
+			lm = LosMap.generate(2,2)
+			self.assertEquals(expected, lm.data)
+
+		def test_get_deps(self):
+		
+			
+
 	unittest.main()
 	
 	
