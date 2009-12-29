@@ -52,6 +52,7 @@ def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, col
 		
 		# calculate gradient
 		grad = diff[oth_ax] / diff[axis]
+		print "gradient "+str(grad)
 		
 		# work out how far to move to the next boundary on this axis
 		offset = pos[axis] % grid_size[axis]
@@ -194,16 +195,19 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 		if x_cand == None and y_cand == None:
 			
 			# No collisions
+			print "no collision"
 			result = (end_pos, None, None)
 		
 		elif x_cand != None and y_cand == None:
 			
 			# X collision only
+			print "x collision only"
 			result = x_cand[1]
 		
 		elif y_cand != None and x_cand == None:
 			
 			# Y collision only
+			print "y collision only"
 			result = y_cand[1]
 			
 		else:
@@ -488,10 +492,11 @@ class LosMap(object):
 		data = {}
 		for j in range(ydist):
 			for i in range(xdist):
+				print "ray to %d,%d" % (i,j)
 				deps = []
 				# cast a ray from top left tile to this tile, recording the tiles passed
 				# through using the collision-check callback
-				tile_ray_cast((0.5,0.5), end_pos, (1.0,1.0),
+				tile_ray_cast((1.0,1.0), (i+0.5,j+0.5), (1,1),
 					lambda chpos,chtile: LosMap._los_callback(deps, chtile))
 				# record the dependencies in the map
 				data[(i,j)] = deps
@@ -675,7 +680,12 @@ if __name__ == "__main__":
 			coll = tile_ray_cast(start_pos, end_pos, (32, 32), self.ray_collide)
 			expected = ((5 * 32, 10 * 32), (5, 10), (0, - 1)) 
 			self.assertEqual(coll, expected)
-			
+
+		def testWhuh(self):
+			print "--- start ---"
+			result = tile_ray_cast((0.5,0.5),(0,5,1.5),(1,1), lambda p,t: False)
+			self.assertEquals(((0.5,1.5),None,None),result)
+			print "--- end ---"
 			
 			
 	class TestPathfind(unittest.TestCase):
@@ -882,30 +892,30 @@ if __name__ == "__main__":
 			self.assertEquals((3,3), Dir4.EAST.move(pos=(1,2),rel=(1,2)))
 		
 	class TestLosMap(unittest.TestCase):
-
+		"""	
 		def test_generate(self):
-			"""	
+			""	
 			   0  1  2
 			0 [X][ ][ ]
 			1 [ ][ ][ ]
 			2 [ ][ ][ ]
-			"""
+			""
 			expected = {
-				(0,0) = [(0,0)],
-				(1,0) = [(1,0),(0,0)],
-				(2,0) = [(2,0),(1,0),(0,0)],
-				(0,1) = [(0,1),(0,0)],
-				(1,1) = [(1,1),(1,0),(0,1),(0,0)],
-				(2,1) = [(2,1),(1,1),(1,0),(0,0)],
-				(0,2) = [(0,2),(0,1),(0,0)],
-				(1,2) = [(1,2),(1,1),(0,1),(0,0)],
-				(2,2) = [(2,2),(2,1),(1,2),(1,1),(1,0),(0,1),(0,0)]
+				(0,0) : [(0,0)],
+				(1,0) : [(1,0),(0,0)],
+				(2,0) : [(2,0),(1,0),(0,0)],
+				(0,1) : [(0,1),(0,0)],
+				(1,1) : [(1,1),(1,0),(0,1),(0,0)],
+				(2,1) : [(2,1),(1,1),(1,0),(0,0)],
+				(0,2) : [(0,2),(0,1),(0,0)],
+				(1,2) : [(1,2),(1,1),(0,1),(0,0)],
+				(2,2) : [(2,2),(2,1),(1,2),(1,1),(1,0),(0,1),(0,0)]
 			}
 			lm = LosMap.generate(2,2)
 			self.assertEquals(expected, lm.data)
-
+		"""
 		def test_get_deps(self):
-		
+			pass
 			
 
 	unittest.main()
