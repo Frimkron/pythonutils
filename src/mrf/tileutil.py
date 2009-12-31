@@ -33,6 +33,21 @@ Contains utilities for dealing with tile maps:
 	TilePathfinder		- class for performing A* searches on a tile map
 	render_tilemap		- function for rendering a tile map
 """
+
+"""	
+TODO:
+ * bug in tile_ray_cast: casting from S to F:
+      |   |   |   |
+    --+---+---+---+--
+      |   | F |   |
+    --+---S---+---+--
+      |   |   |   |
+   causes ray to overshoot and enter infinite loop. Doesn't count as same tile as end pos and so
+   assumes it must continue a tile at a time.
+
+ * complete LosMap class.
+ * tests for LosMap
+"""
  
 from mrf.search import *
 import math
@@ -52,7 +67,6 @@ def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, col
 		
 		# calculate gradient
 		grad = diff[oth_ax] / diff[axis]
-		print "gradient "+str(grad)
 		
 		# work out how far to move to the next boundary on this axis
 		offset = pos[axis] % grid_size[axis]
@@ -195,19 +209,16 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 		if x_cand == None and y_cand == None:
 			
 			# No collisions
-			print "no collision"
 			result = (end_pos, None, None)
 		
 		elif x_cand != None and y_cand == None:
 			
-			# X collision only
-			print "x collision only"
+			# X collision only			
 			result = x_cand[1]
 		
 		elif y_cand != None and x_cand == None:
 			
 			# Y collision only
-			print "y collision only"
 			result = y_cand[1]
 			
 		else:
@@ -490,13 +501,13 @@ class LosMap(object):
 		vertically ydist tiles from the player
 		"""
 		data = {}
-		for j in range(ydist):
-			for i in range(xdist):
+		for j in range(ydist+1):
+			for i in range(xdist+1):
 				print "ray to %d,%d" % (i,j)
 				deps = []
 				# cast a ray from top left tile to this tile, recording the tiles passed
 				# through using the collision-check callback
-				tile_ray_cast((1.0,1.0), (i+0.5,j+0.5), (1,1),
+				tile_ray_cast((0.5,0.5), (i+0.5,j+0.5), (1,1),
 					lambda chpos,chtile: LosMap._los_callback(deps, chtile))
 				# record the dependencies in the map
 				data[(i,j)] = deps
@@ -505,7 +516,7 @@ class LosMap(object):
 
 	@staticmethod
 	def _los_callback(deps, tile):
-		deps.append(tile)
+		#deps.append(tile)
 		return False
 
 	@staticmethod
@@ -682,10 +693,13 @@ if __name__ == "__main__":
 			self.assertEqual(coll, expected)
 
 		def testWhuh(self):
-			print "--- start ---"
-			result = tile_ray_cast((0.5,0.5),(0,5,1.5),(1,1), lambda p,t: False)
-			self.assertEquals(((0.5,1.5),None,None),result)
-			print "--- end ---"
+			import pdb
+			pdb.set_trace()
+			#result = tile_ray_cast((1.0,1.0),(1.5,0.5),(1,1), lambda p,t: False)
+			#self.assertEquals(((1.5,0.5),None,None),result)
+
+			result = tile_ray_cast((0.5,0.5),(2.5,1.5),(1,1), lambda p,t: False)
+			self.assertEquals(((2.5,1.5),None,None),result)
 			
 			
 	class TestPathfind(unittest.TestCase):
@@ -783,14 +797,14 @@ if __name__ == "__main__":
 			self.requested_draws.append((type,rect))
 		
 		def testLookups(self):			
-			"""
+			"""	
 			  +--------------------+
 			/ | \  /   \  /   \  / | \
-			  |					   | 
+			  |                    | 
 			\ | /  \   /  \   /  \ | /
-			  |		     +		   |
+			  |          +         |
 			/ | \  /   \  /   \  / | \
-			  |					   |
+			  |                    |
 			\ | /  \   /  \   /  \ | /
 			  +--------------------+
 			"""
@@ -892,14 +906,14 @@ if __name__ == "__main__":
 			self.assertEquals((3,3), Dir4.EAST.move(pos=(1,2),rel=(1,2)))
 		
 	class TestLosMap(unittest.TestCase):
-		"""	
+			
 		def test_generate(self):
-			""	
+			"""	
 			   0  1  2
 			0 [X][ ][ ]
 			1 [ ][ ][ ]
 			2 [ ][ ][ ]
-			""
+			"""
 			expected = {
 				(0,0) : [(0,0)],
 				(1,0) : [(1,0),(0,0)],
@@ -911,12 +925,12 @@ if __name__ == "__main__":
 				(1,2) : [(1,2),(1,1),(0,1),(0,0)],
 				(2,2) : [(2,2),(2,1),(1,2),(1,1),(1,0),(0,1),(0,0)]
 			}
-			lm = LosMap.generate(2,2)
-			self.assertEquals(expected, lm.data)
-		"""
+			#lm = LosMap.generate(2,2)
+			#self.assertEquals(expected, lm.data)
+		
 		def test_get_deps(self):
 			pass
-			
+					
 
 	unittest.main()
 	
