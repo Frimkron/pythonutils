@@ -36,24 +36,20 @@ Contains utilities for dealing with tile maps:
 
 """	
 TODO:
- * bug in tile_ray_cast: casting from S to F:
-      |   |   |   |
-    --+---+---+---+--
-      |   | F |   |
-    --+---S---+---+--
-      |   |   |   |
-   causes ray to overshoot and enter infinite loop. Doesn't count as same tile as end pos and so
-   assumes it must continue a tile at a time.
-
  * complete LosMap class.
  * tests for LosMap
 """
- 
+
 from mrf.search import *
 import math
 
-def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, collision_callback):
-	
+def _trc_check_axis(axis, start_pos, diff, dir, grid_size, end_pos, 
+		end_grid_pos, collision_callback):
+	"""	
+	Helper function used by tile_ray_cast. Finds collision with cross-cutting boundaries
+	along the given axis. Returns tuple containing the squared distance to the collision 
+	point and the collision point itself, if a collision is found, or None otherwise.
+	"""
 	oth_ax = 1 if axis == 0 else 0
 	
 	coll_point = None
@@ -62,13 +58,12 @@ def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, col
 	if diff[axis] != 0:
 		
 		pos = (start_pos[0], start_pos[1])
-		dir = (diff[0] / math.fabs(diff[0]) if diff[0] != 0 else 0,
-			   diff[1] / math.fabs(diff[1]) if diff[1] != 0 else 0)
 		
 		# calculate gradient
 		grad = diff[oth_ax] / diff[axis]
 		
-		# work out how far to move to the next boundary on this axis
+		# work out how far to move to the next boundary on this axis. This will be
+		# one of the boundaries enclosing the starting tile.
 		offset = pos[axis] % grid_size[axis]
 		ax_inc = (grid_size[axis] if diff[axis] >= 0 else 0) - offset
 		oth_ax_inc = grad * ax_inc
@@ -76,7 +71,7 @@ def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, col
 	
 		# move to first boundary and test for collision
 		collision = _trc_move_collide(axis, pos, inc, dir, grid_size,
-									  end_grid_pos, end_pos, collision_callback)
+									  end_pos, end_grid_pos, collision_callback)
 		pos = collision[0]
 		
 		# if ray collided
@@ -85,46 +80,61 @@ def _trc_check_axis(axis, start_pos, diff, grid_size, end_grid_pos, end_pos, col
 			
 		else:
 			
-			#work out how far to move to the next boundary on this axis
+			# work out how far to move to the next boundary on this axis. We are
+			# now moving a tile's width/height at a time across the tilemap. 
 			inc = {axis:grid_size[axis] * dir[axis], oth_ax:grid_size[axis] * dir[axis] * grad}
 			
 			while collision[1] == None:
 				
 				collision = _trc_move_collide(axis, pos, inc, dir, grid_size,
-											  end_grid_pos, end_pos, collision_callback)
+											  end_pos, end_grid_pos, collision_callback)
 				pos = collision[0]
 				
 				if collision[1] != None:
-					coll_point = collision[1]
-	
-	if coll_point != None:
-		
-		# Determine distance to this collision point
-		sq_dist = math.pow(coll_point[0][0] - start_pos[0], 2) + math.pow(coll_point[0][1] - start_pos[1], 2)
-		
-		return (sq_dist, coll_point)
-	
+					coll_point = collision[1]				
 	else:
-		return None
+		
+		# if we dont actually move on the axis, just return a non-collision
+		# collision tuple with the end position in it.
+		coll_point = (end_pos,None,None)
+	
+	# Determine distance to this collision point
+	sq_dist = math.pow(coll_point[0][0] - start_pos[0], 2) + math.pow(coll_point[0][1] - start_pos[1], 2)
+	
+	return (sq_dist, coll_point)
 	
 
-def _trc_move_collide(axis, pos, inc, dir, grid_size, end_grid_pos, end_pos, collision_callback):
-	
+def _trc_move_collide(axis, pos, inc, dir, grid_size, end_pos, end_grid_pos, collision_callback):
+	"""	
+	Helper function used by tile_ray_cast. Increments position by the given amount
+	and checks for boundary collisions using the collision callback. Returns a tuple
+	containing the updated position and the collision tuple, if one is found.
+	The collision tuple is that which is returned by tile_ray_cast: the collision
+	position, grid square and wall normal.
+	"""
 	oth_ax = 0 if axis == 1 else 1
 	
 	# move
 	pos = (pos[0] + inc[0], pos[1] + inc[1])
 		
+	# Check if we have overshot the end position on this axis. If we have, 
+	# return a no-collision collision tuple, indicating the ray ended at the end point.					
+	if pos[axis]*dir[axis] > end_pos[axis]*dir[axis]:
+	
+		return (pos, (end_pos, None, None))
+		
 	# determine grid ref(s) to check
 	grid_poses = []
 	if pos[oth_ax] % grid_size[oth_ax] == 0:
 		# if we are on the boundary between 2 tiles, need to check both of these tiles
-		grid_poses.append({ axis: int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2)) / grid_size[axis])),
-						   oth_ax : int(math.floor((pos[oth_ax] - dir[oth_ax] * (grid_size[oth_ax] / 2)) / grid_size[oth_ax])) })
-		grid_poses.append({ axis: int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2)) / grid_size[axis])),
-						   oth_ax : int(math.floor((pos[oth_ax] + dir[oth_ax] * (grid_size[oth_ax] / 2)) / grid_size[oth_ax])) })
+		# - either could stop the ray and incur a collision.
+		# TODO if an axis's dir is 0, this does not check both tiles!
+		grid_poses.append({ axis: int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2.0)) / grid_size[axis])),
+						   oth_ax : int(math.floor((pos[oth_ax] - dir[oth_ax] * (grid_size[oth_ax] / 2.0)) / grid_size[oth_ax])) })
+		grid_poses.append({ axis: int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2.0)) / grid_size[axis])),
+						   oth_ax : int(math.floor((pos[oth_ax] + dir[oth_ax] * (grid_size[oth_ax] / 2.0)) / grid_size[oth_ax])) })
 	else:
-		grid_poses.append({ axis : int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2)) / grid_size[axis])),
+		grid_poses.append({ axis : int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2.0)) / grid_size[axis])),
 				oth_ax : int(math.floor(pos[oth_ax] / grid_size[oth_ax])) })
 		
 	# call function to determine if the block(s) we're at should stop the ray
@@ -139,18 +149,21 @@ def _trc_move_collide(axis, pos, inc, dir, grid_size, end_grid_pos, end_pos, col
 			
 		norm = { axis : - dir[axis], oth_ax : 0 }
 				
+		# return the position and collision tuple
 		return (pos , (pos, (grid_pos[0], grid_pos[1]), (norm[0], norm[1])))
 	
-	else:
+	else:	
 		
-		grid_pos = grid_poses[0]
-		
-		# Check if this is the square with the end position in it
-		if (grid_pos[0], grid_pos[1]) == end_grid_pos:
+		# have we ended inside the end tile?
+		if grid_pos == end_grid_pos:
 			
+			# return no-collision collision tuple, indicating the ray reached its
+			# end point
 			return (pos, (end_pos, None, None))
 		
 		else:
+		
+			# return the position and no collision
 			return (pos, None)
 	
 
@@ -185,8 +198,6 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 			True if this square would stop the ray, False otherwise
 	"""
 	
-	diff = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
-	
 	# Work out grid ref of end pos
 	end_grid_pos = (int(math.floor(end_pos[0] / grid_size[0])),
 					int(math.floor(end_pos[1] / grid_size[1])))
@@ -197,33 +208,46 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 	
 	if(grid_pos == end_grid_pos):
 		
+		# if we start and end on the same tile, report no collision, even if the
+		# tile is blocking. The ray must cross a boundary to collide with 
+		# something.
 		result = (end_pos, None, None)
 		
 	else:
 	
-		x_cand = _trc_check_axis(0, start_pos, diff, grid_size, end_grid_pos,
-								 end_pos, collision_callback)
-		y_cand = _trc_check_axis(1, start_pos, diff, grid_size, end_grid_pos,
-								 end_pos, collision_callback)
+		# distance on each axis between start and end positions
+		diff = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
+	
+		# direction along each axis: -1, 0 or 1
+		dir = (diff[0] / math.fabs(diff[0]) if diff[0] != 0 else 0,
+			   diff[1] / math.fabs(diff[1]) if diff[1] != 0 else 0)
+	
+		# move along the x axis, finding the verical boundary collision, if any
+		x_cand = _trc_check_axis(0, start_pos, diff, dir, grid_size,
+								 end_pos, end_grid_pos, collision_callback)
+		# move along the y axis, finding the horizontal boundary collision, if any
+		y_cand = _trc_check_axis(1, start_pos, diff, dir, grid_size,
+								 end_pos, end_grid_pos, collision_callback)
 		
-		if x_cand == None and y_cand == None:
+		if x_cand[1][1]==None and y_cand[1][1]==None:
 			
 			# No collisions
 			result = (end_pos, None, None)
 		
-		elif x_cand != None and y_cand == None:
+		elif x_cand[1][1]!=None and y_cand[1][1]==None:
 			
-			# X collision only			
+			# X-axis collision only (with vertical boundary)			
 			result = x_cand[1]
 		
-		elif y_cand != None and x_cand == None:
+		elif y_cand[1][1]!=None and x_cand[1][1]==None:
 			
-			# Y collision only
+			# Y-axis collision only (with horizontal boundary)
 			result = y_cand[1]
 			
 		else:
 			
-			# Compare distances to x and y collisions
+			# Compare distances to x and y collisions and use the closest one as the
+			# collision point we return.
 			if x_cand[0] < y_cand[0]:
 				result = x_cand[1]
 			elif y_cand[0] < x_cand[0]:
@@ -235,34 +259,50 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 				# The collision testing counts a boundary as a collision if either 
 				# of the tiles are blocking, so we only need to test for combinations of
 				# the 2 adjacent blocks - the corner block is irrelevant unless both of
-				# these are non-blocking.
-				dir = (diff[0] / math.fabs(diff[0]), diff[1] / math.fabs(diff[1]))
+				# these are non-blocking.				
 				
 				grid_poses = {}
 				grid_blocks = {}
 				for i in [ - 1, 1]:
 					for j in [ - 1, 1]:
-						grid_poses[(i, j)] = (int(math.floor((x_cand[1][0][0] + grid_size[0] / 2 * i) / grid_size[0])),
-											 int(math.floor((x_cand[1][0][1] + grid_size[1] / 2 * j) / grid_size[1])))				
+						grid_poses[(i, j)] = (int(math.floor((x_cand[1][0][0] + grid_size[0] / 2.0 * i) / grid_size[0])),
+											 int(math.floor((x_cand[1][0][1] + grid_size[1] / 2.0 * j) / grid_size[1])))				
 						grid_blocks[(i, j)] = collision_callback(x_cand[1][0], grid_poses[(i, j)])
 				
 				root_half = math.sqrt(0.5)
 				
-				# Horizontal surface / side glance
+				# where dir is 0, i.e. travelling exactly horizontally or vertically, adjust
+				# dir to be positive for the following calculations
+				if dir[0]==0: dir[0] = 1
+				if dir[1]==0: dir[1] = 1
+				
+				# ??|XX
+				# --+--
+				#   |\
+				# Horizontal surface / side glance				
 				if grid_blocks[(dir[0] *- 1, dir[1])] and not grid_blocks[(dir[0], dir[1] *- 1)]:
 					
 					result = (x_cand[1][0], grid_poses[(dir[0] *- 1, dir[1])], (0, dir[1] *- 1))
-					
+				
+				# ??|
+				# --+--	
+				# XX|\
 				# Vertical surface / side glance
 				elif not grid_blocks[(dir[0] *- 1, dir[1])] and grid_blocks[(dir[0], dir[1] *- 1)]:
 					
 					result = (x_cand[1][0], grid_poses[(dir[0], dir[1] *- 1)], (dir[0] *- 1, 0))
-					
+				
+				# XX|
+				# --+--	
+				#   |\
 				# Convex corner
 				elif not grid_blocks[(dir[0] *- 1, dir[1])] and not grid_blocks[(dir[0], dir[1] *- 1)]:
 					
 					result = (x_cand[1][0], grid_poses[(dir[0], dir[1])], (dir[0] * root_half *- 1, dir[1] * root_half *- 1))
-					
+				
+				# ??|XX
+				# --+--	
+				# XX|\
 				# Concave corner / squeeze
 				else:
 					
@@ -504,7 +544,7 @@ class LosMap(object):
 		for j in range(ydist+1):
 			for i in range(xdist+1):
 				print "ray to %d,%d" % (i,j)
-				deps = []
+				deps = set()
 				# cast a ray from top left tile to this tile, recording the tiles passed
 				# through using the collision-check callback
 				tile_ray_cast((0.5,0.5), (i+0.5,j+0.5), (1,1),
@@ -516,7 +556,7 @@ class LosMap(object):
 
 	@staticmethod
 	def _los_callback(deps, tile):
-		#deps.append(tile)
+		deps.add(tile)
 		return False
 
 	@staticmethod
@@ -582,16 +622,16 @@ if __name__ == "__main__":
 		def setUp(self):
 			self.blocks = [
 				[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-				[1, 0, 0, 0, 0, 0, 0, 0 , 1 , 0, 1],
-				[1, 0, 0, 0, 0, 0, 0, 0 , 1 , 0, 1],
-				[1, 0, 0, 1, 1, 0, 0, 0 , 0 , 0, 1],
-				[1, 0, 0, 1, 0, 0, 0, 0 , 0 , 0, 1],
-				[1, 0, 0, 0, 0, 0, 1, 0 , 0 , 0, 1],
-				[1, 0, 0, 0, 0, 0, 1, 0 , 0 , 0, 1],
-				[1, 0, 0, 0, 0, 1, 0, 0 , 0 , 0, 1],
-				[1, 0, 1, 0, 0, 0, 0, 1 , 0 , 0, 1],
-				[1, 0, 0, 0, 0, 0, 0, 1 , 0 , 0, 1],
-				[1, 1, 1, 1, 1, 1, 1, 1 , 1 , 1, 1]
+				[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+				[1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+				[1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1],
+				[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 			  ]
 			self.root_half = math.sqrt(0.5)
 		
@@ -692,15 +732,65 @@ if __name__ == "__main__":
 			expected = ((5 * 32, 10 * 32), (5, 10), (0, - 1)) 
 			self.assertEqual(coll, expected)
 
-		def testWhuh(self):
-			import pdb
-			pdb.set_trace()
-			#result = tile_ray_cast((1.0,1.0),(1.5,0.5),(1,1), lambda p,t: False)
-			#self.assertEquals(((1.5,0.5),None,None),result)
-
+		def testUnbounded(self):
+		
 			result = tile_ray_cast((0.5,0.5),(2.5,1.5),(1,1), lambda p,t: False)
 			self.assertEquals(((2.5,1.5),None,None),result)
 			
+			result = tile_ray_cast((0.5,0.5),(-1.5,2.5),(1,1), lambda p,t: False)
+			self.assertEquals(((-1.5,2.5),None,None),result)
+			
+			result = tile_ray_cast((0.5,0.5),(-2.5,-1.5),(1,1), lambda p,t: False)
+			self.assertEquals(((-2.5,-1.5),None,None),result)
+			
+			result = tile_ray_cast((0.5,0.5),(1.5,-2.5),(1,1), lambda p,t: False)
+			self.assertEquals(((1.5,-2.5),None,None),result)
+			
+			result = tile_ray_cast((1.0,1.0),(1.5,0.5),(1,1), lambda p,t: False)
+			self.assertEquals(((1.5,0.5),None,None),result)
+			
+			result = tile_ray_cast((0.5,0.5),(-1.5,0.5),(1,1), lambda p,t: False)
+			self.assertEquals(((-1.5,0.5),None,None),result)
+			
+			result = tile_ray_cast((0.5,0.5),(0.5,1.5),(1,1), lambda p,t: False)
+			self.assertEquals(((0.5,1.5),None,None),result)
+			
+		def add_check(self, checks, tile):
+			checks.add(tile)
+			return False
+			
+		def testTilesChecked(self):
+			
+			checks = set()
+			result = tile_ray_cast((0.5,0.5),(1.5,0.5),(1,1), lambda p,t: self.add_check(checks,t))
+			self.assertEquals(((1.5,0.5),None,None), result)
+			self.assertEquals(set([(1,0)]), checks)
+			
+			checks = set()
+			result = tile_ray_cast((0.5,0.5),(-0.5,0.5),(1,1), lambda p,t: self.add_check(checks,t))
+			self.assertEquals(((-0.5,0.5),None,None), result)
+			self.assertEquals(set([(-1,0)]), checks)
+			
+			checks = set()
+			result = tile_ray_cast((0.5,0.5),(1.5,1.5),(1,1), lambda p,t: self.add_check(checks,t))
+			self.assertEquals(((1.5,1.5),None,None), result)
+			self.assertEquals(set([(1,0),(0,1),(1,1)]), checks)
+			
+			checks = set()
+			result = tile_ray_cast((0.5,0.5),(-0.5,-0.5),(1,1), lambda p,t: self.add_check(checks,t))
+			self.assertEquals(((-0.5,-0.5),None,None), result)
+			self.assertEquals(set([(-1,0),(0,-1),(-1,-1)]), checks)
+			
+			checks = set()
+			result = tile_ray_cast((0.5,0.5),(2.5,1.5),(1,1), lambda p,t: self.add_check(checks,t))
+			self.assertEquals(((2.5,1.5),None,None), result)
+			self.assertEquals(set([(1,0),(1,1),(2,1)]), checks)
+			
+			checks = set()
+			result = tile_ray_cast((0.5,0.5),(-1.5,-0.5),(1,1), lambda p,t: self.add_check(checks,t))
+			self.assertEquals(((-1.5,-0.5),None,None), result)
+			self.assertEquals(set([(-1,0),(-1,-1),(-2,-1)]), checks)
+						
 			
 	class TestPathfind(unittest.TestCase):
 		
@@ -915,18 +1005,18 @@ if __name__ == "__main__":
 			2 [ ][ ][ ]
 			"""
 			expected = {
-				(0,0) : [(0,0)],
-				(1,0) : [(1,0),(0,0)],
-				(2,0) : [(2,0),(1,0),(0,0)],
-				(0,1) : [(0,1),(0,0)],
-				(1,1) : [(1,1),(1,0),(0,1),(0,0)],
-				(2,1) : [(2,1),(1,1),(1,0),(0,0)],
-				(0,2) : [(0,2),(0,1),(0,0)],
-				(1,2) : [(1,2),(1,1),(0,1),(0,0)],
-				(2,2) : [(2,2),(2,1),(1,2),(1,1),(1,0),(0,1),(0,0)]
+				(0,0) : set(),
+				(1,0) : set([(1,0)]),
+				(2,0) : set([(2,0),(1,0)]),
+				(0,1) : set([(0,1)]),
+				(1,1) : set([(1,1),(1,0),(0,1)]),
+				(2,1) : set([(2,1),(1,1),(1,0)]),
+				(0,2) : set([(0,2),(0,1)]),
+				(1,2) : set([(1,2),(1,1),(0,1)]),
+				(2,2) : set([(2,2),(2,1),(1,2),(1,1),(1,0),(0,1)])
 			}
-			#lm = LosMap.generate(2,2)
-			#self.assertEquals(expected, lm.data)
+			lm = LosMap.generate(2,2)
+			self.assertEquals(expected, lm.data)
 		
 		def test_get_deps(self):
 			pass
