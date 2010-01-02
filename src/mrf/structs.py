@@ -1,4 +1,4 @@
-"""
+"""	
 Copyright (c) 2009 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
@@ -32,8 +32,13 @@ Contains data structures:
 	IntrospectType - metaclass which invokes setup method on classes created
 	
 """
-class TicketQueue(object):
 
+import copy
+
+class TicketQueue(object):
+	"""	
+	Queue for restricting actions to x per game cycle	
+	"""
 	def __init__(self, max_sim=1):
 		self.max_sim = max_sim
 		self.queue = [set([])]
@@ -70,13 +75,97 @@ def iscollection(item):
 	
 	
 class IntrospectType(type):
-	
+	"""	
+	Metaclass allowing introspection of class definition
+	on creation
+	"""
 	def __new__(typ, *args, **kargs):
 		cls = type.__new__(typ, *args, **kargs)
 		cls._class_init()
 		return cls 
 		
-		
+
+class TagLookup(object):	
+	"""	
+	Collection allowing groups of items to be associated with 
+	multiple different keys and looked up using them.
+	"""
+
+	def __init__(self):
+		self.clear()
+
+	def has_item(self, item):
+		return self.items.has_key(item)
+
+	def has_tag(self, tag):
+		return self.groups.has_key(tag)
+
+	def add_item(self, item):
+		if self.has_item(item):
+			self.remove_item(item)
+		self.items[item] = set()
+
+	def remove_item(self, item):
+		if self.has_item(item):
+			item_tags = self.items[item]
+			for tag in item_tags:
+				self.untag_item(item, tag)
+			del(self.items[item])
+
+	def tag_item(self, item, tag):
+		if not self.has_item(item):
+			self.add_item(item)
+		if not self.has_tag(tag):
+			self.add_tag(tag)
+		self.items[item].add(tag)
+		self.groups[tag].add(item)
+
+	def untag_item(self, item, tag):
+		if self.has_item(item) and self.has_tag(tag):
+			self.items[item].remove(tag)
+			self.groups[tag].remove(item)
+
+	def add_tag(self, tag):
+		if self.has_tag(tag):
+			self.remove_tag(tag)
+		self.groups[tag] = set()
+
+	def remove_tag(self, tag):
+		if self.has_tag(tag):
+			for item in self.groups[tag]:
+				self.untag_item(item, tag)
+			del(self.groups[tag])
+			
+	def get_items(self):
+		return set(self.items.keys())
+
+	def get_tags(self):
+		return set(self.groups.keys())
+
+	def get_item_tags(self, item):
+		if self.has_item(item):
+			return copy.copy(self.items[item])
+		else:
+			return set()	
+
+	def get_tag_items(self, tag):
+		if self.has_tag(tag):
+			return copy.copy(self.groups[tag])
+		else:
+			return set()
+
+	def clear(self):
+		self.items = {}
+		self.groups = {}
+	
+	def __getitem__(self, key):
+		# index can be used to retrieve tag groups
+		return self.get_tag_items(key)
+
+	def __contains__(self, key):
+		# "in" operator can be used to test if item is present
+		return self.has_item(key)
+
 # -- Testing -----------------------------
 
 if __name__ == "__main__":
@@ -106,6 +195,73 @@ if __name__ == "__main__":
 			q.advance()
 			self.assertEquals(1,len(q.queue))
 	
+	class TestTagLookup(unittest.TestCase):
+
+		def testAddRemoveItem(self):
+			t = TagLookup()
+			t.remove_item("foo")
+			t.add_item("foo")
+			t.add_item("goo")
+			self.assertEquals(True,t.has_item("foo"))
+			self.assertEquals(False,t.has_item("hoo"))
+			self.assertEquals(set(["foo","goo"]),t.get_items())
+			t.remove_item("foo")
+			self.assertEquals(set(["goo"]),t.get_items())
+			t.remove_item("goo")
+			self.assertEquals(set(),t.get_items())
+
+		def testAddRemoveTag(self):
+			t = TagLookup()
+			t.remove_tag("bar")
+			t.add_tag("bar")
+			t.add_tag("car")
+			self.assertEquals(True,t.has_tag("bar"))
+			self.assertEquals(False,t.has_tag("dar"))
+			self.assertEquals(set(["bar","car"]),t.get_tags())
+			t.remove_tag("bar")
+			self.assertEquals(set(["car"]),t.get_tags())
+			t.remove_tag("car")
+			self.assertEquals(set(),t.get_tags())
+
+		def testTaggingUntagging(self):
+			t = TagLookup()
+			t.tag_item("foo", "bar")
+			t.tag_item("goo", "car")
+			t.tag_item("foo", "car")
+			self.assertEquals(set(["foo","goo"]),t.get_items())
+			self.assertEquals(set(["bar","car"]),t.get_tags())
+			self.assertEquals(set(["bar","car"]),t.get_item_tags("foo"))
+			self.assertEquals(set(["car"]),t.get_item_tags("goo"))
+			self.assertEquals(set(),t.get_item_tags("hoo"))
+			self.assertEquals(set(["foo"]),t.get_tag_items("bar"))
+			self.assertEquals(set(["foo","goo"]),t.get_tag_items("car"))
+			self.assertEquals(set(),t.get_tag_items("dar"))
+			t.untag_item("hoo","dar")
+			t.untag_item("foo","bar")
+			self.assertEquals(set(["car"]),t.get_item_tags("foo"))
+			self.assertEquals(set(),t.get_tag_items("bar"))
+
+		def testClear(self):
+			t = TagLookup()
+			t.tag_item("foo", "bar")
+			t.tag_item("foo", "car")
+			t.tag_item("goo", "car")
+			self.assertEquals(2, len(t.get_items()))
+			self.assertEquals(2, len(t.get_tags()))
+			t.clear()
+			self.assertEquals(set(),t.get_items())
+			self.assertEquals(set(),t.get_tags())
+
+		def testSpecialMethods(self):
+			t = TagLookup()
+			t.tag_item("foo", "bar")
+			t.tag_item("foo", "car")
+			t.tag_item("goo", "car")
+			self.assertEquals(set(["foo","goo"]),t["car"])
+			self.assertEquals(set(),t["dar"])
+			self.assertEquals(True, "foo" in t)
+			self.assertEquals(False, "hoo" in t)
+
 	unittest.main()
 	
 	
