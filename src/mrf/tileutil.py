@@ -180,8 +180,10 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
 								to project the ray.
 		collision_callback  Function which will be called to determine whether a square
 								on the grid should stop the ray or not. See section below. 
-								Note the sequence in which this function is called does not 
-								correspond with the path of the ray.							
+								Note that while the squares checked will correspond to those
+								along the path of the ray, they will not be checked in order
+								and squares may be checked more than once.
+															
 	Returns:
 		A tuple containing:
 			The coordinates of the stopping point as a 2-item tuple
@@ -543,7 +545,6 @@ class LosMap(object):
 		data = {}
 		for j in range(ydist+1):
 			for i in range(xdist+1):
-				print "ray to %d,%d" % (i,j)
 				deps = set()
 				# cast a ray from top left tile to this tile, recording the tiles passed
 				# through using the collision-check callback
@@ -577,11 +578,12 @@ class LosMap(object):
 		# TODO
 		pass
 
-	def is_tile_visible(self, tile, from_tile, seethru_callback):
+	def is_tile_visible(self, tile, from_tile, seethru_callback, checked=None):
 		"""	
 		Tests whether the centre of tile is in line-of-sight from the centre of 
 		from_tile. seethru_callback should be a function to determine if a tile
-		in the tile map can be seen through or not.
+		in the tile map can be seen through or not. May optionally provide checked
+		param - a dictionary in which to cache tile visibility results
 		
 		seethru_callback
 			params:
@@ -591,24 +593,38 @@ class LosMap(object):
 				Should return True if a line of sight can pass through 
 				this tile, or False if the tile blocks visibility
 		"""
-		# TODO
-		pass
+		relpos = (tile[0]-from_tile[0], tile[1]-from_tile[1])
+		return self._tile_vis(relpos, from_tile, seethru_callback, checked)
 
 	def get_deps(self, relpos):
-		deps = self.data[map(int,map(math.fabs,relpos))]
+		deps = self.data[tuple(map(int,map(math.fabs,relpos)))]
 		if relpos[0] < 0:
-			deps = [(-d[0],d[1]) for d in deps]
+			deps = set([(-d[0],d[1]) for d in deps])
 		if relpos[1] < 0:
-			deps = [(d[0],-d[1]) for d in deps]
+			deps = set([(d[0],-d[1]) for d in deps])
 		return deps
 
-	def _tile_vis(self, relpos, checked=None):
+	def _tile_vis(self, relpos, from_pos, seethru_callback, checked=None):
+		
+		# check if we have a cached result to use
 		if checked == None:
 			checked = {}
 		if checked.has_key(relpos):
 			return checked[relpos]
 		
+		# use callback to test tile's opacity
+		check_pos = (from_pos[0]+relpos[0], from_pos[1]+relpos[1])
+		if not seethru_callback(check_pos):
+			return False
 		
+		# check that dependent tiles are visible by recursing
+		visible = True
+		for dep in self.get_deps(relpos):
+			if not self._tile_vis(dep, from_pos, seethru_callback, checked):
+				visible = False
+				break
+			
+		return visible
 
 #-------------------------------------------------------------------------------
 # Testing
@@ -997,6 +1013,9 @@ if __name__ == "__main__":
 		
 	class TestLosMap(unittest.TestCase):
 			
+		def setUp(self):
+			self.lm = LosMap.generate(2,2)
+			
 		def test_generate(self):
 			"""	
 			   0  1  2
@@ -1014,13 +1033,20 @@ if __name__ == "__main__":
 				(0,2) : set([(0,2),(0,1)]),
 				(1,2) : set([(1,2),(1,1),(0,1)]),
 				(2,2) : set([(2,2),(2,1),(1,2),(1,1),(1,0),(0,1)])
-			}
-			lm = LosMap.generate(2,2)
-			self.assertEquals(expected, lm.data)
+			}			
+			self.assertEquals(expected, self.lm.data)
 		
 		def test_get_deps(self):
-			pass
-					
+			
+			self.assertEquals(set([(1,0),(1,1),(2,1)]), self.lm.get_deps((2,1)))
+			self.assertEquals(set([(0,1),(-1,1),(-1,2)]), self.lm.get_deps((-1,2)))
+			self.assertEquals(set([(-1,0),(-1,-1),(-2,-1)]), self.lm.get_deps((-2,-1)))
+			self.assertEquals(set([(0,-1),(1,-1),(1,-2)]), self.lm.get_deps((1,-2)))
+
+		def test_tile_vis(self):
+			
+			# TODO
+			self.assertEquals()
 
 	unittest.main()
 	
