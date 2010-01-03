@@ -484,6 +484,29 @@ class GameNode(Node):
 	def handle_MsgChat(self, message):
 		pass
 
+class GameClientHandler(ClientHandler, StateMachineBase):
+	"""	
+	ClientHandler used by GameServer
+	"""
+	
+	class StateConnecting(StateMachineBase.State):
+		
+		def connect_request(self, message):
+			#TODO
+			pass
+
+	class StateInGame(StateMachineBase.State):
+		pass
+
+	def __init__(self, server, socket, id, encoder, decoder):
+		ClientHandler.__init__(self, server, socket, id, encoder, decoder)
+		StateMachineBase.__init__(self)
+		self.change_state("StateConnecting")
+
+	@statemethod
+	def connect_request(self, message):
+		pass
+
 class GameServer(GameNode, Server):
 	"""	
 	Basic game server for use with GameClient
@@ -522,29 +545,6 @@ class GameServer(GameNode, Server):
 		self.handle_client_departure(message.player_id)
 		msg = MsgPlayerDisconnect([Message.RECIPIENT_ALL_CLIENTS],message.player_id,message.reason)
 		self.send(msg)
-
-class GameClientHandler(ClientHandler, StateMachineBase):
-	"""	
-	ClientHandler used by GameServer
-	"""
-	
-	class StateConnecting(StateMachineBase.State):
-		
-		def connect_request(self, message):
-			#TODO
-			pass
-
-	class StateInGame(StateMachineBase.State):
-		pass
-
-	def __init__(self, server, socket, id, encoder, decoder):
-		ClientHandler.__init__(self, server, socket, id, encoder, decoder)
-		StateMachineBase.__init__(self)
-		self.change_state("StateConnecting")
-
-	@statemethod
-	def connect_request(self, message):
-		pass
 
 class GameClient(GameNode, Client, StateMachineBase):
 	"""	

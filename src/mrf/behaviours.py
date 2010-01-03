@@ -33,7 +33,7 @@ the Decorator pattern, but with some differences.
 # TODO: Removing behaviours 
 
 import types
-import structs
+import mrf.structs
 
 
 class BehaviourError(Exception):
@@ -49,7 +49,7 @@ class Behavable(object):
 	that are attached to it at runtime.
 	"""
 	
-	__metaclass__ = structs.IntrospectType
+	__metaclass__ = mrf.structs.IntrospectType
 	
 	@classmethod
 	def _class_init(cls):

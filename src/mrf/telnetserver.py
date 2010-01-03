@@ -31,7 +31,7 @@ Extremely basic telnet server implementation
 
 import socket
 import thread
-from statemachine import StateMachine
+from mrf.statemachine import StateMachine
 			
 # Commands			
 CMD_SE = 240

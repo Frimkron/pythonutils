@@ -34,7 +34,7 @@ Contains classes for parsing strings into parse trees. Points of interest:
 """
 
 import sys
-import ascii
+import mrf.ascii
 
 """
 RE syntax:
@@ -711,7 +711,7 @@ class ReMatcher(object):
 			return True
 		
 
-class SaPrinter(ascii.Canvas):
+class SaPrinter(mrf.ascii.Canvas):
 	"""
 	Class for representing a finite state automaton in ascii art
 	"""
@@ -1533,14 +1533,14 @@ class LrParser(object):
 		self.accepted = True
 		
 		
-class LrTablePrinter(ascii.Canvas):
+class LrTablePrinter(mrf.ascii.Canvas):
 	"""
 	Class for printing out an ascii art representation of an LrParser object's 
 	parsing table.
 	"""
 	
 	def __init__(self):
-		ascii.Canvas.__init__(self)
+		mrf.ascii.Canvas.__init__(self)
 		self.state_order = []
 		self.symbol_order = []
 		

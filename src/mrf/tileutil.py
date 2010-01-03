@@ -34,12 +34,6 @@ Contains utilities for dealing with tile maps:
 	render_tilemap		- function for rendering a tile map
 """
 
-"""	
-TODO:
- * complete LosMap class.
- * tests for LosMap
-"""
-
 from mrf.search import *
 import math
 import os

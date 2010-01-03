@@ -62,13 +62,13 @@ class StateMachineBase(object):
 		"""
 		Base class for state machine states
 		"""
-        
+
 		def __init__(self, mach):
 			self.machine = mach
-            
+
 		def get_state(self):
-			  return self.__class__.__name__
-            
+			return self.__class__.__name__
+
 		def enter_state(self):
 			pass
 		
@@ -90,7 +90,7 @@ class StateMachineBase(object):
 	@statemethod
 	def get_state(self):
 		return None
-        
+
 	def change_state(self, statename):
 		if self.state != None:
 			self.state.exit_state()
@@ -150,12 +150,12 @@ class StateMachine(StateMachineBase):
 				return object.__getattribute__(self, attr)
 		else:
 			return object.__getattribute__(self, attr)
-     
+
 	def get_state(self):
 		return None   
 	
-  
-  
+
+
 # ----------- Testing ------------------------------------------------      
 if __name__ == "__main__":
 	import unittest

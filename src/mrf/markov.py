@@ -28,8 +28,8 @@ Markov chains module
 
 """
 
-import mathutil
-import structs
+import mrf.mathutil
+import mrf.structs
 
 class Markov(object):
 
@@ -45,14 +45,14 @@ class Markov(object):
 	def prepare_from(self, fr):
 		"""checks items in from match order value and returns from items as tuple"""
 		if self.order == 1:
-			if structs.iscollection(fr):
+			if mrf.structs.iscollection(fr):
 				if len(fr) > 1 or len(fr) < 1:
 					raise TypeError("Expected \"from\" param to have length of 1")
 				return tuple(fr)
 			else:
 				return (fr,)
 		else:
-			if not structs.iscollection(fr):
+			if not mrf.structs.iscollection(fr):
 				raise TypeError("Expected \"from\" param to have length of %d" % self.order)
 			return tuple(fr)
 			
@@ -131,7 +131,7 @@ class Markov(object):
 		fr = self.prepare_from(fr)
 		self.make_from(fr)
 		items = dict(((t,self.graph[fr]["tos"][t]["prob"]) for t in self.graph[fr]["tos"]))
-		return mathutil.weighted_roulette(items,normalised=True)
+		return mrf.mathutil.weighted_roulette(items,normalised=True)
 	
 	def chain(self, strat):
 		chain = []		

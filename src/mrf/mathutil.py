@@ -267,7 +267,7 @@ class Line(object):
 		a Vector2d instance. Returns the distance between the point and the line
 		segment.
 		"""
-		return dist_to_line_seg((a.to_tuple(),b.to_tuple()), point.to_tuple())
+		return dist_to_line_seg((self.a.to_tuple(),self.b.to_tuple()), point.to_tuple())
 
 	def __repr__(self):
 		return "Line(%s,%s)" % (repr(self.a),repr(self.b))
