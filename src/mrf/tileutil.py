@@ -42,6 +42,8 @@ TODO:
 
 from mrf.search import *
 import math
+import os
+import os.path
 
 def _trc_check_axis(axis, start_pos, diff, dir, grid_size, end_pos, 
 		end_grid_pos, collision_callback):
@@ -549,15 +551,16 @@ class LosMap(object):
 				# cast a ray from top left tile to this tile, recording the tiles passed
 				# through using the collision-check callback
 				tile_ray_cast((0.5,0.5), (i+0.5,j+0.5), (1,1),
-					lambda chpos,chtile: LosMap._los_callback(deps, chtile))
+					lambda chpos,chtile: LosMap._los_callback(deps, chtile, (i,j)))
 				# record the dependencies in the map
 				data[(i,j)] = deps
 		
 		return LosMap(data)		
 
 	@staticmethod
-	def _los_callback(deps, tile):
-		deps.add(tile)
+	def _los_callback(deps, tile, dest_tile):
+		if tile != dest_tile:
+			deps.add(tile)
 		return False
 
 	@staticmethod
@@ -565,8 +568,18 @@ class LosMap(object):
 		"""	
 		Create a line of sight map by loading the map from a file 
 		"""
-		# TODO
-		pass
+		with open(filename,'r') as file:
+			data = {}
+			for line in file:
+				bits = line[:-1].split(":")
+				k = tuple(map(int,bits[0].split(",")))
+				if len(bits[1]) > 0:
+					deps = set([tuple(map(int,x.split(","))) for x in bits[1].split("|")])
+				else:
+					deps = set()
+				data[k] = deps
+		
+		return LosMap(data)
 
 	def __init__(self, data):
 		self.data = data
@@ -575,8 +588,11 @@ class LosMap(object):
 		"""	
 		Save the line of sight map to file
 		"""
-		# TODO
-		pass
+		with open(filename,'w') as file:
+			for k in self.data:
+				line = "%d,%d:" % k
+				line += "|".join([("%d,%d" % x) for x in self.data[k]])					
+				file.write(line+"\n")
 
 	def is_tile_visible(self, tile, from_tile, seethru_callback, checked=None):
 		"""	
@@ -612,18 +628,21 @@ class LosMap(object):
 		if checked.has_key(relpos):
 			return checked[relpos]
 		
+		visible = True
+		
 		# use callback to test tile's opacity
 		check_pos = (from_pos[0]+relpos[0], from_pos[1]+relpos[1])
 		if not seethru_callback(check_pos):
-			return False
+			visible = False
+		else:
 		
-		# check that dependent tiles are visible by recursing
-		visible = True
-		for dep in self.get_deps(relpos):
-			if not self._tile_vis(dep, from_pos, seethru_callback, checked):
-				visible = False
-				break
+			# check that dependent tiles are visible by recursing			
+			for dep in self.get_deps(relpos):
+				if not self._tile_vis(dep, from_pos, seethru_callback, checked):
+					visible = False
+					break				
 			
+		checked[relpos] = visible
 		return visible
 
 #-------------------------------------------------------------------------------
@@ -1015,6 +1034,14 @@ if __name__ == "__main__":
 			
 		def setUp(self):
 			self.lm = LosMap.generate(2,2)
+			self.lm2 = LosMap.generate(6,4)
+			self.map = [
+				[0,0,0,0,0,0,0],
+				[0,0,0,0,0,0,0],
+				[0,0,0,1,0,0,0],
+				[0,0,0,0,0,0,0],
+				[0,0,0,0,0,0,0]				
+			]			
 			
 		def test_generate(self):
 			"""	
@@ -1025,28 +1052,55 @@ if __name__ == "__main__":
 			"""
 			expected = {
 				(0,0) : set(),
-				(1,0) : set([(1,0)]),
-				(2,0) : set([(2,0),(1,0)]),
-				(0,1) : set([(0,1)]),
-				(1,1) : set([(1,1),(1,0),(0,1)]),
-				(2,1) : set([(2,1),(1,1),(1,0)]),
-				(0,2) : set([(0,2),(0,1)]),
-				(1,2) : set([(1,2),(1,1),(0,1)]),
-				(2,2) : set([(2,2),(2,1),(1,2),(1,1),(1,0),(0,1)])
+				(1,0) : set(),
+				(2,0) : set([(1,0)]),
+				(0,1) : set(),
+				(1,1) : set([(1,0),(0,1)]),
+				(2,1) : set([(1,1),(1,0)]),
+				(0,2) : set([(0,1)]),
+				(1,2) : set([(1,1),(0,1)]),
+				(2,2) : set([(2,1),(1,2),(1,1),(1,0),(0,1)])
 			}			
 			self.assertEquals(expected, self.lm.data)
 		
 		def test_get_deps(self):
 			
-			self.assertEquals(set([(1,0),(1,1),(2,1)]), self.lm.get_deps((2,1)))
-			self.assertEquals(set([(0,1),(-1,1),(-1,2)]), self.lm.get_deps((-1,2)))
-			self.assertEquals(set([(-1,0),(-1,-1),(-2,-1)]), self.lm.get_deps((-2,-1)))
-			self.assertEquals(set([(0,-1),(1,-1),(1,-2)]), self.lm.get_deps((1,-2)))
+			self.assertEquals(set([(1,0),(1,1)]), self.lm.get_deps((2,1)))
+			self.assertEquals(set([(0,1),(-1,1)]), self.lm.get_deps((-1,2)))
+			self.assertEquals(set([(-1,0),(-1,-1)]), self.lm.get_deps((-2,-1)))
+			self.assertEquals(set([(0,-1),(1,-1)]), self.lm.get_deps((1,-2)))
 
-		def test_tile_vis(self):
+		def los_callback(self, tile):
+			if 0 <= tile[0] < 7 and 0 <= tile[1] < 5:
+				return self.map[tile[1]][tile[0]] == 0
+			else:
+				return False
+
+		def test_tile_vis(self):			
+			# across open space
+			self.assertEquals(True,self.lm2.is_tile_visible((1,0), (2,4), self.los_callback))
+			# through wall
+			self.assertEquals(False,self.lm2.is_tile_visible((1,3), (5,1), self.los_callback))
+			# across corner
+			self.assertEquals(False,self.lm2.is_tile_visible((4,2), (3,3), self.los_callback))
+			# into wall
+			self.assertEquals(False,self.lm2.is_tile_visible((3,2), (5,2), self.los_callback))
+			# out of wall
+			self.assertEquals(True,self.lm2.is_tile_visible((5,2), (3,2), self.los_callback))
 			
-			# TODO
-			self.assertEquals()
+		def test_save_load(self):
+			
+			filename = "losmaptest.tmp"
+			if os.path.exists(filename):
+				os.remove(filename)
+			try:
+				self.lm.save(filename)
+				lm3 = LosMap.load(filename)
+				self.assertEquals(lm3.data, self.lm.data)
+			finally:
+				# cleanup
+				if os.path.exists(filename):
+					os.remove(filename)
 
 	unittest.main()
 	
