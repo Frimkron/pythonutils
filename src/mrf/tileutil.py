@@ -541,21 +541,36 @@ class LosMap(object):
 		data = {}
 		for j in range(ydist+1):
 			for i in range(xdist+1):
-				deps = set()
+				deps = []
 				# cast a ray from top left tile to this tile, recording the tiles passed
 				# through using the collision-check callback
 				tile_ray_cast((0.5,0.5), (i+0.5,j+0.5), (1,1),
-					lambda chpos,chtile: LosMap._los_callback(deps, chtile, (i,j)))
+					lambda chpos,chtile: LosMap._los_callback(deps, chtile))
+				# sort the dependencies into ray path order
+				deps.sort(LosMap._los_sort)
 				# record the dependencies in the map
 				data[(i,j)] = deps
 		
 		return LosMap(data)		
 
 	@staticmethod
-	def _los_callback(deps, tile, dest_tile):
-		if tile != dest_tile:
-			deps.add(tile)
+	def _los_callback(deps, tile):
+		if not tile in deps:
+			deps.append(tile)
 		return False
+	
+	@staticmethod
+	def _los_sort(a, b):
+		if a[1] > b[1]:
+			return 1
+		elif a[1] < b[1]:
+			return -1
+		elif a[0] > b[0]:
+			return 1
+		elif a[0] < b[0]:
+			return -1
+		else:
+			return 0			
 
 	@staticmethod
 	def load(filename):
@@ -568,9 +583,9 @@ class LosMap(object):
 				bits = line[:-1].split(":")
 				k = tuple(map(int,bits[0].split(",")))
 				if len(bits[1]) > 0:
-					deps = set([tuple(map(int,x.split(","))) for x in bits[1].split("|")])
+					deps = [tuple(map(int,x.split(","))) for x in bits[1].split("|")]
 				else:
-					deps = set()
+					deps = []
 				data[k] = deps
 		
 		return LosMap(data)
@@ -604,40 +619,32 @@ class LosMap(object):
 				this tile, or False if the tile blocks visibility
 		"""
 		relpos = (tile[0]-from_tile[0], tile[1]-from_tile[1])
-		return self._tile_vis(relpos, from_tile, seethru_callback, checked)
+				
+		# check if we have a cached result to use
+		if checked!=None and checked.has_key(relpos):
+			return checked[relpos]
+		
+		# use callback to test each dependency's opacity
+		visible = True
+		for dep in self.get_deps(relpos):
+			check_pos = (from_tile[0]+dep[0], from_tile[1]+dep[1])
+			dep_vis = seethru_callback(check_pos)
+			if checked!=None:
+				checked[dep] = dep_vis 
+			if not dep_vis:
+				visible = False
+				break
+
+		return visible
 
 	def get_deps(self, relpos):
 		deps = self.data[tuple(map(int,map(math.fabs,relpos)))]
 		if relpos[0] < 0:
-			deps = set([(-d[0],d[1]) for d in deps])
+			deps = [(-d[0],d[1]) for d in deps]
 		if relpos[1] < 0:
-			deps = set([(d[0],-d[1]) for d in deps])
-		return deps
-
-	def _tile_vis(self, relpos, from_pos, seethru_callback, checked=None):
+			deps = [(d[0],-d[1]) for d in deps]
+		return deps		
 		
-		# check if we have a cached result to use
-		if checked == None:
-			checked = {}
-		if checked.has_key(relpos):
-			return checked[relpos]
-		
-		visible = True
-		
-		# use callback to test tile's opacity
-		check_pos = (from_pos[0]+relpos[0], from_pos[1]+relpos[1])
-		if not seethru_callback(check_pos):
-			visible = False
-		else:
-		
-			# check that dependent tiles are visible by recursing			
-			for dep in self.get_deps(relpos):
-				if not self._tile_vis(dep, from_pos, seethru_callback, checked):
-					visible = False
-					break				
-			
-		checked[relpos] = visible
-		return visible
 
 #-------------------------------------------------------------------------------
 # Testing
@@ -1045,24 +1052,24 @@ if __name__ == "__main__":
 			2 [ ][ ][ ]
 			"""
 			expected = {
-				(0,0) : set(),
-				(1,0) : set(),
-				(2,0) : set([(1,0)]),
-				(0,1) : set(),
-				(1,1) : set([(1,0),(0,1)]),
-				(2,1) : set([(1,1),(1,0)]),
-				(0,2) : set([(0,1)]),
-				(1,2) : set([(1,1),(0,1)]),
-				(2,2) : set([(2,1),(1,2),(1,1),(1,0),(0,1)])
+				(0,0) : [],
+				(1,0) : [(1,0)],
+				(2,0) : [(1,0),(2,0)],
+				(0,1) : [(0,1)],
+				(1,1) : [(1,0),(0,1),(1,1)],
+				(2,1) : [(1,0),(1,1),(2,1)],
+				(0,2) : [(0,1),(0,2)],
+				(1,2) : [(0,1),(1,1),(1,2)],
+				(2,2) : [(1,0),(0,1),(1,1),(2,1),(1,2),(2,2)]
 			}			
 			self.assertEquals(expected, self.lm.data)
 		
 		def test_get_deps(self):
 			
-			self.assertEquals(set([(1,0),(1,1)]), self.lm.get_deps((2,1)))
-			self.assertEquals(set([(0,1),(-1,1)]), self.lm.get_deps((-1,2)))
-			self.assertEquals(set([(-1,0),(-1,-1)]), self.lm.get_deps((-2,-1)))
-			self.assertEquals(set([(0,-1),(1,-1)]), self.lm.get_deps((1,-2)))
+			self.assertEquals([(1,0),(1,1),(2,1)], self.lm.get_deps((2,1)))
+			self.assertEquals([(0,1),(-1,1),(-1,2)], self.lm.get_deps((-1,2)))
+			self.assertEquals([(-1,0),(-1,-1),(-2,-1)], self.lm.get_deps((-2,-1)))
+			self.assertEquals([(0,-1),(1,-1),(1,-2)], self.lm.get_deps((1,-2)))
 
 		def los_callback(self, tile):
 			if 0 <= tile[0] < 7 and 0 <= tile[1] < 5:
@@ -1095,6 +1102,37 @@ if __name__ == "__main__":
 				# cleanup
 				if os.path.exists(filename):
 					os.remove(filename)
+
+	def los_timings():
+	
+		import time
+	
+		def task(size, tests, callback):
+			frompos = (size//2,size//2)
+			results = []
+			for x in range(tests):
+				start = time.time()
+				cache = {}
+				for j in range(size):
+					for i in range(size):
+						callback(frompos,(i,j),cache)
+				finish = time.time()
+				results.append(finish-start)
+			return sum(results)/float(tests)
+		
+		for size in (10,20,30,40,50):
+			print "size %d" % size
+			
+			lm = LosMap.generate(int(size*0.6),int(size*0.6))
+		
+			res_losmap = task(size, 10, lambda frompos, topos, cache: lm.is_tile_visible(topos, frompos,
+					lambda pos: True, cache))
+			res_raycast = task(size, 10, lambda frompos, topos, cache: tile_ray_cast(
+					(frompos[0]+0.5,frompos[1]+0.5), (topos[0]+0.5,topos[1]+0.5), (1,1), 
+					lambda pos, tile: False)[1]==None)
+			
+			print "losmap: %f, raycast: %f" % (res_losmap,res_raycast)
+			print
 
 	unittest.main()
 	
