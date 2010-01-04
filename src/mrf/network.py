@@ -4,17 +4,20 @@ import threading
 import json
 import sys
 import time
+import copy
 from mrf.statemachine import StateMachineBase, statemethod
+from mrf.structs import TagLookup
 
 """	
-TODO:
- * GameClientHandler should similarly perform handshake - not add client to pool until negotiated.
+TODO: Should unregister player on server when client disconnects
+TODO: Should notify players when player disconnects
+TODO: GameClientHandler should similarly perform handshake - not add client to pool until negotiated.
 	Do this by having server delegate handling of connect request to stateful client handler.
 	Server should group clients in different ways - should have separate group for connected
 	players, for purposes of counting players, etc.
- * GameServer/GameClient classes which throw these messages around
- * Refactor telnet module to use generic client/server classes
- * Unit tests for client/server
+TODO: GameServer/GameClient classes which throw these messages around
+TODO: Refactor telnet module to use generic client/server classes
+TODO: Unit tests for client/server
 
              Node                 SkListener		SkListener:		
             ^ ^ ^                   ^ ^				send
@@ -44,10 +47,19 @@ class Server(Node):
 	"""	
 	A socket server
 	"""
+	
+	SERVER = -1
+	GROUP_ALL = "all"
+	GROUP_CLIENTS = "clients"
 
 	def __init__(self, client_class, port):
 		self.client_class = client_class
 		self.port = port
+		
+		self.next_id = 0
+		self.handlers = {}		
+		self.node_groups = TagLookup()
+		
 
 	def run(self):
 		"""	
@@ -55,7 +67,7 @@ class Server(Node):
 		For each new client a client handler of the specified type is created in a new
 		thread.
 		"""
-
+		
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
 			s.bind((socket.gethostname(),self.port))
@@ -63,6 +75,8 @@ class Server(Node):
 		
 			self.next_id = 0
 			self.handlers = {}
+			self.node_groups = TagLookup()
+			self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
 		
 			while True:
 				conn,addr = s.accept()
@@ -77,13 +91,20 @@ class Server(Node):
 		"""	
 		Client with given id has connected
 		"""
-		pass
+		# tag in appropriate groups
+		self.node_groups.tag_item(client_id, Server.GROUP_ALL)
+		self.node_groups.tag_item(client_id, Server.GROUP_CLIENTS)
 		
 	def handle_client_departure(self, client_id):
 		"""	
 		Client with given id has departed. Removes the associated
 		handler.
 		"""
+		# remove from groups
+		self.node_groups.remove_item(client_id)
+		
+		# remove handler
+		# TODO: should stop thread?
 		del(self.handlers[client_id])
 
 	def received(self, message):
@@ -96,17 +117,35 @@ class Server(Node):
 		"""	
 		Request appropriate handlers send message to their clients
 		"""
-		recips = message.get_recipients()
+		recips = self.resolve_message_recipients(message)
 
-		if message.is_for_server():
+		if Server.SERVER in recips:
+			recips.remove(Server.SERVER)
 			self.received(message)
 
-		for c in message.get_client_recipients():
-			if self.handlers.has_key(c):
-				self.handlers[c].send(message)
+		for r in recips:
+			if self.handlers.has_key(r):
+				self.handlers[r].send(message)
+
+	def resolve_message_recipients(self, message):
+		exclude = set()
+		for ex in message.get_excludes():
+			if isinstance(ex, basestring):
+				exclude = exclude.union(self.node_groups.get_tag_items(ex))
+			else:
+				exclude.add(ex)
+		
+		recips = set()
+		for rec in message.get_recipients():
+			if isinstance(rec, basestring):
+				recips = recips.union(self.node_groups.get_tag_items(rec))
+			else:
+				recips.add(rec)
+				
+		return recips.difference(exclude)
 
 	def get_node_id(self):
-		return -1
+		return Server.SERVER
 
 	def get_num_clients(self):
 		return len(self.handlers)
@@ -215,54 +254,33 @@ class Message(object):
 	Base class for network messages
 	"""
 
-	RECIPIENT_SERVER = -1
-	RECIPIENT_ALL_CLIENTS = -2
-	RECIPIENT_ALL_OTHER_CLIENTS = -3
-	RECIPIENT_ALL = -4
-
-	SENDER_SERVER = -1
-
-	def __init__(self, recipients, sender=-1):
+	def __init__(self, recipients, excludes, sender=Server.SERVER):
 		"""	
 		Initializes the message with the given recipient list and 
 		sender id.
 		"""
 		self.recipients = recipients
+		self.excludes = excludes
 		self.sender = sender
 
 	def get_recipients(self):
 		"""	
-		Returns the list of recipients, which may include special constants
-		to represent groups of recipients such as Message.RECIPIENT_ALL_CLIENTS
+		Returns the list of recipients, which may consist of a mixture of client
+		id numbers and strings naming node groups.
 		"""
 		return self.recipients
+	
+	def get_excludes(self):
+		"""
+		Returns the list of excludes - clients which should be excluded from the 
+		recipient list - which may consist of a mixture of client id numbers and 
+		strings naming node groups.
+		"""
+		return self.excludes
 
 	def get_sender(self):
 		return self.sender
-
-	def is_for_server(self):
-		"""	
-		Returns True if the server is included in the recipients for this message
-		"""
-		recips = self.get_recipients()
-		return ( Message.RECIPIENT_SERVER in recips
-				or Message.RECIPIENT_ALL in recips )
 		
-	def get_client_recipients(self, clients, sender):
-		"""	
-		Returns an explicit list of client ids obtained from the message recipients.
-		Constants such as Message.RECIPIENT_ALL_CLIENTS are expanded.
-		"""
-		recips = self.get_recipients()
-		list = []
-		for c in clients:
-			if( c in recips
-					or Message.RECIPIENT_ALL in recips
-					or Message.RECIPIENT_ALL_CLIENTS in recips
-					or (Message.RECIPIENT_ALL_OTHERS in recips and c!=sender) ):
-				list.append(c)
-		return list
-
 	def _get_attrs(self, names):
 		"""	
 		Helper method to extract named attributes as dictionary
@@ -298,6 +316,7 @@ class JsonEncoder(object):
 		dict = {
 			"type" : message.__module__+"."+message.__class__.__name__,
 			"recipients" : message.get_recipients(),
+			"excludes" : message.get_excludes(),
 			"sender" : message.get_sender(),
 			"data" : data
 		}
@@ -319,7 +338,7 @@ class JsonEncoder(object):
 		if not issubclass(cls,Message):
 			raise MessageError("Message type %s is not a Message" % typename)
 
-		message = cls(dict["recipients"], dict["sender"])
+		message = cls(dict["recipients"], dict["excludes"], dict["sender"])
 		message.from_dict(dict["data"])
 		return message
 
@@ -329,8 +348,8 @@ class MsgPlayerConnect(Message):
 	Sent by server to inform clients of a new player's arrival
 	"""
 
-	def __init__(self, recipients, sender=-1, player_id=-1, name=""):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1, player_id=-1, name=""):
+		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
 		self.name = name
 
@@ -343,8 +362,8 @@ class MsgPlayerDisconnect(Message):
 	Sent by server to inform clients of a players' departure
 	"""
 
-	def __init__(self, recipients, sender=-1, player_id=-1, reason=""):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1, player_id=-1, reason=""):
+		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
 		self.reason = reason
 
@@ -357,8 +376,8 @@ class MsgServerShutdown(Message):
 	Sent by server to inform clients that the server is about to stop
 	"""
 
-	def __init__(self, recipients, sender=-1):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1):
+		Message.__init__(self, recipients, excludes, sender)
 
 	def to_dict(self):
 		return self._get_attrs(())
@@ -370,8 +389,8 @@ class MsgRequestConnect(Message):
 	or MsgRejectConnect. 
 	"""
 	
-	def __init__(self, recipients, sender=-1, name=""):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1, name=""):
+		Message.__init__(self, recipients, excludes, sender)
 		self.name = name
 
 	def to_dict(self):
@@ -384,8 +403,8 @@ class MsgAcceptConnect(Message):
 	the other players connected.
 	"""
 
-	def __init__(self, recipients, sender=-1, player_id=-1, player_info=None):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1, player_id=-1, player_info=None):
+		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
 		self.player_info = player_info
 
@@ -398,8 +417,8 @@ class MsgRejectConnect(Message):
 	unsuccessful.
 	"""
 
-	def __init__(self, recipients, sender=-1, reason=""):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1, reason=""):
+		Message.__init__(self, recipients, excludes, sender)
 		self.reason = reason
 
 	def to_dict(self):
@@ -410,8 +429,8 @@ class MsgPing(Message):
 	Sent between client and server for calculaating network latency	
 	"""
 
-	def __init__(self, recipients, sender=-1, timestamp=0):
-		Message.__init__(self, recipients, sender)
+	def __init__(self, recipients, excludes, sender=-1, timestamp=0):
+		Message.__init__(self, recipients, excludes, sender)
 		self.timestamp = timestamp
 
 	def to_dict(self):
@@ -427,18 +446,31 @@ class MsgChat(Message):
 	Sent between clients to allow players to communicate with each other	
 	"""
 
-	def __init__(self, recipients, sender=-1, message=""):
+	def __init__(self, recipients, excludes, sender=-1, message=""):
 		Message.__init__(self, recipients, sender)
 		self.message = message
 
 	def to_dict(self):
 		return self._get_attrs(("message",))
 
+class GameFullError(Exception): pass
+
+class NameTakenError(Exception): pass
 
 class GameNode(Node):
 	"""	
 	Base class for all nodes (clients & server) in the game network
 	"""
+	
+	def __init__(self):
+		Node.__init__(self)
+		self.player_list = {}
+	
+	def register_player(self, id, info):
+		self.player_list[id] = info
+
+	def deregister_player(self, id):
+		del(self.player_list[id])
 	
 	def get_timestamp(self):
 		return int(time.time()*1000)
@@ -475,7 +507,7 @@ class GameNode(Node):
 
 	def handle_MsgPing(self, message):
 		# respond with pong
-		resp = MsgPong([message.sender], self.get_node_id(), self.get_timestamp())
+		resp = MsgPong([message.sender], [], self.get_node_id(), self.get_timestamp())
 		self.send(resp)
 
 	def handle_MsgPong(self, message):
@@ -491,9 +523,33 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 	
 	class StateConnecting(StateMachineBase.State):
 		
-		def connect_request(self, message):
-			#TODO
-			pass
+		def handle_MsgRequestConnect(self, message):
+			"""
+			The client has requested to enter the game
+			"""
+			try:
+				# TODO: Player messages should use general "info" dict instead of indv fields
+				info = {"name":message.get_name()}
+				
+				# join the game
+				self.machine.server.player_join(self.machine.id, info)
+				
+				# reply with client id and info about connected players
+				other_players = self.machine.server.get_info_on_players()
+				self.machine.server.send(MsgAcceptConnect([self.machine.id],[], 
+					Server.SERVER, self.machine.id, other_players))
+				
+				# change state
+				self.machine.change_state("StateInGame")
+				
+			except GameFullError:				
+				self.machine.server.send(MsgRejectConnect([self.machine.id], [], 
+					Server.SERVER, "The game is full"))
+				
+			except NameTakenError:
+				self.machine.server.send(MsgRejectConnect([self.machine.id], [],
+					Server.SERVER, "Your player name is already taken"))
+				
 
 	class StateInGame(StateMachineBase.State):
 		pass
@@ -504,7 +560,7 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 		self.change_state("StateConnecting")
 
 	@statemethod
-	def connect_request(self, message):
+	def handle_MsgRequestConnect(self, message):
 		pass
 
 class GameServer(GameNode, Server):
@@ -512,10 +568,12 @@ class GameServer(GameNode, Server):
 	Basic game server for use with GameClient
 	"""
 	
+	GROUP_PLAYERS = "players"
+	
 	def __init__(self, max_players=4, client_class=GameClientHandler, port=570810):
 		"""	
 		Initialises the server with default handler GameClientHandler and using
-		port 570810 (sto-blo)
+		port 570810
 		"""
 		GameNode.__init__(self)
 		Server.__init__(self, client_class, port)
@@ -527,14 +585,14 @@ class GameServer(GameNode, Server):
 	def received(self, message):
 		GameNode.received(self, message)
 	
-	def handle_MsgPlayerConnect(self, message):
+	def handle_MsgRequestConnect(self, message):
 		"""	
-		Server should receive player connect from client on arrival, indicating
-		their chosen name. Server relays this to all clients, thereby providing
-		the new client with their allocated id.	
+		Server receives this message from client when they are requesting to 
+		enter the game. The client provides their chosen name. 	
 		"""
-		# TODO - above is untrue and finish this method
-		pass
+		# delegate to client handler
+		if self.handlers.has_key(message.get_sender()):
+			self.handlers[message.get_sender()].handle_MsgRequestConnect(message)
 
 	def handle_MsgPlayerDisconnect(self, message):
 		"""	
@@ -543,8 +601,37 @@ class GameServer(GameNode, Server):
 		the list and informs other clients.
 		"""
 		self.handle_client_departure(message.player_id)
-		msg = MsgPlayerDisconnect([Message.RECIPIENT_ALL_CLIENTS],message.player_id,message.reason)
+		msg = MsgPlayerDisconnect([Server.GROUP_CLIENTS],[message.player_id],
+			message.player_id,message.reason)
 		self.send(msg)
+		
+	def get_num_players(self):
+		return len(self.node_groups.get_tag_items(GameServer.GROUP_PLAYERS))
+		
+	def player_join(self, id, info):
+		"""
+		Attempt to receive the player into the game and notify others
+		"""
+		if self.get_num_players() >= self.max_players:
+			raise GameFullError()
+		elif info["name"] in [self.player_list[p]["name"] for p in self.player_list]:
+			raise NameTakenError()
+		else:			
+			self.register_player(id, info)
+			# notify players
+			self.send(MsgPlayerConnect([GameServer.GROUP_PLAYERS], [id], 
+				GameServer.SERVER, id, info["name"]))
+			
+	def register_player(self, id, info):
+		GameNode.register_player(self, id, info)
+		self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
+		
+	def get_info_on_players(self):
+		"""
+		Returns info on players in game, suitable for sending to newly connected 
+		players
+		"""
+		return copy.copy(self.player_list)
 
 class GameClient(GameNode, Client, StateMachineBase):
 	"""	
@@ -588,18 +675,11 @@ class GameClient(GameNode, Client, StateMachineBase):
 		GameNode.__init__(self)
 		Client.__init__(self, host, port)
 		StateMachineBase.__init__(self)
-		self.player_list = {}
 		self.change_state("StateConnecting")
 	
 	def run(self):
 		Client.__run__(self)
 		self.info_message("Disconnected from host")
-
-	def register_player(self, id, info):
-		self.player_list[id] = info
-
-	def deregister_player(self, id):
-		del(self.player_list[id])
 
 	def info_message(self, message):
 		"""	
@@ -636,6 +716,14 @@ class GameClient(GameNode, Client, StateMachineBase):
 	@statemethod
 	def handle_MsgServerShutdown(self, message):
 		self.info_message("The host has ended the game")
+		
+	@statemethod
+	def handle_MsgAcceptConnect(self, message):
+		pass
+	
+	@statemethod
+	def handle_MsgRejectConnect(self, message):
+		pass
 
 
 # ----------------------------------------------------------------------------------
@@ -646,8 +734,8 @@ if __name__ == "__main__":
 	import unittest
 
 	class TestMessage(Message):
-		def __init__(self, recipients, name="", age=0, weight=0.0):
-			self.recipients = recipients
+		def __init__(self, recipients, excludes, sender=Server.SERVER, name="", age=0, weight=0.0):
+			Message.__init__(self, recipients, excludes, sender)
 			self.name = name
 			self.age = age
 			self.weight = weight
@@ -664,12 +752,14 @@ if __name__ == "__main__":
 			self.encoder = JsonEncoder()
 
 		def testEncodeDecode(self):
-			m = TestMessage([1,2,3],"Frank", 25, 123.5)
+			m = TestMessage([1,2,3],[],1,"Frank", 25, 123.5)
 			j = self.encoder.encode(m)
 			print j
 			m2 = self.encoder.decode(j)
 			self.assertEquals(TestMessage, m2.__class__)
 			self.assertEquals([1,2,3],m2.get_recipients())
+			self.assertEquals([],m2.get_excludes())
+			self.assertEquals(1,m2.get_sender())
 			self.assertEquals("Frank", m2.name)
 			self.assertEquals(25, m2.age)
 			self.assertEquals(123.5, m2.weight)
