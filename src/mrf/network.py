@@ -9,6 +9,8 @@ from mrf.statemachine import StateMachineBase, statemethod
 from mrf.structs import TagLookup
 
 """	
+TODO: Use socket server framework in standard library instead?
+TODO: Synchronisation for multiple threads accessing data simultanously
 TODO: Should unregister player on server when client disconnects
 TODO: Should notify players when player disconnects
 TODO: GameClientHandler should similarly perform handshake - not add client to pool until negotiated.
@@ -19,13 +21,18 @@ TODO: GameServer/GameClient classes which throw these messages around
 TODO: Refactor telnet module to use generic client/server classes
 TODO: Unit tests for client/server
 
-             Node                 SkListener		SkListener:		
-            ^ ^ ^                   ^ ^				send
-    ,-------' | '--2----. ,----1----' |				received
- Server    GameNode    Client       ClHandler		
-    ^         ^  ^        ^ 	      ^			Node:
-    '--2----. |1 '--1---. |2          |				send
-          GameServer   GameClient  GameClHandler		received
+   Multiple inheritence:
+
+                       Thread
+                        ^  ^
+   ,-----2--------------'  '---------.
+   |         Node                 SkListener            SkListener:		
+   |        ^ ^ ^                   ^ ^	                        send
+   | ,---1--' | '--2----. ,----1----' |	                        received
+ Server    GameNode    Client       ClHandler
+    ^         ^  ^        ^ 	      ^	                Node:
+    '--2----. |1 '--1---. |2          |	                        send
+          GameServer   GameClient  GameClHandler                received
 
 """
 
@@ -43,9 +50,10 @@ class Node(object):
 	def get_node_id(self):
 		pass
 
-class Server(Node):	
+class Server(Node, threading.Thread):	
 	"""	
-	A socket server
+	A socket server. After constructed, the "start" method should be invoked to begin
+	the server in its own thread.
 	"""
 	
 	SERVER = -1
@@ -53,6 +61,15 @@ class Server(Node):
 	GROUP_CLIENTS = "clients"
 
 	def __init__(self, client_class, port):
+		"""	
+		Initialises the server. "client_class" should be a class for handling clients.
+		It should extend threading.Thread and accept the server, socket and client id as parameters.
+		The client thread should invoke handle_client_arrival on startup and 
+		handle_client_departure on termination. "port" is the port number to listen for 
+		new clients on.
+		"""
+		Node.__init__(self)
+		threading.Thread.__init__(self)
 		self.client_class = client_class
 		self.port = port
 		
@@ -63,9 +80,9 @@ class Server(Node):
 
 	def run(self):
 		"""	
-		Runs the server, listening on the specified port for new clients connecting.
-		For each new client a client handler of the specified type is created in a new
-		thread.
+		Overridden from Thread - runs the server, listening on the specified port for 
+		new clients connecting. For each new client a client handler of the specified 
+		type is created in a new thread.
 		"""
 		
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -82,7 +99,7 @@ class Server(Node):
 				conn,addr = s.accept()
 				handler = self.client_class(self,conn,self.next_id)
 				self.handlers[self.next_id] = handler
-				thread.start_new_thread(handler.handle_client,())
+				handler.start()				
 				self.next_id += 1
 		finally:
 			s.close()
@@ -150,12 +167,14 @@ class Server(Node):
 	def get_num_clients(self):
 		return len(self.handlers)
 
-class SocketListener(object):
+class SocketListener(threading.Thread):
 	"""	
-	Base class for client socket listeners
+	Base class for client socket listeners. Once constructed, "start" method should
+	be invoked to start the SocketListener running in its own thread.
 	"""
 
 	def __init__(self, encoder, decoder):
+		threading.Thread.__init__(self)
 		self.encoder = encoder
 		self.decoder = decoder
 		self.send_lock = threading.Lock()		
@@ -183,6 +202,13 @@ class SocketListener(object):
 		"""
 		pass
 
+	def run(self):
+		"""	
+		Overidden from Thread. Just invokes listen_on_socket. Should be
+		overidden in subclasses.
+		"""
+		self.listen_on_socket()
+
 	def listen_on_socket(self):
 		"""	
 		Blocks, waiting for messages on the socket
@@ -200,7 +226,8 @@ class SocketListener(object):
 class ClientHandler(SocketListener):
 	"""	
 	A client handler which handles messages from a single client
-	on the server.
+	on the server. After constructing, "start" method should be invoked
+	to begin ClientHandler running in its own thread.
 	"""
 
 	def __init__(self, server, socket, id, encoder, decoder):
@@ -212,7 +239,10 @@ class ClientHandler(SocketListener):
 	def get_socket(self):	
 		return self.socket
 
-	def handle_client(self):
+	def run(self):
+		"""	
+		Overidden from SocketListener. Invoked when thread is started.	
+		"""
 		self.server.handle_client_arrival(self.id)		
 		self.listen_on_socket()
 		self.server.handle_client_departure(self.id)
@@ -229,7 +259,8 @@ class ClientHandler(SocketListener):
 
 class Client(SocketListener, Node):
 	"""	
-	Socket client
+	Socket client. After constructing, "start" method should be invoked in order
+	to start the client running in its own thread.
 	"""
 
 	def __init__(self, host, port):
@@ -238,9 +269,13 @@ class Client(SocketListener, Node):
 		self.client_id = -1
 
 	def run(self):
-		
+		"""	
+		Overidden from SocketListener. Connects on socket then listens for
+		messages. Invoked when thread is started.
+		"""
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.socket.connect((self.host, self.port))
+		self.after_connect()
 		self.listen_on_socket()
 
 	def get_socket(self):
@@ -248,6 +283,13 @@ class Client(SocketListener, Node):
 
 	def get_node_id(self):
 		return self.client_id
+
+	def after_connect(self):
+		"""	
+		Invoked just after client connects to server and before client starts 
+		listening to messages
+		"""
+		pass
 
 class Message(object):
 	"""	
@@ -389,12 +431,12 @@ class MsgRequestConnect(Message):
 	or MsgRejectConnect. 
 	"""
 	
-	def __init__(self, recipients, excludes, sender=-1, name=""):
+	def __init__(self, recipients, excludes, sender=-1, player_info=None):
 		Message.__init__(self, recipients, excludes, sender)
-		self.name = name
+		self.player_info = player_info
 
 	def to_dict(self):
-		return self._get_attrs(("name",))
+		return self._get_attrs(("player_info",))
 
 class MsgAcceptConnect(Message):
 	"""	
@@ -403,13 +445,13 @@ class MsgAcceptConnect(Message):
 	the other players connected.
 	"""
 
-	def __init__(self, recipients, excludes, sender=-1, player_id=-1, player_info=None):
+	def __init__(self, recipients, excludes, sender=-1, player_id=-1, player_infos=None):
 		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
-		self.player_info = player_info
+		self.players_info = players_info
 
 	def to_dict(self):
-		return self._get_attrs(("player_id","player_info"))
+		return self._get_attrs(("player_id","players_info"))
 
 class MsgRejectConnect(Message):
 	"""	
@@ -440,6 +482,7 @@ class MsgPong(MsgPing):
 	"""	
 	Sent in response to MsgPing
 	"""
+	pass
 
 class MsgChat(Message):
 	"""	
@@ -461,16 +504,6 @@ class GameNode(Node):
 	"""	
 	Base class for all nodes (clients & server) in the game network
 	"""
-	
-	def __init__(self):
-		Node.__init__(self)
-		self.player_list = {}
-	
-	def register_player(self, id, info):
-		self.player_list[id] = info
-
-	def deregister_player(self, id):
-		del(self.player_list[id])
 	
 	def get_timestamp(self):
 		return int(time.time()*1000)
@@ -518,22 +551,25 @@ class GameNode(Node):
 
 class GameClientHandler(ClientHandler, StateMachineBase):
 	"""	
-	ClientHandler used by GameServer
+	ClientHandler used by GameServer. GameClientHandler is responsible for handling 
+	client-specific logic on the server side and maintaining info about that player
 	"""
 	
 	class StateConnecting(StateMachineBase.State):
 		
 		def handle_MsgRequestConnect(self, message):
-			"""
+			"""	
 			The client has requested to enter the game
 			"""
 			try:
-				# TODO: Player messages should use general "info" dict instead of indv fields
-				info = {"name":message.get_name()}
-				
+				info = message.get_player_info()
+
 				# join the game
 				self.machine.server.player_join(self.machine.id, info)
 				
+				# record player info
+				self.machine.player_info = info
+
 				# reply with client id and info about connected players
 				other_players = self.machine.server.get_info_on_players()
 				self.machine.server.send(MsgAcceptConnect([self.machine.id],[], 
@@ -557,11 +593,15 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 	def __init__(self, server, socket, id, encoder, decoder):
 		ClientHandler.__init__(self, server, socket, id, encoder, decoder)
 		StateMachineBase.__init__(self)
+		self.player_info = {}
 		self.change_state("StateConnecting")
 
 	@statemethod
 	def handle_MsgRequestConnect(self, message):
 		pass
+
+	def get_player_info(self):
+		return self.player_info
 
 class GameServer(GameNode, Server):
 	"""	
@@ -606,32 +646,33 @@ class GameServer(GameNode, Server):
 		self.send(msg)
 		
 	def get_num_players(self):
-		return len(self.node_groups.get_tag_items(GameServer.GROUP_PLAYERS))
+		return len(self.get_players())
 		
+	def get_players(self):
+		return copy.copy(self.get_tag_items(GameServer.GROUP_PLAYERS))
+
 	def player_join(self, id, info):
-		"""
+		"""	
 		Attempt to receive the player into the game and notify others
 		"""
 		if self.get_num_players() >= self.max_players:
 			raise GameFullError()
-		elif info["name"] in [self.player_list[p]["name"] for p in self.player_list]:
+		elif info["name"] in [self.handlers[p].get_player_info["name"] for p in self.get_players()]:
 			raise NameTakenError()
 		else:			
-			self.register_player(id, info)
+			# add into group of connected players
+			self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
 			# notify players
 			self.send(MsgPlayerConnect([GameServer.GROUP_PLAYERS], [id], 
 				GameServer.SERVER, id, info["name"]))
-			
-	def register_player(self, id, info):
-		GameNode.register_player(self, id, info)
-		self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
 		
 	def get_info_on_players(self):
-		"""
+		"""	
 		Returns info on players in game, suitable for sending to newly connected 
 		players
 		"""
-		return copy.copy(self.player_list)
+		return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
+		
 
 class GameClient(GameNode, Client, StateMachineBase):
 	"""	
@@ -652,10 +693,10 @@ class GameClient(GameNode, Client, StateMachineBase):
 			"""
 			# player_id field provides the client with their designated id
 			self.machine.client_id = message.player_id
-			# player_info field is a dictionary containing info about the 
+			# players_info field is a dictionary containing info about the 
 			# players already connected
 			for k in message.player_info:
-				self.machine.register_player(k, message.player_info[k])
+				self.machine.register_player(k, message.players_info[k])
 
 			self.machine.info_message("Connected to host")
 			self.machine.change_state("StateInGame")
@@ -665,21 +706,36 @@ class GameClient(GameNode, Client, StateMachineBase):
 			Client should receive MsgRejectConnect from the server to
 			indicate that connection was unsuccessful
 			"""
+			# TODO: should probably throw exception here
 			self.machine.info_message("Host rejected connection: %s" % message.reason)
 
 	class StateInGame(StateMachineBase.State):
 
 		pass
 
-	def __init__(self, host, port):
+	def __init__(self, host, port, player_info):
 		GameNode.__init__(self)
 		Client.__init__(self, host, port)
 		StateMachineBase.__init__(self)
+		self.player_list = {}
+		self.player_info = player_info
 		self.change_state("StateConnecting")
-	
+
 	def run(self):
 		Client.__run__(self)
 		self.info_message("Disconnected from host")
+	
+	def after_connect(self):
+		"""	
+		Immediately after connecting to server, request entry into the game
+		"""
+		self.send(MsgRequestConnect([Server.SERVER],[],-1,self.player_info))
+
+	def register_player(self, id, info):
+		self.player_list[id] = info
+
+	def deregister_player(self, id):
+		del(self.player_list[id])
 
 	def info_message(self, message):
 		"""	
@@ -763,5 +819,28 @@ if __name__ == "__main__":
 			self.assertEquals("Frank", m2.name)
 			self.assertEquals(25, m2.age)
 			self.assertEquals(123.5, m2.weight)
+
+	class StubClientHandler(ClientHandler):
+		def __init__(self, server, sock, id):
+			self.server = server
+			self.id = id
+			self.stop = False
+		def run(self):
+			self.server.handle_client_arrival(id)
+			while not self.stop:
+				pass
+			self.server.handle_client_departure(id)
+		def disconnect(self):
+			self.stop = True
+
+	class TestClientServer(unittest.TestCase):
+
+		def testServer(self):
+			# create server
+			server = Server(StubClientHandler,4444)
+			server.start()
+
+			# connect to server
+			# TODO: how to test individual components?
 
 	unittest.main()
