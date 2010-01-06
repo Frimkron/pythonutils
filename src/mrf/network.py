@@ -9,14 +9,28 @@ from mrf.statemachine import StateMachineBase, statemethod
 from mrf.structs import TagLookup
 
 """	
+TODO: If server has message queue, what about clienthandlers being responsible for all
+	client-related logic? Makes sense that handlers are stateful, for treating clients 
+	differently in different states, but will there also be a game loop running on the 
+	server? Will this game loop process server messages? Presumably it will delegate
+	client-related messages to the client handlers. If network and game threads are
+	both changing the handler's state, this will have to be carefully synchronsed with
+	locks. Probably shouldn't change states inside the network threading.
+TODO: As well as receiver thread, clients should also have sender thread which 
+	loops sending ping messages to server. 
+TODO: Client and server should put messages into a queue for their game loops to 
+	pick up and process. Special messages such as MsgPing should be handled immediately
+	by the socket listener thread. Perhaps if a Node doesn't have a handler for a
+	message type it should default to adding it to the queue. 
+TODO: Most messages including player connect/disconnect should be handled in game
+	loop of appropriate node. There should be a "process_messages" which game loop
+	calls to take messages from queue and dispatch them to appropriate handler methods. 
+	These methods should have a different naming convention to the special handlers 
+	to allow both to exist in the same class. ("handle" vs "intercept" ?)
 TODO: Use socket server framework in standard library instead?
 TODO: Synchronisation for multiple threads accessing data simultanously
 TODO: Should unregister player on server when client disconnects
 TODO: Should notify players when player disconnects
-TODO: GameClientHandler should similarly perform handshake - not add client to pool until negotiated.
-	Do this by having server delegate handling of connect request to stateful client handler.
-	Server should group clients in different ways - should have separate group for connected
-	players, for purposes of counting players, etc.
 TODO: GameServer/GameClient classes which throw these messages around
 TODO: Refactor telnet module to use generic client/server classes
 TODO: Unit tests for client/server
@@ -35,6 +49,27 @@ TODO: Unit tests for client/server
           GameServer   GameClient  GameClHandler                received
 
 """
+
+class SyncMethod(object):
+	
+	def __init__(self, lockname=None):
+		self.lockname = lockname
+	
+	def __call__(self, fn):		
+		
+		lname = self.lockname if self.lockname!=None else "lock_"+fn.__name__
+		
+		def wrapper(slf, *args, **kargs):
+			# create lock
+			if not hasattr(slf, lname):
+				setattr(slf, lname, threading.Lock())
+				
+			# call function inside lock		
+			with getattr(slf, lname):
+				return fn(slf, *args, **kargs)
+			
+		return wrapper
+			
 
 class Node(object):
 	"""	
@@ -445,7 +480,7 @@ class MsgAcceptConnect(Message):
 	the other players connected.
 	"""
 
-	def __init__(self, recipients, excludes, sender=-1, player_id=-1, player_infos=None):
+	def __init__(self, recipients, excludes, sender=-1, player_id=-1, players_info=None):
 		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
 		self.players_info = players_info
@@ -820,6 +855,100 @@ if __name__ == "__main__":
 			self.assertEquals(25, m2.age)
 			self.assertEquals(123.5, m2.weight)
 
+	class SyncTest(object):
+		
+		def __init__(self):
+			self.list = []
+		
+		def _delayed_op(self, thing):
+			self.list.append("start %s" % thing)
+			time.sleep(0.5)
+			self.list.append("fin %s" % thing)
+		
+		def do_unsynched(self, thing):
+			self._delayed_op(thing)
+		
+		@SyncMethod()
+		def do_synched(self, thing):
+			self._delayed_op(thing)
+			
+		@SyncMethod("sharedlock")
+		def shared1(self, thing):
+			self._delayed_op(thing)
+			
+		@SyncMethod("sharedlock")
+		def shared2(self, thing):
+			self._delayed_op(thing)
+
+	class TestSyncMethod(unittest.TestCase):
+		
+		def testUnsyncedMethod(self):
+			"""
+			t1 --|-.  |
+			t2 --|-+-.|
+			     | ' '|
+			   <-|-' '|
+			   <-|---'|				
+			"""
+			s = SyncTest()
+			t1 = threading.Thread(target=s.do_unsynched, args=["foo"])
+			t2 = threading.Thread(target=s.do_unsynched, args=["bar"])
+			t1.start()
+			time.sleep(0.1)
+			t2.start()
+			t1.join()
+			t2.join()
+			self.assertEquals(["start foo","start bar","fin foo","fin bar"],s.list)
+		
+		def testSyncMethod(self):
+			""" 	
+			t1 --|-. |		   
+			t2 -.| ' |
+			    '| ' |
+			   <+|-' |
+			    `|-. |
+			     | ' |
+			     | ' |
+			   <-|-'  
+			"""
+			s = SyncTest()
+			t1 = threading.Thread(target=s.do_synched, args=["foo"])
+			t2 = threading.Thread(target=s.do_synched, args=["bar"])
+			t1.start()
+			time.sleep(0.1)
+			t2.start()
+			t1.join()
+			t2.join()
+			self.assertEquals(["start foo","fin foo","start bar","fin bar"],s.list)
+			
+		def  testSharedLock(self):
+			""" 	
+			      [l1][  l2   ]
+			t1 ---|-. |   |   |
+			t2 ---|-+-|-. |   |
+			t3 --.| ' | ' |   |
+			     '| ' | ' |   |
+			   <-+|-' | ' |   |
+			   <-+|---|-' |   |
+			     `|---|---|-. |
+			      |   |   | ' |
+			      |   |   | ' |
+			   <--|---|---|-' |
+			"""
+			s = SyncTest()
+			t1 = threading.Thread(target=s.do_synched, args=["foo"])
+			t2 = threading.Thread(target=s.shared1, args=["bar"])
+			t3 = threading.Thread(target=s.shared2, args=["weh"])
+			t1.start()
+			time.sleep(0.1)
+			t2.start()
+			time.sleep(0.1)
+			t3.start()
+			t1.join()
+			t2.join()
+			t3.join()
+			self.assertEquals(["start foo","start bar","fin foo","fin bar","start weh","fin weh"],s.list)
+
 	class StubClientHandler(ClientHandler):
 		def __init__(self, server, sock, id):
 			self.server = server
@@ -837,10 +966,11 @@ if __name__ == "__main__":
 
 		def testServer(self):
 			# create server
-			server = Server(StubClientHandler,4444)
-			server.start()
+			#server = Server(StubClientHandler,4444)
+			#server.start()
 
 			# connect to server
 			# TODO: how to test individual components?
+			pass
 
 	unittest.main()
