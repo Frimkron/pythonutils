@@ -192,6 +192,27 @@ def sigmoid(x):
 	"""
 	return 1.0/(1.0+math.exp(-(x-0.5)*12.0))
 	
+def mean(values):
+	n = len(values)
+	return float(sum(values))/n if n>0 else 0.0
+
+def standard_deviation(values):
+	m = mean(values)
+	sq_devs = [pow(x-m,2) for x in values]
+	var = mean(sq_devs)
+	return math.sqrt(var)
+
+def deviation(values, val):
+	"""
+	returns "val"s absolute deviation from the mean of "values", in standard 
+	deviations
+	""" 
+	m = mean(values)
+	dev = abs(val-m)
+	sd = standard_deviation(values)
+	return float(dev)/sd if sd!=0 else 0.0 
+	
+	
 def dist_to_line(line, point):
 	"""	
 	Finds a point's distance from a line of infinite length. To find a point's
@@ -470,6 +491,14 @@ if __name__ == '__main__':
 			self.assertAlmostEqual(Vector2d(3,4).get_mag(), 5, 4)
 			self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
 			self.assertAlmostEqual(Vector2d(3,4).unit().get_mag(), 1.0, 4)
+
+		def testStandardDeviation(self):
+			self.assertEquals(8.0,mean([2,6,4,20]))
+			self.assertEquals(0.0,mean([]))						
+			self.assertAlmostEquals(7.071,standard_deviation([2,6,4,20]),3)
+			self.assertEquals(0.0,standard_deviation([]))
+			self.assertAlmostEquals(0.141,deviation([2,6,4,20],9),3)
+			self.assertEquals(0.0,deviation([],5))
 
 		def testRoulette(self):
 			items = {

@@ -5,30 +5,12 @@ import json
 import sys
 import time
 import copy
+import Queue
 from mrf.statemachine import StateMachineBase, statemethod
 from mrf.structs import TagLookup
+from mrf.mathutil import deviation, mean
 
 """	
-TODO: If server has message queue, what about clienthandlers being responsible for all
-	client-related logic? Makes sense that handlers are stateful, for treating clients 
-	differently in different states, but will there also be a game loop running on the 
-	server? Will this game loop process server messages? Presumably it will delegate
-	client-related messages to the client handlers. If network and game threads are
-	both changing the handler's state, this will have to be carefully synchronsed with
-	locks. Probably shouldn't change states inside the network threading.
-TODO: As well as receiver thread, clients should also have sender thread which 
-	loops sending ping messages to server. 
-TODO: Client and server should put messages into a queue for their game loops to 
-	pick up and process. Special messages such as MsgPing should be handled immediately
-	by the socket listener thread. Perhaps if a Node doesn't have a handler for a
-	message type it should default to adding it to the queue. 
-TODO: Most messages including player connect/disconnect should be handled in game
-	loop of appropriate node. There should be a "process_messages" which game loop
-	calls to take messages from queue and dispatch them to appropriate handler methods. 
-	These methods should have a different naming convention to the special handlers 
-	to allow both to exist in the same class. ("handle" vs "intercept" ?)
-TODO: Use socket server framework in standard library instead?
-TODO: Synchronisation for multiple threads accessing data simultanously
 TODO: Should unregister player on server when client disconnects
 TODO: Should notify players when player disconnects
 TODO: GameServer/GameClient classes which throw these messages around
@@ -68,8 +50,7 @@ class SyncMethod(object):
 			with getattr(slf, lname):
 				return fn(slf, *args, **kargs)
 			
-		return wrapper
-			
+		return wrapper	
 
 class Node(object):
 	"""	
@@ -77,9 +58,17 @@ class Node(object):
 	"""
 	
 	def send(self, message):
+		"""	
+		Invoked when a message should be sent from this node. Should be overidden
+		in subclasses
+		"""
 		pass
 
 	def received(self, message):
+		"""
+		Invoked when a message is received by this node. Should be overidden in 
+		subclasses.
+		"""
 		pass
 
 	def get_node_id(self):
@@ -159,12 +148,6 @@ class Server(Node, threading.Thread):
 		# TODO: should stop thread?
 		del(self.handlers[client_id])
 
-	def received(self, message):
-		"""	
-		Message to server received	
-		"""
-		pass
-
 	def send(self, message):
 		"""	
 		Request appropriate handlers send message to their clients
@@ -220,16 +203,16 @@ class SocketListener(threading.Thread):
 		"""
 		pass
 
+	@SyncMethod()
 	def send(self, message):
 		"""	
 		Encodes the given message and sends it down the socket.
 		Only one thread may enter at a time.
 		"""
-		with self.send_lock:
-			data = self.encoder.encode(message)
-			sent = 0
-			while sent < len(data):
-				sent += self.get_socket().send(data[sent:])
+		data = self.encoder.encode(message)
+		sent = 0
+		while sent < len(data):
+			sent += self.get_socket().send(data[sent:])
 
 	def received(self, message):
 		"""	
@@ -298,9 +281,13 @@ class Client(SocketListener, Node):
 	to start the client running in its own thread.
 	"""
 
-	def __init__(self, host, port):
+	def __init__(self, host, port, encoder, decoder):
+		SocketListener.__init__(self, encoder, decoder)
+		Node.__init__(self)
 		self.host = host
 		self.port  = port
+		
+		# client doesn't know its id yet
 		self.client_id = -1
 
 	def run(self):
@@ -312,6 +299,22 @@ class Client(SocketListener, Node):
 		self.socket.connect((self.host, self.port))
 		self.after_connect()
 		self.listen_on_socket()
+
+	def send(self, message):
+		"""	
+		Both SocketListener and Node have a "send" method! Here we override 
+		Node's version, passing the message to SocketListener's version for 
+		sending down the socket.
+		"""
+		SocketListener.send(self, message)
+
+	def received(self, message):
+		"""	
+		Both SocketListener and Node have a "received" method! Here we override
+		SocketListener's version, passing the message on to Node's version for
+		adding to the message queue.
+		"""
+		Node.received(self, message)
 
 	def get_socket(self):
 		return self.socket
@@ -328,7 +331,8 @@ class Client(SocketListener, Node):
 
 class Message(object):
 	"""	
-	Base class for network messages
+	Base class for network messages. Subclasses should implement "to_dict" to
+	allow the message to be encoded for transport.
 	"""
 
 	def __init__(self, recipients, excludes, sender=Server.SERVER):
@@ -387,6 +391,10 @@ class MessageError(Exception):
 	pass
 
 class JsonEncoder(object):
+	"""
+	Encodes Message objects in JSON format. Will not handle subclasses of Message
+	which are nested classes - they must be in module scope.	
+	"""
 
 	def encode(self, message):
 		data = message.to_dict()
@@ -506,18 +514,25 @@ class MsgPing(Message):
 	Sent between client and server for calculaating network latency	
 	"""
 
-	def __init__(self, recipients, excludes, sender=-1, timestamp=0):
+	def __init__(self, recipients, excludes, sender=-1, ping_timestamp=0):
 		Message.__init__(self, recipients, excludes, sender)
-		self.timestamp = timestamp
+		self.ping_timestamp = ping_timestamp
 
 	def to_dict(self):
-		return self._get_attrs(("timestamp",))
+		return self._get_attrs(("ping_timestamp",))
 
-class MsgPong(MsgPing):
+class MsgPong(Message):
 	"""	
 	Sent in response to MsgPing
 	"""
-	pass
+	
+	def __init__(self, recipients, excludes, sender=-1, ping_timestamp=0, pong_timestamp=0):
+		Message.__init__(self, recipients, excludes, sender)
+		self.ping_timestamp = ping_timestamp
+		self.pong_timestamp = pong_timestamp
+		
+	def to_dict(self):
+		return self._get_attrs(("ping_timestamp","pong_timestamp"))
 
 class MsgChat(Message):
 	"""	
@@ -535,59 +550,105 @@ class GameFullError(Exception): pass
 
 class NameTakenError(Exception): pass
 
+class NoMessageHandlerError(Exception): pass	
+
 class GameNode(Node):
 	"""	
 	Base class for all nodes (clients & server) in the game network
 	"""
+	
+	def __init__(self):
+		Node.__init__(self)
+		self.message_queue = Queue.Queue()
+	
+	def take_messages(self):
+		"""	
+		Removes and returns waiting messages from the message queue.
+		"""
+		msgs = []
+		num = self.message_queue.qsize()
+		for i in range(num):
+			try:
+				msgs.append(self.message_queue.get(block=False))								
+			except Queue.Empty:
+				# qsize is not exact, so we might try to get one more items than 
+				# exist in the queue. Can safely ignore exception
+				pass
+		return msgs
+	
+	def process_messages(self, handler=None):
+		"""	
+		Takes waiting messages from the queue and dispatches them to their handler
+		methods. Should be invoked in the GameNode's game loop. A method named 
+		"handle_<messagetype>" is looked for first in the "handler" object, if 
+		provided, then in the GameNode object itself.
+		"""
+		for msg in self.take_messages():
+			# dispatch to handler method using naming convention
+			hname = "handle_"+msg.__class__.__name__
+			if handler!=None and hasattr(handler,hname):
+				getattr(handler,hname)(msg)
+			elif hasattr(self, hname):
+				getattr(self, hname)(msg)
+			else:
+				self.delegate_message(msg, hname)			
+	
+	def delegate_message(self, message, handler_name):
+		"""	
+		Invoked if a message handler is not present in the current class. Should
+		be overidden to check elsewhere for a handler and raise 
+		NoMessageHandlerError if one is not found.
+		"""
+		raise NoMessageHandlerError(handler_name)
 	
 	def get_timestamp(self):
 		return int(time.time()*1000)
 
 	def received(self, message):
 		"""	
-		Dispatches message to appropriate handler method using naming convention
+		Overidden from Node. Invoked when this node receives a message. 
+		Attempts to locate interceptor method called "intercept_<messagetype>" 
+		and if found, the message is handled by it. If no intercept method is 
+		found, the message is simply added to the message queue to be picked up 
+		by the game loop, which is how most messages should be handled.
 		"""
-		typename = message.__class__.__name__
-		methname = "handle_"+typename
-		if hasattr(self, methname):
-			meth = getattr(self, methname)
-			meth(message)
+		hname = "intercept_"+message.__class__.__name__
+		if hasattr(self, hname):
+			getattr(self, hname)(message)
 		else:
-			raise MessageError("No handler method for message type %s" % typename)
+			self.message_queue.put(message)
 
-	def handle_MsgPlayerConnect(self, message):
-		pass
-
-	def handle_MsgPlayerDisconnect(self, message):
-		pass
-
-	def handle_MsgServerShutdown(self, message):
-		pass
-	
-	def handle_MsgRequestConnect(self, message):
-		pass
-
-	def handle_MsgAcceptConnect(self, message):
-		pass
-
-	def handle_MsgRejectConnect(self, message):
-		pass
-
-	def handle_MsgPing(self, message):
-		# respond with pong
-		resp = MsgPong([message.sender], [], self.get_node_id(), self.get_timestamp())
+	def intercept_MsgPing(self, message):
+		"""
+		Respond with MsgPong as soon as MsgPing is received. Don't wait for
+		game loop.
+		"""
+		resp = MsgPong([message.sender], [], self.get_node_id(), 
+			message.ping_timestamp, self.get_timestamp())
 		self.send(resp)
 
-	def handle_MsgPong(self, message):
-		pass
+	def handle_MsgPlayerConnect(self, message): pass
 
-	def handle_MsgChat(self, message):
-		pass
+	def handle_MsgPlayerDisconnect(self, message): pass
+
+	def handle_MsgServerShutdown(self, message): pass
+	
+	def handle_MsgRequestConnect(self, message): pass
+
+	def handle_MsgAcceptConnect(self, message): pass
+
+	def handle_MsgRejectConnect(self, message): pass
+	
+	def handle_MsgPong(self, message): pass
+
+	def handle_MsgChat(self, message): pass
 
 class GameClientHandler(ClientHandler, StateMachineBase):
 	"""	
 	ClientHandler used by GameServer. GameClientHandler is responsible for handling 
-	client-specific logic on the server side and maintaining info about that player
+	client-specific logic on the server side and maintaining info about that player.
+	GameClientHandler's "handle_" messages are invoked by GameServer for any messages
+	which aren't handled by the server itself.
 	"""
 	
 	class StateConnecting(StateMachineBase.State):
@@ -655,28 +716,43 @@ class GameServer(GameNode, Server):
 		self.max_players = max_players
 
 	def send(self, message):
-		Server.send(self.message)
+		"""
+		Explicitly send message as Server does	
+		"""
+		Server.send(self, message)
 
 	def received(self, message):
+		"""
+		Explicitly receive message as GameNode does - dispatching to any 
+		interceptor methods or placing in the message queue.	
+		"""
 		GameNode.received(self, message)
 	
-	def handle_MsgRequestConnect(self, message):
-		"""	
-		Server receives this message from client when they are requesting to 
-		enter the game. The client provides their chosen name. 	
+	def delegate_message(self, message, handler_name):
 		"""
-		# delegate to client handler
-		if self.handlers.has_key(message.get_sender()):
-			self.handlers[message.get_sender()].handle_MsgRequestConnect(message)
-
+		Overidden from GameNode. Invoked if server doesn't have an appropriate 
+		handler method for a message. Checks appropriate client handler for handler
+		method instead.
+		"""
+		id = message.get_sender()
+		if self.handlers.has_key(id):
+			ch = self.handlers[id]
+			if hasattr(ch, handler_name):
+				getattr(ch, handler_name)(message)
+			else:
+				raise NoMessageHandlerError(handler_name)
+	
 	def handle_MsgPlayerDisconnect(self, message):
 		"""	
 		Server may receive player disconnect from a client, indicating that they 
 		are intentionally leaving the game. On receipt, server removes player from
-		the list and informs other clients.
+		the list and informs other players.
 		"""
+		# clean up handler
 		self.handle_client_departure(message.player_id)
-		msg = MsgPlayerDisconnect([Server.GROUP_CLIENTS],[message.player_id],
+		
+		# send message to clients
+		msg = MsgPlayerDisconnect([GameServer.GROUP_PLAYERS],[message.player_id],
 			message.player_id,message.reason)
 		self.send(msg)
 		
@@ -707,13 +783,15 @@ class GameServer(GameNode, Server):
 		players
 		"""
 		return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
-		
+	
+# TODO: Should probably throw this if server rejects clients join request
+class JoinRefusedError(Exception): pass	
 
 class GameClient(GameNode, Client, StateMachineBase):
 	"""	
 	Basic game client for use with GameServer. Clients inform one another of 
 	their arrival, maintaining their own player lists. They also maintain a 
-	synchornized clock.
+	synchronised clock.
 	"""
 	
 	class StateConnecting(StateMachineBase.State):
@@ -754,17 +832,45 @@ class GameClient(GameNode, Client, StateMachineBase):
 		StateMachineBase.__init__(self)
 		self.player_list = {}
 		self.player_info = player_info
+		self.time_delta = 0
+		self.latencies = []
+		self.latency = 0
+		self.pinger_thread = None
 		self.change_state("StateConnecting")
 
 	def run(self):
-		Client.__run__(self)
+		Client.run(self)
+		# TODO: raise exception?
 		self.info_message("Disconnected from host")
+	
+	def run_ping_sender(self):
+		while True:
+			time.sleep(3.0)
+			self.send(MsgPing([Server.SERVER],[],-1,self.get_timestamp()))			
 	
 	def after_connect(self):
 		"""	
 		Immediately after connecting to server, request entry into the game
+		and start pinging
 		"""
 		self.send(MsgRequestConnect([Server.SERVER],[],-1,self.player_info))
+		self.pinger_thread = threading.Thread(target=self.run_ping_sender)
+
+	@SyncMethod("lock_latency")
+	def set_latency(self, latency):
+		self.latency = latency
+		
+	@SyncMethod("lock_latency")
+	def get_latency(self):
+		return self.latency
+		
+	@SyncMethod("lock_time_delta")
+	def set_time_delta(self, delta):
+		self.time_delta = delta
+		
+	@SyncMethod("lock_time_delta")
+	def get_time_delta(self):
+		return self.time_delta
 
 	def register_player(self, id, info):
 		self.player_list[id] = info
@@ -796,6 +902,35 @@ class GameClient(GameNode, Client, StateMachineBase):
 			self.deregister_player(message.player_id)
 			self.info_message("%s has left the game" % name)
 
+	def intercept_MsgPong(self, message):
+		"""
+		Invoked in socket listener thread when MsgPong received. Uses timing 
+		information from server ping response to update synchronised clock and 
+		latency information	
+		"""
+		recv_time = self.get_timestamp()
+		round_time = recv_time - message.ping_timestamp
+		latn = round_time/2		
+		
+		# ignore the latency value if more than 1 sd from mean
+		if deviation(self.latencies, latn) < 1.0:
+			
+			self.latencies.append(latn)			
+			# keep the last 5 latency values
+			if len(self.latencies) > 5:
+				self.latencies.pop(0)
+				
+		# get the current average latency
+		av_latn = mean(self.latencies)	
+				
+		# find difference between local clock and server clock
+		server_time = message.pong_timestamp + av_latn
+		delta = recv_time - server_time
+		
+		# update values
+		self.set_latency(av_latn)
+		self.set_time_delta(delta)
+
 	@statemethod
 	def handle_MsgPlayerConnect(self, message):
 		self._player_connectd(message)
@@ -806,6 +941,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 	
 	@statemethod
 	def handle_MsgServerShutdown(self, message):
+		# TODO: raise excception?
 		self.info_message("The host has ended the game")
 		
 	@statemethod
@@ -815,6 +951,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 	@statemethod
 	def handle_MsgRejectConnect(self, message):
 		pass
+
 
 
 # ----------------------------------------------------------------------------------
