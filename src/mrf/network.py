@@ -11,6 +11,19 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
+TODO: In process of converting Server, Client, etc to use appropriate locking when accessing 
+	handlers, node_groups, sockets, stopping, and other shared resources	
+TODO: SyncMethod is not enough - accessor isn't the thing that needs to be locked - it's the use
+	of the resource once it's been obtained. Getter could be decorated to return a proxy which
+	implements __enter__ and __exit__. Still means the user has to do "with get_foo() as f:",
+	but it would eliviate the need to explicitly create locks for everything
+	Rather than a proxy object, the accessor function itself could be used. For example, 
+	"with self.get_foo as f: f().bar()" - the decorated accessor's __enter__ method would 
+	acquire the lock and __exit__ release it. Admittedly this is counterintuitive.
+TODO: SocketListener and Server should inherit from NetworkThread, which should handle 
+	stopping the thread with a synchronised boolean (not Node)
+TODO: Need "stop" method on client and server to close sockets and shutdown.
+TODO: Structure diagram
 TODO: Should unregister player on server when client disconnects
 TODO: Should notify players when player disconnects
 TODO: GameServer/GameClient classes which throw these messages around
@@ -19,9 +32,9 @@ TODO: Unit tests for client/server
 
    Multiple inheritence:
 
-                       Thread
+                    NetworkThread
                         ^  ^
-   ,-----2--------------'  '---------.
+   ,-----2--------------'  '---------.                  TODO: out of date:
    |         Node                 SkListener            SkListener:		
    |        ^ ^ ^                   ^ ^	                        send
    | ,---1--' | '--2----. ,----1----' |	                        received
@@ -52,11 +65,35 @@ class SyncMethod(object):
 			
 		return wrapper	
 
+class NetworkThread(threading.Thread):
+	
+	def __init__(self):
+		threading.Thread.__init__(self)
+		self.set_stopping(False)
+
+	@SyncMethod("lock_stopping")
+	def get_stopping(self):
+		return self.stopping
+
+	@SyncMethod("lock_stopping")
+	def set_stopping(self, val):
+		self.stopping = val
+
+	def stop(self):
+		"""	
+		May be used to stop this network thread. Should be overidden to perform
+		any other cleanup tasks required to shut down the thread.
+		"""
+		self.set_stopping(True)
+
 class Node(object):
 	"""	
 	Base class for all nodes in the network i.e. clients and server
 	"""
 	
+	def __init__(self):
+		pass
+
 	def send(self, message):
 		"""	
 		Invoked when a message should be sent from this node. Should be overidden
@@ -65,7 +102,7 @@ class Node(object):
 		pass
 
 	def received(self, message):
-		"""
+		"""	
 		Invoked when a message is received by this node. Should be overidden in 
 		subclasses.
 		"""
@@ -74,7 +111,7 @@ class Node(object):
 	def get_node_id(self):
 		pass
 
-class Server(Node, threading.Thread):	
+class Server(Node, NetworkThread):	
 	"""	
 	A socket server. After constructed, the "start" method should be invoked to begin
 	the server in its own thread.
@@ -93,14 +130,42 @@ class Server(Node, threading.Thread):
 		new clients on.
 		"""
 		Node.__init__(self)
-		threading.Thread.__init__(self)
+		NetworkThread.__init__(self)
 		self.client_class = client_class
 		self.port = port
 		
+		self.listen_socket = None
 		self.next_id = 0
-		self.handlers = {}		
-		self.node_groups = TagLookup()
-		
+		self.set_handlers({})		
+		self.set_node_groups(TagLookup())
+
+	@SyncMethod("lock_listen_socket")
+	def get_listen_socket(self):
+		return self.listen_socket
+
+	@SyncMethod("lock_listen_socket")
+	def set_listen_socket(self, sock):
+		self.listen_socket = sock
+
+	@SyncMethod("lock_handlers")
+	def get_handlers(self):
+		return self.handlers
+
+	@SyncMethod("lock_handlers")
+	def set_handlers(self, handlers):
+		self.handlers = handlers
+	
+	# TODO: stuff like handlers and node_groups wouldn't have to be synched if only the 
+	# networking thread accessed them. Mind you, the other networking threads need access
+	# to them anyway - client handler threads, etc.
+
+	@SyncMethod("lock_node_groups")
+	def get_node_groups(self):
+		return self.node_groups
+
+	@SyncMethod("lock_node_groups")
+	def set_node_groups(self, node_groups):
+		self.node_groups = node_groups
 
 	def run(self):
 		"""	
@@ -109,44 +174,85 @@ class Server(Node, threading.Thread):
 		type is created in a new thread.
 		"""
 		
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.set_listen_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
 		try:
-			s.bind((socket.gethostname(),self.port))
-			s.listen(1)
+			self.get_listen_socket().bind((socket.gethostname(),self.port))
+			self.get_listen_socket().listen(1)
 		
 			self.next_id = 0
-			self.handlers = {}
+			self.set_handlers({})
 			self.node_groups = TagLookup()
 			self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
 		
-			while True:
-				conn,addr = s.accept()
+			while not self.get_stopping():
+				conn,addr = self.get_listen_socket().accept()
 				handler = self.client_class(self,conn,self.next_id)
-				self.handlers[self.next_id] = handler
+				# TODO: SyncMethod has failed us here!
+				with self.lock_handlers:
+					self.handlers[self.next_id] = handler
 				handler.start()				
 				self.next_id += 1
+		except socket.error as e:
+			# do not raise exception if user explicitly shut down the server
+			if not self.get_stopping():
+				raise e
 		finally:
-			s.close()
+			self.get_listen_socket().close()
 	
+	def stop(self):
+		"""	
+		Shuts down the server, closing all client connections and terminating the thread.
+		"""
+		NetworkThread.stop(self)
+		self.get_listen_socket().close()
+		self.stop_handlers()
+		
+		
+	def stop_handlers(self):
+		"""	
+		Invoked when the server is shutting down. Stops the client handler threads.
+		"""
+		# TODO: SyncMethod fail
+		# TODO: SyncMethod lock needs to be re-entrant
+		with self.lock_handlers:
+			for c in self.get_handlers():
+				self.disconnect_client(c)
+				
+
+	def disconnect_client(self, client_id):
+		"""	
+		Closes the connection to the specified client
+		"""
+		# TODO: SyncMethod fail
+		# remove from groups
+		with self.lock_node_groups:
+			self.node_groups.remove_item(client_id)
+
+		# TODO: SyncMethod fail
+		with self.lock_handlers:
+			if self.handlers.has_key(client_id):
+				# stop the handler thread - closes socket
+				self.handlers[client_id].stop()
+				# remove the handler from the dictionary
+				del(self.handlers[client_id])
+
 	def handle_client_arrival(self, client_id):
 		"""	
 		Client with given id has connected
 		"""
-		# tag in appropriate groups
-		self.node_groups.tag_item(client_id, Server.GROUP_ALL)
-		self.node_groups.tag_item(client_id, Server.GROUP_CLIENTS)
+		# SyncMethod fail
+		with self.lock_node_groups:
+			# tag in appropriate groups
+			self.node_groups.tag_item(client_id, Server.GROUP_ALL)
+			self.node_groups.tag_item(client_id, Server.GROUP_CLIENTS)
 		
 	def handle_client_departure(self, client_id):
 		"""	
 		Client with given id has departed. Removes the associated
 		handler.
 		"""
-		# remove from groups
-		self.node_groups.remove_item(client_id)
-		
-		# remove handler
-		# TODO: should stop thread?
-		del(self.handlers[client_id])
+		# attempt to disconnect client just in case this hasn't already been done
+		self.disconnect_client(client_id)
 
 	def send(self, message):
 		"""	
@@ -159,8 +265,10 @@ class Server(Node, threading.Thread):
 			self.received(message)
 
 		for r in recips:
-			if self.handlers.has_key(r):
-				self.handlers[r].send(message)
+			# SyncMethod fail
+			with self.lock_handlers:
+				if self.handlers.has_key(r):
+					self.handlers[r].send(message)
 
 	def resolve_message_recipients(self, message):
 		exclude = set()
@@ -185,18 +293,18 @@ class Server(Node, threading.Thread):
 	def get_num_clients(self):
 		return len(self.handlers)
 
-class SocketListener(threading.Thread):
+class SocketListener(NetworkThread):
 	"""	
 	Base class for client socket listeners. Once constructed, "start" method should
 	be invoked to start the SocketListener running in its own thread.
 	"""
 
 	def __init__(self, encoder, decoder):
-		threading.Thread.__init__(self)
+		NetworkThread.__init__(self)
 		self.encoder = encoder
 		self.decoder = decoder
-		self.send_lock = threading.Lock()		
-
+		
+	@SyncMethod("lock_socket")
 	def get_socket(self):
 		"""	
 		Should return the socket
@@ -225,18 +333,34 @@ class SocketListener(threading.Thread):
 		Overidden from Thread. Just invokes listen_on_socket. Should be
 		overidden in subclasses.
 		"""
+		# TODO: socket.error will be raised here and thread will die without informing
+		# user. How should this be handled?
 		self.listen_on_socket()
+
+	def stop(self):
+		"""	
+		May be used to stop the SocketListener, closing the port and terminating
+		the thread
+		"""
+		NetworkThread.stop(self)
+		self.get_socket().close()
 
 	def listen_on_socket(self):
 		"""	
-		Blocks, waiting for messages on the socket
+		Blocks, waiting for messages on the socket. Raises socket.error if there is a 
+		problem reading from the socket.
 		"""
 		try:
-			while True:
+			while not self.get_stopping():
 				data = self.get_socket().recv(1024)
-				if not data: break
+				if not data: 
+					raise socket.error
 				message = self.decoder.decode(data)
 				self.received(message)
+		except socket.error as e:
+			# if user explicitly shut down SocketListener, do not raise exception
+			if not self.get_stopping():
+				raise e
 		finally:
 			self.get_socket().close()
 
