@@ -1,5 +1,4 @@
 import socket
-import thread
 import threading
 import json
 import sys
@@ -11,24 +10,12 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: In process of converting Server, Client, etc to use appropriate locking when accessing 
-	handlers, node_groups, sockets, stopping, and other shared resources	
-TODO: SyncMethod is not enough - accessor isn't the thing that needs to be locked - it's the use
-	of the resource once it's been obtained. Getter could be decorated to return a proxy which
-	implements __enter__ and __exit__. Still means the user has to do "with get_foo() as f:",
-	but it would eliviate the need to explicitly create locks for everything
-	Rather than a proxy object, the accessor function itself could be used. For example, 
-	"with self.get_foo as f: f().bar()" - the decorated accessor's __enter__ method would 
-	acquire the lock and __exit__ release it. Admittedly this is counterintuitive.
-TODO: SocketListener and Server should inherit from NetworkThread, which should handle 
-	stopping the thread with a synchronised boolean (not Node)
-TODO: Need "stop" method on client and server to close sockets and shutdown.
+TODO: Informing user of client/server shutdown.
+TODO: Unit tests for client/server
 TODO: Structure diagram
-TODO: Should unregister player on server when client disconnects
-TODO: Should notify players when player disconnects
 TODO: GameServer/GameClient classes which throw these messages around
 TODO: Refactor telnet module to use generic client/server classes
-TODO: Unit tests for client/server
+
 
    Multiple inheritence:
 
@@ -44,47 +31,29 @@ TODO: Unit tests for client/server
           GameServer   GameClient  GameClHandler                received
 
 """
-
-class SyncMethod(object):
 	
-	def __init__(self, lockname=None):
-		self.lockname = lockname
-	
-	def __call__(self, fn):		
-		
-		lname = self.lockname if self.lockname!=None else "lock_"+fn.__name__
-		
-		def wrapper(slf, *args, **kargs):
-			# create lock
-			if not hasattr(slf, lname):
-				setattr(slf, lname, threading.Lock())
-				
-			# call function inside lock		
-			with getattr(slf, lname):
-				return fn(slf, *args, **kargs)
-			
-		return wrapper	
+def lockable_attrs(obj, **kargs):
+	for k in kargs:
+		setattr(obj, k, kargs[k])
+		setattr(obj, k+"_lock", threading.RLock())		
 
 class NetworkThread(threading.Thread):
 	
 	def __init__(self):
 		threading.Thread.__init__(self)
-		self.set_stopping(False)
-
-	@SyncMethod("lock_stopping")
-	def get_stopping(self):
-		return self.stopping
-
-	@SyncMethod("lock_stopping")
-	def set_stopping(self, val):
-		self.stopping = val
+		lockable_attrs(self,
+			stopping = False
+		)
 
 	def stop(self):
 		"""	
-		May be used to stop this network thread. Should be overidden to perform
-		any other cleanup tasks required to shut down the thread.
+		May be used to stop this network thread. Blocks until the thread has stopped
+		running. Should be overidden to perform any other cleanup tasks required 
+		to shut down the thread.
 		"""
-		self.set_stopping(True)
+		with self.stopping_lock:
+			self.stopping = True
+		self.join()
 
 class Node(object):
 	"""	
@@ -134,38 +103,12 @@ class Server(Node, NetworkThread):
 		self.client_class = client_class
 		self.port = port
 		
-		self.listen_socket = None
 		self.next_id = 0
-		self.set_handlers({})		
-		self.set_node_groups(TagLookup())
-
-	@SyncMethod("lock_listen_socket")
-	def get_listen_socket(self):
-		return self.listen_socket
-
-	@SyncMethod("lock_listen_socket")
-	def set_listen_socket(self, sock):
-		self.listen_socket = sock
-
-	@SyncMethod("lock_handlers")
-	def get_handlers(self):
-		return self.handlers
-
-	@SyncMethod("lock_handlers")
-	def set_handlers(self, handlers):
-		self.handlers = handlers
-	
-	# TODO: stuff like handlers and node_groups wouldn't have to be synched if only the 
-	# networking thread accessed them. Mind you, the other networking threads need access
-	# to them anyway - client handler threads, etc.
-
-	@SyncMethod("lock_node_groups")
-	def get_node_groups(self):
-		return self.node_groups
-
-	@SyncMethod("lock_node_groups")
-	def set_node_groups(self, node_groups):
-		self.node_groups = node_groups
+		lockable_attrs(self,
+			listen_socket = None,		
+			handlers = {},		
+			node_groups = TagLookup()
+		)
 
 	def run(self):
 		"""	
@@ -174,85 +117,89 @@ class Server(Node, NetworkThread):
 		type is created in a new thread.
 		"""
 		
-		self.set_listen_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+		with self.listen_socket_lock:
+			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
-			self.get_listen_socket().bind((socket.gethostname(),self.port))
-			self.get_listen_socket().listen(1)
+			with self.listen_socket_lock:
+				self.listen_socket().bind((socket.gethostname(),self.port))
+				self.listen_socket().listen(1)
 		
 			self.next_id = 0
-			self.set_handlers({})
-			self.node_groups = TagLookup()
-			self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
+			with self.handlers_lock:
+				self.handlers = {}
+			with self.node_groups_lock:
+				self.node_groups = TagLookup()
+				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
 		
-			while not self.get_stopping():
-				conn,addr = self.get_listen_socket().accept()
+			while True:				
+				# exit loop if shutting down
+				with self.stopping_lock:
+					if self.stopping:
+						break
+				
+				# can't lock here, because other threads need to be able to close socket
+				conn,addr = self.listen_socket().accept()
 				handler = self.client_class(self,conn,self.next_id)
-				# TODO: SyncMethod has failed us here!
-				with self.lock_handlers:
+				with self.handlers_lock:
 					self.handlers[self.next_id] = handler
 				handler.start()				
-				self.next_id += 1
+				self.next_id += 1	
+				
 		except socket.error as e:
 			# do not raise exception if user explicitly shut down the server
-			if not self.get_stopping():
-				raise e
+			with self.stopping_lock:
+				if not self.stopping:
+					# TODO: can't just raise the exception - who will catch it?					
+					raise e
 		finally:
-			self.get_listen_socket().close()
+			# close socket
+			with self.listen_socket_lock:
+				self.listen_socket.close()
+			# stop client handler threads
+			self.stop_handlers()
 	
 	def stop(self):
 		"""	
-		Shuts down the server, closing all client connections and terminating the thread.
+		Shuts down the server, closing all client connections and terminating 
+		the thread.
 		"""
-		NetworkThread.stop(self)
-		self.get_listen_socket().close()
-		self.stop_handlers()
-		
+		with self.stopping_lock:
+			self.stopping = True
+		# close the listen socket to interrupt blocking call
+		with self.listen_socket_lock:
+			self.listen_socket.close()
+		# wait for thread to end
+		self.join()
 		
 	def stop_handlers(self):
 		"""	
 		Invoked when the server is shutting down. Stops the client handler threads.
 		"""
-		# TODO: SyncMethod fail
-		# TODO: SyncMethod lock needs to be re-entrant
-		with self.lock_handlers:
-			for c in self.get_handlers():
-				self.disconnect_client(c)
-				
-
-	def disconnect_client(self, client_id):
-		"""	
-		Closes the connection to the specified client
-		"""
-		# TODO: SyncMethod fail
-		# remove from groups
-		with self.lock_node_groups:
-			self.node_groups.remove_item(client_id)
-
-		# TODO: SyncMethod fail
-		with self.lock_handlers:
-			if self.handlers.has_key(client_id):
-				# stop the handler thread - closes socket
-				self.handlers[client_id].stop()
-				# remove the handler from the dictionary
-				del(self.handlers[client_id])
+		with self.handlers_lock:
+			for c in self.handlers():
+				self.handlers[c].stop()			
 
 	def handle_client_arrival(self, client_id):
 		"""	
 		Client with given id has connected
 		"""
-		# SyncMethod fail
-		with self.lock_node_groups:
+		with self.node_groups_lock:
 			# tag in appropriate groups
 			self.node_groups.tag_item(client_id, Server.GROUP_ALL)
 			self.node_groups.tag_item(client_id, Server.GROUP_CLIENTS)
 		
 	def handle_client_departure(self, client_id):
 		"""	
-		Client with given id has departed. Removes the associated
-		handler.
+		Invoked by client handler when handler shuts down. Removes client from 
+		groups and removes the associated handler.
 		"""
-		# attempt to disconnect client just in case this hasn't already been done
-		self.disconnect_client(client_id)
+		# remove from groups
+		with self.node_groups_lock:
+			self.node_groups.remove_item(client_id)
+			
+		# remove the stopped handler from the dictionary
+		with self.handlers_lock:		
+			del(self.handlers[client_id])
 
 	def send(self, message):
 		"""	
@@ -265,33 +212,34 @@ class Server(Node, NetworkThread):
 			self.received(message)
 
 		for r in recips:
-			# SyncMethod fail
-			with self.lock_handlers:
+			with self.handlers_lock:
 				if self.handlers.has_key(r):
 					self.handlers[r].send(message)
 
 	def resolve_message_recipients(self, message):
-		exclude = set()
-		for ex in message.get_excludes():
-			if isinstance(ex, basestring):
-				exclude = exclude.union(self.node_groups.get_tag_items(ex))
-			else:
-				exclude.add(ex)
-		
-		recips = set()
-		for rec in message.get_recipients():
-			if isinstance(rec, basestring):
-				recips = recips.union(self.node_groups.get_tag_items(rec))
-			else:
-				recips.add(rec)
+		with self.node_groups_lock:
+			exclude = set()
+			for ex in message.get_excludes():
+				if isinstance(ex, basestring):				
+					exclude = exclude.union(self.node_groups.get_tag_items(ex))
+				else:
+					exclude.add(ex)
+			
+			recips = set()
+			for rec in message.get_recipients():
+				if isinstance(rec, basestring):
+					recips = recips.union(self.node_groups.get_tag_items(rec))
+				else:
+					recips.add(rec)
 				
-		return recips.difference(exclude)
+			return recips.difference(exclude)
 
 	def get_node_id(self):
 		return Server.SERVER
 
 	def get_num_clients(self):
-		return len(self.handlers)
+		with self.handlers_lock:
+			return len(self.handlers)
 
 class SocketListener(NetworkThread):
 	"""	
@@ -303,15 +251,19 @@ class SocketListener(NetworkThread):
 		NetworkThread.__init__(self)
 		self.encoder = encoder
 		self.decoder = decoder
-		
-	@SyncMethod("lock_socket")
+
 	def get_socket(self):
 		"""	
 		Should return the socket
 		"""
 		pass
+	
+	def get_socket_lock(self):
+		"""
+		Should return the socket lock
+		"""
+		pass
 
-	@SyncMethod()
 	def send(self, message):
 		"""	
 		Encodes the given message and sends it down the socket.
@@ -319,8 +271,9 @@ class SocketListener(NetworkThread):
 		"""
 		data = self.encoder.encode(message)
 		sent = 0
-		while sent < len(data):
-			sent += self.get_socket().send(data[sent:])
+		with self.get_socket_lock():
+			while sent < len(data):
+				sent += self.get_socket().send(data[sent:])
 
 	def received(self, message):
 		"""	
@@ -333,8 +286,6 @@ class SocketListener(NetworkThread):
 		Overidden from Thread. Just invokes listen_on_socket. Should be
 		overidden in subclasses.
 		"""
-		# TODO: socket.error will be raised here and thread will die without informing
-		# user. How should this be handled?
 		self.listen_on_socket()
 
 	def stop(self):
@@ -342,8 +293,13 @@ class SocketListener(NetworkThread):
 		May be used to stop the SocketListener, closing the port and terminating
 		the thread
 		"""
-		NetworkThread.stop(self)
-		self.get_socket().close()
+		with self.stopping_lock:
+			self.stopping = True
+		# close socket to interrupt blocking call
+		with self.get_socket_lock():
+			self.get_socket().close()
+		# wait for thread to finish
+		self.join()
 
 	def listen_on_socket(self):
 		"""	
@@ -351,18 +307,30 @@ class SocketListener(NetworkThread):
 		problem reading from the socket.
 		"""
 		try:
-			while not self.get_stopping():
+			while True:
+				# exit loop if shutting down
+				with self.stopping_lock:
+					if self.stopping:
+						break				
+				
+				# can't lock here, because other threads must be able to forcefully
+				# close the socket.
 				data = self.get_socket().recv(1024)
 				if not data: 
 					raise socket.error
 				message = self.decoder.decode(data)
 				self.received(message)
+				
 		except socket.error as e:
 			# if user explicitly shut down SocketListener, do not raise exception
-			if not self.get_stopping():
-				raise e
+			with self.stopping_lock:
+				if not self.stopping:
+					# TODO: Nope - who will catch this exception?
+					raise e
 		finally:
-			self.get_socket().close()
+			# clean up
+			with self.get_socket_lock():
+				self.get_socket().close()
 
 
 class ClientHandler(SocketListener):
@@ -374,20 +342,28 @@ class ClientHandler(SocketListener):
 
 	def __init__(self, server, socket, id, encoder, decoder):
 		SocketListener.__init__(self, encoder, decoder)
-		self.server = server
-		self.socket = socket
+		self.server = server		
 		self.id = id
+		lockable_attrs(self,
+			socket = socket
+		)
 
 	def get_socket(self):	
 		return self.socket
+	
+	def get_socket_lock(self):
+		return self.socket_lock
 
 	def run(self):
 		"""	
 		Overidden from SocketListener. Invoked when thread is started.	
 		"""
-		self.server.handle_client_arrival(self.id)		
-		self.listen_on_socket()
-		self.server.handle_client_departure(self.id)
+		self.server.handle_client_arrival(self.id)	
+		try:	
+			self.listen_on_socket()
+			# TODO: exception could be thrown here. How to inform user?
+		finally:
+			self.server.handle_client_departure(self.id)
 
 	def received(self, message):
 		"""	
@@ -413,14 +389,18 @@ class Client(SocketListener, Node):
 		
 		# client doesn't know its id yet
 		self.client_id = -1
+		lockable_attrs(self,
+			socket = None
+		)
 
 	def run(self):
 		"""	
 		Overidden from SocketListener. Connects on socket then listens for
 		messages. Invoked when thread is started.
 		"""
-		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.socket.connect((self.host, self.port))
+		with self.socket_lock:
+			self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			self.socket.connect((self.host, self.port))
 		self.after_connect()
 		self.listen_on_socket()
 
@@ -442,6 +422,9 @@ class Client(SocketListener, Node):
 
 	def get_socket(self):
 		return self.socket
+
+	def get_socket_lock(self):
+		return self.socket_lock
 
 	def get_node_id(self):
 		return self.client_id
@@ -822,6 +805,7 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 
 	def get_player_info(self):
 		return self.player_info
+	
 
 class GameServer(GameNode, Server):
 	"""	
@@ -830,10 +814,10 @@ class GameServer(GameNode, Server):
 	
 	GROUP_PLAYERS = "players"
 	
-	def __init__(self, max_players=4, client_class=GameClientHandler, port=570810):
+	def __init__(self, max_players=4, client_class=GameClientHandler, port=57810):
 		"""	
 		Initialises the server with default handler GameClientHandler and using
-		port 570810
+		port 57810
 		"""
 		GameNode.__init__(self)
 		Server.__init__(self, client_class, port)
@@ -859,8 +843,11 @@ class GameServer(GameNode, Server):
 		method instead.
 		"""
 		id = message.get_sender()
-		if self.handlers.has_key(id):
-			ch = self.handlers[id]
+		ch = None
+		with self.handlers_lock:
+			if self.handlers.has_key(id):
+				ch = self.handlers[id]
+		if ch != None:
 			if hasattr(ch, handler_name):
 				getattr(ch, handler_name)(message)
 			else:
@@ -869,34 +856,69 @@ class GameServer(GameNode, Server):
 	def handle_MsgPlayerDisconnect(self, message):
 		"""	
 		Server may receive player disconnect from a client, indicating that they 
-		are intentionally leaving the game. On receipt, server removes player from
-		the list and informs other players.
+		are intentionally leaving the game. On receipt, server stops client handler
 		"""
-		# clean up handler
-		self.handle_client_departure(message.player_id)
+		self.disconnect_client(message.player_id)
 		
-		# send message to clients
-		msg = MsgPlayerDisconnect([GameServer.GROUP_PLAYERS],[message.player_id],
-			message.player_id,message.reason)
-		self.send(msg)
+	def disconnect_client(self, client_id):
+		"""
+		May be invoked to "kick" a player from the server
+		"""
+		with self.handlers_lock:
+			if self.handlers.has_key(client_id):
+				# stop the handler. handle_client_departure will later be invoked
+				# to clean up handler.
+				self.handlers[client_id].stop()
 		
+	def handle_client_departure(self, client_id):
+		"""
+		Overidden from Server. Invoked by client handler when a handler shuts 
+		down. Removes the client from groups and removes the handler then, if the
+		client was a player in the game, informs other players of their departure.
+		"""
+		# Client exists and had entered the game?
+		send_msg = False
+		with self.handlers_lock:
+			if self.handlers.has_key(client_id):
+				with self.node_groups_lock:			
+					if GameServer.GROUP_PLAYERS in self.node_groups.get_item_tags(client_id):
+						send_msg = True
+				
+		# remove client from groups and remove handler
+		Server.handle_client_departure(self, client_id)
+						
+		# inform other players
+		if send_msg:
+			# TODO: Reason parameter should tell players whether client left or was kicked
+			self.send(MsgPlayerDisconnect([GameServer.GROUP_PLAYERS],[client_id],
+					GameServer.SERVER, client_id, ""))
+			
 	def get_num_players(self):
 		return len(self.get_players())
 		
 	def get_players(self):
-		return copy.copy(self.get_tag_items(GameServer.GROUP_PLAYERS))
+		with self.node_groups_lock:
+			return copy.copy(self.node_groups.get_tag_items(GameServer.GROUP_PLAYERS))
+
+	def get_player_names(self):
+		with self.handlers_lock:
+			return [self.handlers[p].get_player_info["name"] for p in self.get_players()]
 
 	def player_join(self, id, info):
 		"""	
 		Attempt to receive the player into the game and notify others
 		"""
-		if self.get_num_players() >= self.max_players:
-			raise GameFullError()
-		elif info["name"] in [self.handlers[p].get_player_info["name"] for p in self.get_players()]:
-			raise NameTakenError()
-		else:			
-			# add into group of connected players
-			self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
+		joined = False
+		with self.node_groups_lock:
+			if self.get_num_players() >= self.max_players:
+				raise GameFullError()
+			elif info["name"] in self.get_player_names():
+				raise NameTakenError()
+			else:			
+				# add into group of connected players
+				self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
+				joined = True
+		if joined:
 			# notify players
 			self.send(MsgPlayerConnect([GameServer.GROUP_PLAYERS], [id], 
 				GameServer.SERVER, id, info["name"]))
@@ -906,9 +928,22 @@ class GameServer(GameNode, Server):
 		Returns info on players in game, suitable for sending to newly connected 
 		players
 		"""
-		return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
+		with self.handlers_lock:
+			return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
+		
+	def stop(self):
+		"""
+		Overidden from Server. Informs clients of imminent shutdown then shuts 
+		down the server and all client handlers.
+		"""
+		# send shutdown message to clients
+		self.send(MsgServerShutdown([GameServer.GROUP_CLIENTS],[],GameServer.SERVER))
+		# close listener socket and stop client handlers
+		Server.stop(self)
 	
 # TODO: Should probably throw this if server rejects clients join request
+#		Are exceptions the best way to do this?
+
 class JoinRefusedError(Exception): pass	
 
 class GameClient(GameNode, Client, StateMachineBase):
@@ -935,7 +970,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 			for k in message.player_info:
 				self.machine.register_player(k, message.players_info[k])
 
-			self.machine.info_message("Connected to host")
+			# TODO: how to inform user of successful connection?
 			self.machine.change_state("StateInGame")
 
 		def handle_MsgRejectConnect(self, message):
@@ -943,8 +978,9 @@ class GameClient(GameNode, Client, StateMachineBase):
 			Client should receive MsgRejectConnect from the server to
 			indicate that connection was unsuccessful
 			"""
-			# TODO: should probably throw exception here
-			self.machine.info_message("Host rejected connection: %s" % message.reason)
+			# TODO: how to inform user?
+			# not allowed to enter game - shut down the client
+			self.machine.stop()
 
 	class StateInGame(StateMachineBase.State):
 
@@ -956,19 +992,24 @@ class GameClient(GameNode, Client, StateMachineBase):
 		StateMachineBase.__init__(self)
 		self.player_list = {}
 		self.player_info = player_info
-		self.time_delta = 0
-		self.latencies = []
-		self.latency = 0
+		self.latencies = [],
+		lockable_attrs(self,
+			latency = 0,
+			time_delta = 0
+		)
 		self.pinger_thread = None
 		self.change_state("StateConnecting")
 
 	def run(self):
 		Client.run(self)
 		# TODO: raise exception?
-		self.info_message("Disconnected from host")
 	
-	def run_ping_sender(self):
+	def run_ping_sender(self):		
 		while True:
+			# break if client has been stopped
+			with self.stopping_lock:
+				if self.stopping:
+					break						
 			time.sleep(3.0)
 			self.send(MsgPing([Server.SERVER],[],-1,self.get_timestamp()))			
 	
@@ -979,22 +1020,38 @@ class GameClient(GameNode, Client, StateMachineBase):
 		"""
 		self.send(MsgRequestConnect([Server.SERVER],[],-1,self.player_info))
 		self.pinger_thread = threading.Thread(target=self.run_ping_sender)
-
-	@SyncMethod("lock_latency")
-	def set_latency(self, latency):
-		self.latency = latency
-		
-	@SyncMethod("lock_latency")
+		self.pinger_thread.start()
+	
+	def stop(self):
+		"""
+		Overidden from Client. Sends disconnect message to server before closing
+		the socket.
+		"""
+		# send disconnect message
+		self.send(MsgPlayerDisconnect([Server.SERVER],[],self.client_id,""))
+		# shut down client
+		Client.stop(self)
+	
 	def get_latency(self):
-		return self.latency
+		"""	
+		Returns the average one-way time between client and server, in milliseconds 
+		"""
+		with self.latency_lock:
+			return self.latency
 		
-	@SyncMethod("lock_time_delta")
-	def set_time_delta(self, delta):
-		self.time_delta = delta
-		
-	@SyncMethod("lock_time_delta")
 	def get_time_delta(self):
-		return self.time_delta
+		"""	
+		Returns an estimate of the difference between the client's clock and the
+		server's clock, in milliseconds
+		"""
+		with self.time_delta_lock:
+			return self.time_delta
+	
+	def get_server_time(self):
+		"""	
+		Returns an estimate of the time on the server, in milliseconds
+		"""
+		return self.get_timestamp() - self.get_time_delta()
 
 	def register_player(self, id, info):
 		self.player_list[id] = info
@@ -1002,29 +1059,15 @@ class GameClient(GameNode, Client, StateMachineBase):
 	def deregister_player(self, id):
 		del(self.player_list[id])
 
-	def info_message(self, message):
-		"""	
-		Invoked to display an information message about the game state
-		"""
-		pass
-
-	def chat_message(self, message):
-		"""	
-		Invoked on receipt of a chat message to display it
-		"""
-		pass
-
 	def _player_connected(self, message):
 		self.register_player(message.player_id, {
 			"name" : message.name
 		})		
-		self.info_message("%s has joined the game" % message.name)
 
 	def _player_disconnectd(self, message):
 		if self.player_list.has_key(message.player_id):
 			name = self.player_list(message.player_id)
 			self.deregister_player(message.player_id)
-			self.info_message("%s has left the game" % name)
 
 	def intercept_MsgPong(self, message):
 		"""
@@ -1052,12 +1095,14 @@ class GameClient(GameNode, Client, StateMachineBase):
 		delta = recv_time - server_time
 		
 		# update values
-		self.set_latency(av_latn)
-		self.set_time_delta(delta)
+		with self.latency_lock:
+			self.latency = av_latn
+		with self.time_delta_lock:
+			self.time_delta = delta
 
 	@statemethod
 	def handle_MsgPlayerConnect(self, message):
-		self._player_connectd(message)
+		self._player_connected(message)
 
 	@statemethod
 	def handle_MsgPlayerDisconnect(self, message):
@@ -1065,9 +1110,10 @@ class GameClient(GameNode, Client, StateMachineBase):
 	
 	@statemethod
 	def handle_MsgServerShutdown(self, message):
-		# TODO: raise excception?
-		self.info_message("The host has ended the game")
-		
+		# TODO: how to inform user?
+		# stop client
+		self.stop()
+
 	@statemethod
 	def handle_MsgAcceptConnect(self, message):
 		pass
@@ -1115,100 +1161,6 @@ if __name__ == "__main__":
 			self.assertEquals("Frank", m2.name)
 			self.assertEquals(25, m2.age)
 			self.assertEquals(123.5, m2.weight)
-
-	class SyncTest(object):
-		
-		def __init__(self):
-			self.list = []
-		
-		def _delayed_op(self, thing):
-			self.list.append("start %s" % thing)
-			time.sleep(0.5)
-			self.list.append("fin %s" % thing)
-		
-		def do_unsynched(self, thing):
-			self._delayed_op(thing)
-		
-		@SyncMethod()
-		def do_synched(self, thing):
-			self._delayed_op(thing)
-			
-		@SyncMethod("sharedlock")
-		def shared1(self, thing):
-			self._delayed_op(thing)
-			
-		@SyncMethod("sharedlock")
-		def shared2(self, thing):
-			self._delayed_op(thing)
-
-	class TestSyncMethod(unittest.TestCase):
-		
-		def testUnsyncedMethod(self):
-			"""
-			t1 --|-.  |
-			t2 --|-+-.|
-			     | ' '|
-			   <-|-' '|
-			   <-|---'|				
-			"""
-			s = SyncTest()
-			t1 = threading.Thread(target=s.do_unsynched, args=["foo"])
-			t2 = threading.Thread(target=s.do_unsynched, args=["bar"])
-			t1.start()
-			time.sleep(0.1)
-			t2.start()
-			t1.join()
-			t2.join()
-			self.assertEquals(["start foo","start bar","fin foo","fin bar"],s.list)
-		
-		def testSyncMethod(self):
-			""" 	
-			t1 --|-. |		   
-			t2 -.| ' |
-			    '| ' |
-			   <+|-' |
-			    `|-. |
-			     | ' |
-			     | ' |
-			   <-|-'  
-			"""
-			s = SyncTest()
-			t1 = threading.Thread(target=s.do_synched, args=["foo"])
-			t2 = threading.Thread(target=s.do_synched, args=["bar"])
-			t1.start()
-			time.sleep(0.1)
-			t2.start()
-			t1.join()
-			t2.join()
-			self.assertEquals(["start foo","fin foo","start bar","fin bar"],s.list)
-			
-		def  testSharedLock(self):
-			""" 	
-			      [l1][  l2   ]
-			t1 ---|-. |   |   |
-			t2 ---|-+-|-. |   |
-			t3 --.| ' | ' |   |
-			     '| ' | ' |   |
-			   <-+|-' | ' |   |
-			   <-+|---|-' |   |
-			     `|---|---|-. |
-			      |   |   | ' |
-			      |   |   | ' |
-			   <--|---|---|-' |
-			"""
-			s = SyncTest()
-			t1 = threading.Thread(target=s.do_synched, args=["foo"])
-			t2 = threading.Thread(target=s.shared1, args=["bar"])
-			t3 = threading.Thread(target=s.shared2, args=["weh"])
-			t1.start()
-			time.sleep(0.1)
-			t2.start()
-			time.sleep(0.1)
-			t3.start()
-			t1.join()
-			t2.join()
-			t3.join()
-			self.assertEquals(["start foo","start bar","fin foo","fin bar","start weh","fin weh"],s.list)
 
 	class StubClientHandler(ClientHandler):
 		def __init__(self, server, sock, id):
