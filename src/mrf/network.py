@@ -10,10 +10,11 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: Informing user of client/server shutdown.
+TODO: handle_client_arrival and handle_client_departure should maybe be events
+	which are handled in the game loop, allowing user to write hooks for these
+TODO: Maybe should also have event when player joins server
 TODO: Unit tests for client/server
 TODO: Structure diagram
-TODO: GameServer/GameClient classes which throw these messages around
 TODO: Refactor telnet module to use generic client/server classes
 
 
@@ -54,6 +55,47 @@ class NetworkThread(threading.Thread):
 		with self.stopping_lock:
 			self.stopping = True
 		self.join()
+	
+	def handle_network_error(self, error_info):
+		"""
+		May be invoked to deal with errors raised by network communication in this
+		thread. Should be overidden.
+		"""
+		pass
+	
+	def handle_unexpected_error(self, error_info):
+		"""
+		May be invoked to deal with unexpected errors raised in this thread. 
+		Should be overidden.
+		"""
+		pass
+
+class NoEventHandlerError(Exception): pass	
+
+class Event(object):
+	"""
+	Base class for network events which are added to the event queue for game
+	loop to process.
+	"""
+	pass
+
+class EvtFatalError(Event):
+	"""
+	Added to event queue when an unexpected error is raised
+	"""
+	
+	def __init__(self, to_client, error):
+		self.to_client = to_client
+		self.error = error
+
+class EvtConnectionError(Event):
+	"""
+	Added to the event queue when an exception is raised by a socket
+	"""
+	
+	def __init__(self, to_client, error):
+		self.to_client = to_client	
+		self.error = error
 
 class Node(object):
 	"""	
@@ -61,7 +103,7 @@ class Node(object):
 	"""
 	
 	def __init__(self):
-		pass
+		self.event_queue = Queue.Queue()
 
 	def send(self, message):
 		"""	
@@ -79,6 +121,51 @@ class Node(object):
 
 	def get_node_id(self):
 		pass
+	
+	def take_events(self):
+		"""	
+		Removes and returns waiting events from the event queue.
+		"""
+		events = []
+		num = self.event_queue.qsize()
+		for i in range(num):
+			try:
+				events.append(self.event_queue.get(block=False))								
+			except Queue.Empty:
+				# qsize is not exact, so we might try to get one more items than 
+				# exist in the queue. Can safely ignore exception
+				pass
+		return events
+	
+	def process_events(self, handler=None):
+		"""	
+		Takes waiting events from the queue and dispatches them to their handler
+		methods. Should be invoked in the Node's game loop. A method named 
+		"handle_<eventtype>" is executed in the Node itself if found, or by
+		invoking "delegate_event" otherwise, and then again in the specified 
+		"handler" object, if found. Thus events may be handled both internally
+		and by the application. 
+		"""
+		for event in self.take_events():
+			# dispatch to internal handler method using naming convention
+			hname = "handle_"+event.__class__.__name__
+			if hasattr(self, hname):
+				getattr(self, hname)(event)
+			else:
+				self.delegate_event(event, hname)
+			
+			# dispatch to application handler method
+			if handler!=None and hasattr(handler,hname):
+				getattr(handler,hname)(event)			
+	
+	def delegate_event(self, event, handler_name):
+		"""	
+		Invoked if an event handler is not present in the current class. Should
+		be overidden to check elsewhere for a handler and raise 
+		NoEventHandlerError if one is not found.
+		"""
+		raise NoEventHandlerError(handler_name)
+	
 
 class Server(Node, NetworkThread):	
 	"""	
@@ -116,11 +203,10 @@ class Server(Node, NetworkThread):
 		new clients connecting. For each new client a client handler of the specified 
 		type is created in a new thread.
 		"""
-		
-		with self.listen_socket_lock:
-			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			
 		try:
 			with self.listen_socket_lock:
+				self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 				self.listen_socket().bind((socket.gethostname(),self.port))
 				self.listen_socket().listen(1)
 		
@@ -149,14 +235,25 @@ class Server(Node, NetworkThread):
 			# do not raise exception if user explicitly shut down the server
 			with self.stopping_lock:
 				if not self.stopping:
-					# TODO: can't just raise the exception - who will catch it?					
-					raise e
+					self.handle_network_error((Server.SERVER,e))					
+		except:
+			# handle all other errors
+			self.handle_unexpected_error((Server.SERVER,sys.exc_info()[1]))
+		
 		finally:
 			# close socket
 			with self.listen_socket_lock:
 				self.listen_socket.close()
 			# stop client handler threads
 			self.stop_handlers()
+	
+	def handle_network_error(self, error_info):
+		# add event to queue to notify application
+		self.event_queue.put(EvtConnectionError(*error_info))
+		
+	def handle_unexpected_error(self, error_info):
+		# put in event queue to notify application
+		self.event_queue.put(EvtFatalError(*error_info))	
 	
 	def stop(self):
 		"""	
@@ -263,11 +360,16 @@ class SocketListener(NetworkThread):
 		Should return the socket lock
 		"""
 		pass
+	
+	def get_connected_to(self):
+		"""
+		Should return the client id the socket connection is to
+		"""
+		pass
 
 	def send(self, message):
 		"""	
 		Encodes the given message and sends it down the socket.
-		Only one thread may enter at a time.
 		"""
 		data = self.encoder.encode(message)
 		sent = 0
@@ -325,8 +427,12 @@ class SocketListener(NetworkThread):
 			# if user explicitly shut down SocketListener, do not raise exception
 			with self.stopping_lock:
 				if not self.stopping:
-					# TODO: Nope - who will catch this exception?
-					raise e
+					self.handle_network_error((self.get_connected_to(),e))
+					
+		except:
+			# catch all other errors
+			self.handle_unexpected_error((self.get_connected_to(),sys.exc_info()[1]))
+					
 		finally:
 			# clean up
 			with self.get_socket_lock():
@@ -353,6 +459,9 @@ class ClientHandler(SocketListener):
 	
 	def get_socket_lock(self):
 		return self.socket_lock
+	
+	def get_connected_to(self):
+		return self.id
 
 	def run(self):
 		"""	
@@ -361,7 +470,6 @@ class ClientHandler(SocketListener):
 		self.server.handle_client_arrival(self.id)	
 		try:	
 			self.listen_on_socket()
-			# TODO: exception could be thrown here. How to inform user?
 		finally:
 			self.server.handle_client_departure(self.id)
 
@@ -373,6 +481,14 @@ class ClientHandler(SocketListener):
 		"""
 		message.sender = self.id
 		self.server.send(message)
+		
+	def handle_network_error(self, error_info):
+		# add to server's event queue
+		self.server.event_queue.put(EvtConnectionError(*error_info))
+		
+	def handle_unexpected_error(self, error_info):
+		# add to server's event queue
+		self.server.event_queue.put(EvtFatalError(*error_info))
 
 
 class Client(SocketListener, Node):
@@ -398,11 +514,29 @@ class Client(SocketListener, Node):
 		Overidden from SocketListener. Connects on socket then listens for
 		messages. Invoked when thread is started.
 		"""
-		with self.socket_lock:
-			self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			self.socket.connect((self.host, self.port))
-		self.after_connect()
-		self.listen_on_socket()
+		try:
+			with self.socket_lock:
+				self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				self.socket.connect((self.host, self.port))
+				
+			self.after_connect()
+			self.listen_on_socket()
+		
+		except socket.error as e:
+			# catch socket errors and handle
+			with self.stopping_lock:
+				if not self.stopping:
+					self.handle_network_error((Server.SERVER,e))
+		
+		except:
+			# catch all other errors
+			self.handle_unexpected_error((Server.SERVER,sys.exc_info()[1]))
+		
+		finally:
+			# check socket is closed, in case there was an error connecting
+			with self.socket_lock:
+				self.socket.close()			
+			
 
 	def send(self, message):
 		"""	
@@ -426,6 +560,9 @@ class Client(SocketListener, Node):
 	def get_socket_lock(self):
 		return self.socket_lock
 
+	def get_connected_to(self):
+		return Server.SERVER
+
 	def get_node_id(self):
 		return self.client_id
 
@@ -435,8 +572,17 @@ class Client(SocketListener, Node):
 		listening to messages
 		"""
 		pass
+	
+	def handle_network_error(self, error_info):
+		# add to event queue
+		self.event_queue.put(EvtConnectionError(*error_info))
+		
+	def handle_unexpected_error(self, error_info):
+		# add to event queue
+		self.event_queue.put(EvtFatalError(*error_info))
+		
 
-class Message(object):
+class Message(Event):
 	"""	
 	Base class for network messages. Subclasses should implement "to_dict" to
 	allow the message to be encoded for transport.
@@ -447,6 +593,7 @@ class Message(object):
 		Initializes the message with the given recipient list and 
 		sender id.
 		"""
+		Event.__init__(self)
 		self.recipients = recipients
 		self.excludes = excludes
 		self.sender = sender
@@ -657,8 +804,6 @@ class GameFullError(Exception): pass
 
 class NameTakenError(Exception): pass
 
-class NoMessageHandlerError(Exception): pass	
-
 class GameNode(Node):
 	"""	
 	Base class for all nodes (clients & server) in the game network
@@ -666,47 +811,6 @@ class GameNode(Node):
 	
 	def __init__(self):
 		Node.__init__(self)
-		self.message_queue = Queue.Queue()
-	
-	def take_messages(self):
-		"""	
-		Removes and returns waiting messages from the message queue.
-		"""
-		msgs = []
-		num = self.message_queue.qsize()
-		for i in range(num):
-			try:
-				msgs.append(self.message_queue.get(block=False))								
-			except Queue.Empty:
-				# qsize is not exact, so we might try to get one more items than 
-				# exist in the queue. Can safely ignore exception
-				pass
-		return msgs
-	
-	def process_messages(self, handler=None):
-		"""	
-		Takes waiting messages from the queue and dispatches them to their handler
-		methods. Should be invoked in the GameNode's game loop. A method named 
-		"handle_<messagetype>" is looked for first in the "handler" object, if 
-		provided, then in the GameNode object itself.
-		"""
-		for msg in self.take_messages():
-			# dispatch to handler method using naming convention
-			hname = "handle_"+msg.__class__.__name__
-			if handler!=None and hasattr(handler,hname):
-				getattr(handler,hname)(msg)
-			elif hasattr(self, hname):
-				getattr(self, hname)(msg)
-			else:
-				self.delegate_message(msg, hname)			
-	
-	def delegate_message(self, message, handler_name):
-		"""	
-		Invoked if a message handler is not present in the current class. Should
-		be overidden to check elsewhere for a handler and raise 
-		NoMessageHandlerError if one is not found.
-		"""
-		raise NoMessageHandlerError(handler_name)
 	
 	def get_timestamp(self):
 		return int(time.time()*1000)
@@ -716,14 +820,14 @@ class GameNode(Node):
 		Overidden from Node. Invoked when this node receives a message. 
 		Attempts to locate interceptor method called "intercept_<messagetype>" 
 		and if found, the message is handled by it. If no intercept method is 
-		found, the message is simply added to the message queue to be picked up 
+		found, the message is simply added to the event queue to be picked up 
 		by the game loop, which is how most messages should be handled.
 		"""
 		hname = "intercept_"+message.__class__.__name__
 		if hasattr(self, hname):
 			getattr(self, hname)(message)
 		else:
-			self.message_queue.put(message)
+			self.event_queue.put(message)
 
 	def intercept_MsgPing(self, message):
 		"""
@@ -734,21 +838,6 @@ class GameNode(Node):
 			message.ping_timestamp, self.get_timestamp())
 		self.send(resp)
 
-	def handle_MsgPlayerConnect(self, message): pass
-
-	def handle_MsgPlayerDisconnect(self, message): pass
-
-	def handle_MsgServerShutdown(self, message): pass
-	
-	def handle_MsgRequestConnect(self, message): pass
-
-	def handle_MsgAcceptConnect(self, message): pass
-
-	def handle_MsgRejectConnect(self, message): pass
-	
-	def handle_MsgPong(self, message): pass
-
-	def handle_MsgChat(self, message): pass
 
 class GameClientHandler(ClientHandler, StateMachineBase):
 	"""	
@@ -836,22 +925,26 @@ class GameServer(GameNode, Server):
 		"""
 		GameNode.received(self, message)
 	
-	def delegate_message(self, message, handler_name):
+	def delegate_event(self, event, handler_name):
 		"""
 		Overidden from GameNode. Invoked if server doesn't have an appropriate 
-		handler method for a message. Checks appropriate client handler for handler
+		handler method for an event. Checks appropriate client handler for handler
 		method instead.
 		"""
-		id = message.get_sender()
+		# can only delegate messages
+		if not isinstance(event, Message):
+			raise NoEventHandlerError(handler_name)
+		
+		id = event.get_sender()
 		ch = None
 		with self.handlers_lock:
 			if self.handlers.has_key(id):
 				ch = self.handlers[id]
 		if ch != None:
 			if hasattr(ch, handler_name):
-				getattr(ch, handler_name)(message)
+				getattr(ch, handler_name)(event)
 			else:
-				raise NoMessageHandlerError(handler_name)
+				raise NoEventHandlerError(handler_name)
 	
 	def handle_MsgPlayerDisconnect(self, message):
 		"""	
@@ -940,11 +1033,7 @@ class GameServer(GameNode, Server):
 		self.send(MsgServerShutdown([GameServer.GROUP_CLIENTS],[],GameServer.SERVER))
 		# close listener socket and stop client handlers
 		Server.stop(self)
-	
-# TODO: Should probably throw this if server rejects clients join request
-#		Are exceptions the best way to do this?
-
-class JoinRefusedError(Exception): pass	
+		
 
 class GameClient(GameNode, Client, StateMachineBase):
 	"""	
@@ -970,7 +1059,6 @@ class GameClient(GameNode, Client, StateMachineBase):
 			for k in message.player_info:
 				self.machine.register_player(k, message.players_info[k])
 
-			# TODO: how to inform user of successful connection?
 			self.machine.change_state("StateInGame")
 
 		def handle_MsgRejectConnect(self, message):
@@ -978,7 +1066,6 @@ class GameClient(GameNode, Client, StateMachineBase):
 			Client should receive MsgRejectConnect from the server to
 			indicate that connection was unsuccessful
 			"""
-			# TODO: how to inform user?
 			# not allowed to enter game - shut down the client
 			self.machine.stop()
 
@@ -1002,7 +1089,6 @@ class GameClient(GameNode, Client, StateMachineBase):
 
 	def run(self):
 		Client.run(self)
-		# TODO: raise exception?
 	
 	def run_ping_sender(self):		
 		while True:
@@ -1110,7 +1196,6 @@ class GameClient(GameNode, Client, StateMachineBase):
 	
 	@statemethod
 	def handle_MsgServerShutdown(self, message):
-		# TODO: how to inform user?
 		# stop client
 		self.stop()
 
