@@ -1,5 +1,6 @@
 import socket
 import threading
+import select
 import json
 import sys
 import time
@@ -10,10 +11,13 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: handle_client_arrival and handle_client_departure should maybe be events
-	which are handled in the game loop, allowing user to write hooks for these
-TODO: Maybe should also have event when player joins server
+TODO: Can't interrupt blocking socket calls by closing socket! Must switch to a 
+	polling solution by checking for data availability using select() periodically.
+TODO: recv doesn't necessarily return the entire message! Must redesign message
+	format to include a content length somehow
 TODO: Unit tests for client/server
+TODO: MsgPlayerConnect should have player info dict not just name. Check this is 
+	correct throughout code.
 TODO: Structure diagram
 TODO: Refactor telnet module to use generic client/server classes
 
@@ -37,6 +41,7 @@ def lockable_attrs(obj, **kargs):
 	for k in kargs:
 		setattr(obj, k, kargs[k])
 		setattr(obj, k+"_lock", threading.RLock())		
+
 
 class NetworkThread(threading.Thread):
 	
@@ -70,7 +75,9 @@ class NetworkThread(threading.Thread):
 		"""
 		pass
 
+
 class NoEventHandlerError(Exception): pass	
+
 
 class Event(object):
 	"""
@@ -78,6 +85,7 @@ class Event(object):
 	loop to process.
 	"""
 	pass
+
 
 class EvtFatalError(Event):
 	"""
@@ -88,6 +96,7 @@ class EvtFatalError(Event):
 		self.to_client = to_client
 		self.error = error
 
+
 class EvtConnectionError(Event):
 	"""
 	Added to the event queue when an exception is raised by a socket
@@ -96,6 +105,24 @@ class EvtConnectionError(Event):
 	def __init__(self, to_client, error):
 		self.to_client = to_client	
 		self.error = error
+
+class EvtClientArrived(Event):
+	"""
+	Added to the event queue when a client connects to the server
+	"""
+	
+	def __init__(self, client_id):
+		self.client_id = client_id
+		
+		
+class EvtClientDeparted(Event):
+	"""
+	Added to the event queue when a client disconnects from the server
+	"""
+	
+	def __init__(self, client_id):
+		self.client_id = client_id
+
 
 class Node(object):
 	"""	
@@ -177,17 +204,17 @@ class Server(Node, NetworkThread):
 	GROUP_ALL = "all"
 	GROUP_CLIENTS = "clients"
 
-	def __init__(self, client_class, port):
+	def __init__(self, client_factory, port):
 		"""	
-		Initialises the server. "client_class" should be a class for handling clients.
-		It should extend threading.Thread and accept the server, socket and client id as parameters.
-		The client thread should invoke handle_client_arrival on startup and 
-		handle_client_departure on termination. "port" is the port number to listen for 
-		new clients on.
+		Initialises the server. "client_factory" should be a callable which creates
+		new client handlers. The callable should take the server, socket and client_id
+		as paramters. The client handler should extend threading.Thread and 
+		invoke client_arrived on startup and client_departed on termination. 
+		"port" is the port number to listen for new clients on.
 		"""
 		Node.__init__(self)
 		NetworkThread.__init__(self)
-		self.client_class = client_class
+		self.client_factory = client_factory
 		self.port = port
 		
 		self.next_id = 0
@@ -207,8 +234,8 @@ class Server(Node, NetworkThread):
 		try:
 			with self.listen_socket_lock:
 				self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				self.listen_socket().bind((socket.gethostname(),self.port))
-				self.listen_socket().listen(1)
+				self.listen_socket.bind((socket.gethostname(),self.port))
+				self.listen_socket.listen(1)
 		
 			self.next_id = 0
 			with self.handlers_lock:
@@ -224,8 +251,10 @@ class Server(Node, NetworkThread):
 						break
 				
 				# can't lock here, because other threads need to be able to close socket
-				conn,addr = self.listen_socket().accept()
-				handler = self.client_class(self,conn,self.next_id)
+				print "Waiting to accept"
+				conn,addr = self.listen_socket.accept()
+				print "Finished waiting to accept"
+				handler = self.client_factory(self,conn,self.next_id)
 				with self.handlers_lock:
 					self.handlers[self.next_id] = handler
 				handler.start()				
@@ -241,9 +270,11 @@ class Server(Node, NetworkThread):
 			self.handle_unexpected_error((Server.SERVER,sys.exc_info()[1]))
 		
 		finally:
+			print "Server cleanup"
 			# close socket
 			with self.listen_socket_lock:
-				self.listen_socket.close()
+				if self.listen_socket != None:
+					self.listen_socket.close()
 			# stop client handler threads
 			self.stop_handlers()
 	
@@ -255,6 +286,18 @@ class Server(Node, NetworkThread):
 		# put in event queue to notify application
 		self.event_queue.put(EvtFatalError(*error_info))	
 	
+	def handle_EvtConnectionError(self, event):
+		pass
+	
+	def handle_EvtFatalError(self, event):
+		pass
+	
+	def handle_EvtClientArrived(self, event):
+		pass
+	
+	def handle_EvtClientDeparted(self, event):
+		pass
+	
 	def stop(self):
 		"""	
 		Shuts down the server, closing all client connections and terminating 
@@ -264,7 +307,8 @@ class Server(Node, NetworkThread):
 			self.stopping = True
 		# close the listen socket to interrupt blocking call
 		with self.listen_socket_lock:
-			self.listen_socket.close()
+			if self.listen_socket != None:
+				self.listen_socket.close()
 		# wait for thread to end
 		self.join()
 		
@@ -273,19 +317,22 @@ class Server(Node, NetworkThread):
 		Invoked when the server is shutting down. Stops the client handler threads.
 		"""
 		with self.handlers_lock:
-			for c in self.handlers():
+			for c in self.handlers:
 				self.handlers[c].stop()			
 
-	def handle_client_arrival(self, client_id):
+	def client_arrived(self, client_id):
 		"""	
-		Client with given id has connected
+		Client with given id has connected. Invoked by client handler on startup.
 		"""
 		with self.node_groups_lock:
 			# tag in appropriate groups
 			self.node_groups.tag_item(client_id, Server.GROUP_ALL)
 			self.node_groups.tag_item(client_id, Server.GROUP_CLIENTS)
+			
+		# add event to queue
+		self.event_queue.put(EvtClientArrived(client_id))
 		
-	def handle_client_departure(self, client_id):
+	def client_departed(self, client_id):
 		"""	
 		Invoked by client handler when handler shuts down. Removes client from 
 		groups and removes the associated handler.
@@ -297,6 +344,9 @@ class Server(Node, NetworkThread):
 		# remove the stopped handler from the dictionary
 		with self.handlers_lock:		
 			del(self.handlers[client_id])
+			
+		# add event to queue
+		self.event_queue.put(EvtClientDeparted(client_id))
 
 	def send(self, message):
 		"""	
@@ -436,7 +486,8 @@ class SocketListener(NetworkThread):
 		finally:
 			# clean up
 			with self.get_socket_lock():
-				self.get_socket().close()
+				if self.get_socket() != None:
+					self.get_socket().close()
 
 
 class ClientHandler(SocketListener):
@@ -467,11 +518,11 @@ class ClientHandler(SocketListener):
 		"""	
 		Overidden from SocketListener. Invoked when thread is started.	
 		"""
-		self.server.handle_client_arrival(self.id)	
+		self.server.client_arrived(self.id)	
 		try:	
 			self.listen_on_socket()
 		finally:
-			self.server.handle_client_departure(self.id)
+			self.server.client_departed(self.id)
 
 	def received(self, message):
 		"""	
@@ -535,7 +586,8 @@ class Client(SocketListener, Node):
 		finally:
 			# check socket is closed, in case there was an error connecting
 			with self.socket_lock:
-				self.socket.close()			
+				if self.socket != None:
+					self.socket.close()			
 			
 
 	def send(self, message):
@@ -788,21 +840,48 @@ class MsgPong(Message):
 	def to_dict(self):
 		return self._get_attrs(("ping_timestamp","pong_timestamp"))
 
+
 class MsgChat(Message):
 	"""	
 	Sent between clients to allow players to communicate with each other	
 	"""
 
 	def __init__(self, recipients, excludes, sender=-1, message=""):
-		Message.__init__(self, recipients, sender)
+		Message.__init__(self, recipients, excludes, sender)
 		self.message = message
 
 	def to_dict(self):
 		return self._get_attrs(("message",))
 
+
 class GameFullError(Exception): pass
 
+
 class NameTakenError(Exception): pass
+
+
+class EvtPlayerRejected(Event):
+	"""
+	Added to server's event queue when a client's request to enter the game is 
+	rejected 
+	"""
+	
+	def __init__(self, client_id, reason):
+		Event.__init__(self)
+		self.client_id = client_id
+		self.reason = reason
+	
+	
+class EvtPlayerAccepted(Event):
+	"""
+	Added to server's event queue when a client's request to enter the game is 
+	accepted
+	"""
+	
+	def __init__(self, client_id):
+		Event.__init__(self)
+		self.client_id = client_id
+	
 
 class GameNode(Node):
 	"""	
@@ -903,13 +982,15 @@ class GameServer(GameNode, Server):
 	
 	GROUP_PLAYERS = "players"
 	
-	def __init__(self, max_players=4, client_class=GameClientHandler, port=57810):
+	def __init__(self, max_players=4, 
+			client_factory=lambda server,socket,client_id: GameClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder()), 
+			port=57810):
 		"""	
 		Initialises the server with default handler GameClientHandler and using
 		port 57810
 		"""
 		GameNode.__init__(self)
-		Server.__init__(self, client_class, port)
+		Server.__init__(self, client_factory, port)
 		self.max_players = max_players
 
 	def send(self, message):
@@ -959,11 +1040,11 @@ class GameServer(GameNode, Server):
 		"""
 		with self.handlers_lock:
 			if self.handlers.has_key(client_id):
-				# stop the handler. handle_client_departure will later be invoked
+				# stop the handler. client_departed will later be invoked
 				# to clean up handler.
 				self.handlers[client_id].stop()
 		
-	def handle_client_departure(self, client_id):
+	def client_departed(self, client_id):
 		"""
 		Overidden from Server. Invoked by client handler when a handler shuts 
 		down. Removes the client from groups and removes the handler then, if the
@@ -978,7 +1059,7 @@ class GameServer(GameNode, Server):
 						send_msg = True
 				
 		# remove client from groups and remove handler
-		Server.handle_client_departure(self, client_id)
+		Server.client_departed(self, client_id)
 						
 		# inform other players
 		if send_msg:
@@ -1004,13 +1085,26 @@ class GameServer(GameNode, Server):
 		joined = False
 		with self.node_groups_lock:
 			if self.get_num_players() >= self.max_players:
+				
+				# add event as application hook
+				self.event_queue.put(EvtPlayerRejected(id,"The game is full"))
+				
+				# raise exception
 				raise GameFullError()
+			
 			elif info["name"] in self.get_player_names():
+				
+				# add e vent as application hook
+				self.event_queue.put(EvtPlayerAccepted(id, "The player name is taken"))
+				
+				# raise exception
 				raise NameTakenError()
+			
 			else:			
 				# add into group of connected players
 				self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
 				joined = True
+				
 		if joined:
 			# notify players
 			self.send(MsgPlayerConnect([GameServer.GROUP_PLAYERS], [id], 
@@ -1247,28 +1341,127 @@ if __name__ == "__main__":
 			self.assertEquals(25, m2.age)
 			self.assertEquals(123.5, m2.weight)
 
-	class StubClientHandler(ClientHandler):
-		def __init__(self, server, sock, id):
-			self.server = server
-			self.id = id
-			self.stop = False
-		def run(self):
-			self.server.handle_client_arrival(id)
-			while not self.stop:
-				pass
-			self.server.handle_client_departure(id)
-		def disconnect(self):
-			self.stop = True
+	class TestMessages(unittest.TestCase):
+		
+		encoder = JsonEncoder()
+
+		def doTestMessage(self, message_class, **params):
+			m1 = message_class(**params)
+			for k in params:
+				self.assertEquals(params[k], getattr(m1, k))
+			data = self.encoder.encode(m1)
+			m2 = self.encoder.decode(data)
+			for k in params:
+				self.assertEquals(params[k], getattr(m2, k))
+		
+		def testMessages(self):
+			self.doTestMessage(MsgPlayerConnect, 
+				recipients=["players",1], excludes=[2], sender=2, player_id=1, name="dave")
+			self.doTestMessage(MsgPlayerDisconnect,
+				recipients=[2,"players"], excludes=[3], sender=5, player_id=9, reason="test")
+			self.doTestMessage(MsgServerShutdown,
+				recipients=[3,"players"], excludes=[2,4], sender=6)
+			self.doTestMessage(MsgRequestConnect,
+				recipients=[4,5], excludes=["players"], sender=7, player_info={"name":"dave","age":21})
+			self.doTestMessage(MsgAcceptConnect,
+				recipients=[1], excludes=[99,98], sender=4, player_id=3, 
+				players_info={"dave":{"age":31},"sue":{"age":24}})
+			self.doTestMessage(MsgRejectConnect,
+				recipients=[4,5], excludes=[9], sender=2, reason="test")
+			self.doTestMessage(MsgPing,
+				recipients=[2,3], excludes=[5], sender=7, ping_timestamp=123456789)
+			self.doTestMessage(MsgPong,
+				recipients=[9,9], excludes=[6,7], sender=2, ping_timestamp=123456789, 
+				pong_timestamp=987654321)
+			self.doTestMessage(MsgChat,
+				recipients=[7,7], excludes=[5], sender=3, message="hi thar")
 
 	class TestClientServer(unittest.TestCase):
 
-		def testServer(self):
+		def handle_EvtClientArrived(self, event):
+			print "Client %d arrived" % event.client_id
+			
+		def handle_EvtClientDeparted(self, event):
+			print "Client %d departed" % event.client_id
+
+		def handle_EvtFatalError(self, event):
+			print "Fatal error: %s" % str(event.error)
+		
+		def handle_EvtConnectionError(self, event):
+			print "Connection error: %s" % str(event.error)
+
+		def make_client_handler(self,server,socket,client_id):
+			return ClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
+
+		def testServerNumClients(self):
+			"""	
+			Test that Server maintains client handler set as expected 
+			"""
 			# create server
-			#server = Server(StubClientHandler,4444)
-			#server.start()
+			server = Server(self.make_client_handler,4444)
+			server.start()
+			time.sleep(0.1)			
+			server.process_events(self)
+
+			self.assertEquals(0, server.get_num_clients())
 
 			# connect to server
-			# TODO: how to test individual components?
-			pass
+			sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			sock1.connect(("localhost",4444))
+			time.sleep(0.1)
+			server.process_events(self)
+			
+			self.assertEquals(1, server.get_num_clients())
+			
+			# connect second client
+			sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			sock2.connect(("localhost",4444))
+			time.sleep(0.1)
+			server.process_events(self)
+			
+			self.assertEquals(2, server.get_num_clients())
+			
+			# disconnect second
+			sock2.close()
+			time.sleep(0.1)
+			server.process_events(self)
+			
+			self.assertEquals(1, server.get_num_clients())
+			
+			# disconnect first
+			sock1.close()
+			time.sleep(0.1)
+			server.process_events(self)
+			
+			self.assertEquals(0, server.get_num_clients())
+			
+			server.stop()
+			
+		def testClientConnection(self):
+			"""	
+			Test that the client can connect and communicate with the server 
+			"""
+			"""server = Server(self.make_client_handler,4444)	
+			server.start()
+			time.sleep(0.1)
+			
+			encoder = JsonEncoder()
+			client = Client("localhost", 4444, encoder, encoder)
+			client.start()
+			
+			server.process_events(self)
+			client.process_events(self)
+			
+			self.assertEquals(1, server.get_num_clients())
 
-	unittest.main()
+			client.send()"""
+			pass
+				
+	#unittest.main()
+	
+	
+	
+	
+	
+	
+	

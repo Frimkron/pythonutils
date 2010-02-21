@@ -107,8 +107,7 @@ class TagLookup(object):
 
 	def remove_item(self, item):
 		if self.has_item(item):
-			item_tags = self.items[item]
-			for tag in item_tags:
+			for tag in self.get_item_tags(item):
 				self.untag_item(item, tag)
 			del(self.items[item])
 
@@ -131,8 +130,8 @@ class TagLookup(object):
 		self.groups[tag] = set()
 
 	def remove_tag(self, tag):
-		if self.has_tag(tag):
-			for item in self.groups[tag]:
+		if self.has_tag(tag):			
+			for item in self.get_tag_items(tag):
 				self.untag_item(item, tag)
 			del(self.groups[tag])
 			
@@ -246,6 +245,19 @@ if __name__ == "__main__":
 			t.untag_item("foo","bar")
 			self.assertEquals(set(["car"]),t.get_item_tags("foo"))
 			self.assertEquals(set(),t.get_tag_items("bar"))
+
+		def testRemoveTagsAndItems(self):
+			t = TagLookup()
+			t.tag_item("foo", "bar")
+			t.tag_item("foo", "car")
+			t.tag_item("foo", "dar")
+			self.assertEquals(set(["foo"]),t.get_items())
+			self.assertEquals(set(["bar","car","dar"]),t.get_tags())
+			t.remove_tag("car")
+			self.assertEquals(set(["bar","dar"]),t.get_tags())
+			t.remove_item("foo")
+			self.assertEquals(set([]),t.get_items())
+			self.assertEquals(set(["bar","dar"]),t.get_tags())
 
 		def testClear(self):
 			t = TagLookup()
