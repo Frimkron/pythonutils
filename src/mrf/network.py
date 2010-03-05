@@ -11,8 +11,6 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: Can't interrupt blocking socket calls by closing socket! Must switch to a 
-	polling solution by checking for data availability using select() periodically.
 TODO: recv doesn't necessarily return the entire message! Must redesign message
 	format to include a content length somehow
 TODO: Unit tests for client/server
@@ -62,14 +60,14 @@ class NetworkThread(threading.Thread):
 		self.join()
 	
 	def handle_network_error(self, error_info):
-		"""
+		"""	
 		May be invoked to deal with errors raised by network communication in this
 		thread. Should be overidden.
 		"""
 		pass
 	
 	def handle_unexpected_error(self, error_info):
-		"""
+		"""	
 		May be invoked to deal with unexpected errors raised in this thread. 
 		Should be overidden.
 		"""
@@ -80,7 +78,7 @@ class NoEventHandlerError(Exception): pass
 
 
 class Event(object):
-	"""
+	"""	
 	Base class for network events which are added to the event queue for game
 	loop to process.
 	"""
@@ -88,7 +86,7 @@ class Event(object):
 
 
 class EvtFatalError(Event):
-	"""
+	"""	
 	Added to event queue when an unexpected error is raised
 	"""
 	
@@ -98,7 +96,7 @@ class EvtFatalError(Event):
 
 
 class EvtConnectionError(Event):
-	"""
+	"""	
 	Added to the event queue when an exception is raised by a socket
 	"""
 	
@@ -107,7 +105,7 @@ class EvtConnectionError(Event):
 		self.error = error
 
 class EvtClientArrived(Event):
-	"""
+	"""	
 	Added to the event queue when a client connects to the server
 	"""
 	
@@ -116,7 +114,7 @@ class EvtClientArrived(Event):
 		
 		
 class EvtClientDeparted(Event):
-	"""
+	"""	
 	Added to the event queue when a client disconnects from the server
 	"""
 	
@@ -141,10 +139,17 @@ class Node(object):
 
 	def received(self, message):
 		"""	
-		Invoked when a message is received by this node. Should be overidden in 
-		subclasses.
-		"""
-		pass
+		Invoked when this node receives a message. 
+		Attempts to locate interceptor method called "intercept_<messagetype>" 
+		and if found, the message is handled by it. If no intercept method is 
+		found, the message is simply added to the event queue to be picked up 
+		by the game loop, which is how most messages should be handled.
+		"""		
+		hname = "intercept_"+message.__class__.__name__
+		if hasattr(self, hname):
+			getattr(self, hname)(message)
+		else:
+			self.event_queue.put(message)
 
 	def get_node_id(self):
 		pass
@@ -171,27 +176,40 @@ class Node(object):
 		"handle_<eventtype>" is executed in the Node itself if found, or by
 		invoking "delegate_event" otherwise, and then again in the specified 
 		"handler" object, if found. Thus events may be handled both internally
-		and by the application. 
+		and by the application. If an event is not handled after checking 
+		internally and in the handler object, a NoEventHandlerError is raised.
 		"""
 		for event in self.take_events():
-			# dispatch to internal handler method using naming convention
+			handled = False
 			hname = "handle_"+event.__class__.__name__
+			
+			# dispatch to internal handler method using naming convention			
 			if hasattr(self, hname):
 				getattr(self, hname)(event)
+				handled = True
 			else:
-				self.delegate_event(event, hname)
+				handled = self.delegate_event(event, hname)				
 			
 			# dispatch to application handler method
 			if handler!=None and hasattr(handler,hname):
-				getattr(handler,hname)(event)			
+				getattr(handler,hname)(event)
+				handled = True
+				
+			if not handled:
+				raise NoEventHandlerError(hname)			
 	
 	def delegate_event(self, event, handler_name):
 		"""	
 		Invoked if an event handler is not present in the current class. Should
-		be overidden to check elsewhere for a handler and raise 
-		NoEventHandlerError if one is not found.
+		be overidden to check elsewhere for a handler return True if the event
+		was handled.
 		"""
-		raise NoEventHandlerError(handler_name)
+		return False
+	
+
+def wait_for_data(socket, timeout):
+	rlist,wlist,xlist = select.select([socket],[],[],timeout)
+	return socket in rlist
 	
 
 class Server(Node, NetworkThread):	
@@ -200,6 +218,7 @@ class Server(Node, NetworkThread):
 	the server in its own thread.
 	"""
 	
+	ACCEPT_POLL_INTERVAL = 0.5
 	SERVER = -1
 	GROUP_ALL = "all"
 	GROUP_CLIENTS = "clients"
@@ -217,9 +236,9 @@ class Server(Node, NetworkThread):
 		self.client_factory = client_factory
 		self.port = port
 		
+		self.listen_socket = None
 		self.next_id = 0
-		lockable_attrs(self,
-			listen_socket = None,		
+		lockable_attrs(self,				
 			handlers = {},		
 			node_groups = TagLookup()
 		)
@@ -232,10 +251,10 @@ class Server(Node, NetworkThread):
 		"""
 			
 		try:
-			with self.listen_socket_lock:
-				self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				self.listen_socket.bind((socket.gethostname(),self.port))
-				self.listen_socket.listen(1)
+			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			self.listen_socket.setblocking(False)
+			self.listen_socket.bind((socket.gethostname(),self.port))
+			self.listen_socket.listen(1)
 		
 			self.next_id = 0
 			with self.handlers_lock:
@@ -249,32 +268,27 @@ class Server(Node, NetworkThread):
 				with self.stopping_lock:
 					if self.stopping:
 						break
+								
+				if wait_for_data(self.listen_socket, Server.ACCEPT_POLL_INTERVAL):							
+					conn,addr = self.listen_socket.accept()								
+					handler = self.client_factory(self,conn,self.next_id)					
+					with self.handlers_lock:
+						self.handlers[self.next_id] = handler
+					handler.start()				
+					self.next_id += 1	
 				
-				# can't lock here, because other threads need to be able to close socket
-				print "Waiting to accept"
-				conn,addr = self.listen_socket.accept()
-				print "Finished waiting to accept"
-				handler = self.client_factory(self,conn,self.next_id)
-				with self.handlers_lock:
-					self.handlers[self.next_id] = handler
-				handler.start()				
-				self.next_id += 1	
-				
-		except socket.error as e:
-			# do not raise exception if user explicitly shut down the server
-			with self.stopping_lock:
-				if not self.stopping:
-					self.handle_network_error((Server.SERVER,e))					
+		except socket.error as e:	
+			# handle socket error		
+			self.handle_network_error((Server.SERVER,e))
+								
 		except:
 			# handle all other errors
 			self.handle_unexpected_error((Server.SERVER,sys.exc_info()[1]))
 		
 		finally:
-			print "Server cleanup"
 			# close socket
-			with self.listen_socket_lock:
-				if self.listen_socket != None:
-					self.listen_socket.close()
+			if self.listen_socket != None:
+				self.listen_socket.close()
 			# stop client handler threads
 			self.stop_handlers()
 	
@@ -305,10 +319,7 @@ class Server(Node, NetworkThread):
 		"""
 		with self.stopping_lock:
 			self.stopping = True
-		# close the listen socket to interrupt blocking call
-		with self.listen_socket_lock:
-			if self.listen_socket != None:
-				self.listen_socket.close()
+					
 		# wait for thread to end
 		self.join()
 		
@@ -394,6 +405,8 @@ class SocketListener(NetworkThread):
 	be invoked to start the SocketListener running in its own thread.
 	"""
 
+	READ_POLL_INTERVAL = 0.5
+
 	def __init__(self, encoder, decoder):
 		NetworkThread.__init__(self)
 		self.encoder = encoder
@@ -406,13 +419,13 @@ class SocketListener(NetworkThread):
 		pass
 	
 	def get_socket_lock(self):
-		"""
+		"""	
 		Should return the socket lock
 		"""
 		pass
 	
 	def get_connected_to(self):
-		"""
+		"""	
 		Should return the client id the socket connection is to
 		"""
 		pass
@@ -423,9 +436,9 @@ class SocketListener(NetworkThread):
 		"""
 		data = self.encoder.encode(message)
 		sent = 0
+		# need to acquire lock to write to socket
 		with self.get_socket_lock():
-			while sent < len(data):
-				sent += self.get_socket().send(data[sent:])
+			self.get_socket().sendall(data)
 
 	def received(self, message):
 		"""	
@@ -440,19 +453,6 @@ class SocketListener(NetworkThread):
 		"""
 		self.listen_on_socket()
 
-	def stop(self):
-		"""	
-		May be used to stop the SocketListener, closing the port and terminating
-		the thread
-		"""
-		with self.stopping_lock:
-			self.stopping = True
-		# close socket to interrupt blocking call
-		with self.get_socket_lock():
-			self.get_socket().close()
-		# wait for thread to finish
-		self.join()
-
 	def listen_on_socket(self):
 		"""	
 		Blocks, waiting for messages on the socket. Raises socket.error if there is a 
@@ -465,19 +465,18 @@ class SocketListener(NetworkThread):
 					if self.stopping:
 						break				
 				
-				# can't lock here, because other threads must be able to forcefully
-				# close the socket.
-				data = self.get_socket().recv(1024)
-				if not data: 
-					raise socket.error
-				message = self.decoder.decode(data)
-				self.received(message)
+				# dont need to lock read from socket
+				# TODO: implement envelope to ensure entire message is read
+				if wait_for_data(self.get_socket(), SocketListener.READ_POLL_INTERVAL):
+					data = self.get_socket().recv(1024)
+					if len(data) == 0:
+						raise socket.error("Socket closed")
+					message = self.decoder.decode(data)
+					self.received(message)
 				
 		except socket.error as e:
-			# if user explicitly shut down SocketListener, do not raise exception
-			with self.stopping_lock:
-				if not self.stopping:
-					self.handle_network_error((self.get_connected_to(),e))
+			# catch socket errors			
+			self.handle_network_error((self.get_connected_to(),e))
 					
 		except:
 			# catch all other errors
@@ -500,10 +499,11 @@ class ClientHandler(SocketListener):
 	def __init__(self, server, socket, id, encoder, decoder):
 		SocketListener.__init__(self, encoder, decoder)
 		self.server = server		
-		self.id = id
+		self.id = id		
 		lockable_attrs(self,
 			socket = socket
 		)
+		socket.setblocking(False)
 
 	def get_socket(self):	
 		return self.socket
@@ -568,16 +568,18 @@ class Client(SocketListener, Node):
 		try:
 			with self.socket_lock:
 				self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				# connect using blocking call				
+				self.socket.setblocking(True)				
 				self.socket.connect((self.host, self.port))
+				# then set to non-blocking ready for reads.
+				self.socket.setblocking(False)
 				
 			self.after_connect()
 			self.listen_on_socket()
 		
 		except socket.error as e:
 			# catch socket errors and handle
-			with self.stopping_lock:
-				if not self.stopping:
-					self.handle_network_error((Server.SERVER,e))
+			self.handle_network_error((Server.SERVER,e))
 		
 		except:
 			# catch all other errors
@@ -697,7 +699,7 @@ class MessageError(Exception):
 	pass
 
 class JsonEncoder(object):
-	"""
+	"""	
 	Encodes Message objects in JSON format. Will not handle subclasses of Message
 	which are nested classes - they must be in module scope.	
 	"""
@@ -861,7 +863,7 @@ class NameTakenError(Exception): pass
 
 
 class EvtPlayerRejected(Event):
-	"""
+	"""	
 	Added to server's event queue when a client's request to enter the game is 
 	rejected 
 	"""
@@ -873,7 +875,7 @@ class EvtPlayerRejected(Event):
 	
 	
 class EvtPlayerAccepted(Event):
-	"""
+	"""	
 	Added to server's event queue when a client's request to enter the game is 
 	accepted
 	"""
@@ -893,20 +895,6 @@ class GameNode(Node):
 	
 	def get_timestamp(self):
 		return int(time.time()*1000)
-
-	def received(self, message):
-		"""	
-		Overidden from Node. Invoked when this node receives a message. 
-		Attempts to locate interceptor method called "intercept_<messagetype>" 
-		and if found, the message is handled by it. If no intercept method is 
-		found, the message is simply added to the event queue to be picked up 
-		by the game loop, which is how most messages should be handled.
-		"""
-		hname = "intercept_"+message.__class__.__name__
-		if hasattr(self, hname):
-			getattr(self, hname)(message)
-		else:
-			self.event_queue.put(message)
 
 	def intercept_MsgPing(self, message):
 		"""
@@ -994,27 +982,27 @@ class GameServer(GameNode, Server):
 		self.max_players = max_players
 
 	def send(self, message):
-		"""
+		"""	
 		Explicitly send message as Server does	
 		"""
 		Server.send(self, message)
 
 	def received(self, message):
-		"""
+		"""	
 		Explicitly receive message as GameNode does - dispatching to any 
 		interceptor methods or placing in the message queue.	
 		"""
 		GameNode.received(self, message)
 	
 	def delegate_event(self, event, handler_name):
-		"""
+		"""	
 		Overidden from GameNode. Invoked if server doesn't have an appropriate 
 		handler method for an event. Checks appropriate client handler for handler
 		method instead.
 		"""
-		# can only delegate messages
+		# can only delegate messages, by checking who the message is for
 		if not isinstance(event, Message):
-			raise NoEventHandlerError(handler_name)
+			return False
 		
 		id = event.get_sender()
 		ch = None
@@ -1024,8 +1012,9 @@ class GameServer(GameNode, Server):
 		if ch != None:
 			if hasattr(ch, handler_name):
 				getattr(ch, handler_name)(event)
-			else:
-				raise NoEventHandlerError(handler_name)
+				return True
+		
+		return False
 	
 	def handle_MsgPlayerDisconnect(self, message):
 		"""	
@@ -1035,7 +1024,7 @@ class GameServer(GameNode, Server):
 		self.disconnect_client(message.player_id)
 		
 	def disconnect_client(self, client_id):
-		"""
+		"""	
 		May be invoked to "kick" a player from the server
 		"""
 		with self.handlers_lock:
@@ -1045,7 +1034,7 @@ class GameServer(GameNode, Server):
 				self.handlers[client_id].stop()
 		
 	def client_departed(self, client_id):
-		"""
+		"""	
 		Overidden from Server. Invoked by client handler when a handler shuts 
 		down. Removes the client from groups and removes the handler then, if the
 		client was a player in the game, informs other players of their departure.
@@ -1119,7 +1108,7 @@ class GameServer(GameNode, Server):
 			return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
 		
 	def stop(self):
-		"""
+		"""	
 		Overidden from Server. Informs clients of imminent shutdown then shuts 
 		down the server and all client handlers.
 		"""
@@ -1203,7 +1192,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 		self.pinger_thread.start()
 	
 	def stop(self):
-		"""
+		"""	
 		Overidden from Client. Sends disconnect message to server before closing
 		the socket.
 		"""
@@ -1250,7 +1239,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 			self.deregister_player(message.player_id)
 
 	def intercept_MsgPong(self, message):
-		"""
+		"""	
 		Invoked in socket listener thread when MsgPong received. Uses timing 
 		information from server ping response to update synchronised clock and 
 		latency information	
@@ -1378,6 +1367,8 @@ if __name__ == "__main__":
 
 	class TestClientServer(unittest.TestCase):
 
+		messages = []
+
 		def handle_EvtClientArrived(self, event):
 			print "Client %d arrived" % event.client_id
 			
@@ -1385,10 +1376,13 @@ if __name__ == "__main__":
 			print "Client %d departed" % event.client_id
 
 		def handle_EvtFatalError(self, event):
-			print "Fatal error: %s" % str(event.error)
+			print "Fatal error: %s" % str(event.error.args)			
 		
 		def handle_EvtConnectionError(self, event):
-			print "Connection error: %s" % str(event.error)
+			print "Connection error: %s" % str(event.error.args)
+
+		def handle_MsgChat(self, event):
+			self.messages.append(event)
 
 		def make_client_handler(self,server,socket,client_id):
 			return ClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
@@ -1441,23 +1435,57 @@ if __name__ == "__main__":
 			"""	
 			Test that the client can connect and communicate with the server 
 			"""
-			"""server = Server(self.make_client_handler,4444)	
+			self.messages = []
+			
+			server = Server(self.make_client_handler,4445)	
 			server.start()
 			time.sleep(0.1)
 			
 			encoder = JsonEncoder()
-			client = Client("localhost", 4444, encoder, encoder)
+			client = Client("localhost", 4445, encoder, encoder)
 			client.start()
+			time.sleep(0.1)
 			
 			server.process_events(self)
 			client.process_events(self)
 			
 			self.assertEquals(1, server.get_num_clients())
 
-			client.send()"""
-			pass
+			client.send(MsgChat([Server.SERVER],[], None, "Hi server!"))
+			time.sleep(0.1)
+			
+			server.process_events(self)
+			client.process_events(self)
+			
+			self.assertEquals(1, len(self.messages))
+			self.assertEquals("Hi server!", self.messages[0].message)
+			
+			server.send(MsgChat([0],[],Server.SERVER,"Hello client!"))
+			time.sleep(0.1)
+			
+			server.process_events(self)
+			client.process_events(self)
+			
+			self.assertEquals(2, len(self.messages))
+			self.assertEquals("Hello client!", self.messages[1].message)
+			
+			client.stop()		
+			server.stop()
+			
+		def testMessageDelivery(self):
+		
+			self.messages = []
+			
+			server = Server(self.make_client_handler,4446)
+			server.start()
+			time.sleep(0.1)			
 				
-	#unittest.main()
+			encoder = JsonEncoder()
+			clientA = Client("localhost", 4446, encoder, encoder)
+			client.start()
+			time.sleep(0.1)
+				
+	unittest.main()
 	
 	
 	
