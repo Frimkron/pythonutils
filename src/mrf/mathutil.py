@@ -1,4 +1,4 @@
-"""
+"""	
 Copyright (c) 2009 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
@@ -203,10 +203,10 @@ def standard_deviation(values):
 	return math.sqrt(var)
 
 def deviation(values, val):
-	"""
+	"""	
 	returns "val"s absolute deviation from the mean of "values", in standard 
 	deviations
-	""" 
+	"""
 	m = mean(values)
 	dev = abs(val-m)
 	sd = standard_deviation(values)
