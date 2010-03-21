@@ -1367,7 +1367,7 @@ if __name__ == "__main__":
 
 	class TestClientServer(unittest.TestCase):
 
-		messages = []
+		messages = {}
 
 		def handle_EvtClientArrived(self, event):
 			print "Client %d arrived" % event.client_id
@@ -1382,7 +1382,11 @@ if __name__ == "__main__":
 			print "Connection error: %s" % str(event.error.args)
 
 		def handle_MsgChat(self, event):
-			self.messages.append(event)
+			# hash message by recipients
+			for r in event.recipients:
+				if not self.messages.has_key(r):
+					self.messages[r] = []
+			self.messages[r].append(event)
 
 		def make_client_handler(self,server,socket,client_id):
 			return ClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
@@ -1435,7 +1439,7 @@ if __name__ == "__main__":
 			"""	
 			Test that the client can connect and communicate with the server 
 			"""
-			self.messages = []
+			self.messages = {}
 			
 			server = Server(self.make_client_handler,4445)	
 			server.start()
@@ -1457,8 +1461,8 @@ if __name__ == "__main__":
 			server.process_events(self)
 			client.process_events(self)
 			
-			self.assertEquals(1, len(self.messages))
-			self.assertEquals("Hi server!", self.messages[0].message)
+			self.assertEquals(1, len(self.messages[Server.SERVER]))
+			self.assertEquals("Hi server!", self.messages[Server.SERVER][0].message)
 			
 			server.send(MsgChat([0],[],Server.SERVER,"Hello client!"))
 			time.sleep(0.1)
@@ -1466,15 +1470,15 @@ if __name__ == "__main__":
 			server.process_events(self)
 			client.process_events(self)
 			
-			self.assertEquals(2, len(self.messages))
-			self.assertEquals("Hello client!", self.messages[1].message)
+			self.assertEquals(1, len(self.messages[0]))
+			self.assertEquals("Hello client!", self.messages[0][0].message)
 			
 			client.stop()		
 			server.stop()
 			
 		def testMessageDelivery(self):
 		
-			self.messages = []
+			self.messages = {}
 			
 			server = Server(self.make_client_handler,4446)
 			server.start()
@@ -1482,9 +1486,36 @@ if __name__ == "__main__":
 				
 			encoder = JsonEncoder()
 			clientA = Client("localhost", 4446, encoder, encoder)
-			client.start()
+			clientA.start()
 			time.sleep(0.1)
-				
+			
+			clientB = Client("localhost", 4446, encoder, encoder)
+			clientB.start()
+			time.sleep(0.1)
+
+			# send from client A to client B
+			clientA.send(MsgChat([1],[],None,"Hi client B"))
+			server.process_events(self)
+			client.process_events(self)
+
+			self.assertEquals(1, len(messages[1]))
+			self.assertEquals("Hi client B", messages[1][0])
+
+			# send from client B to client A
+			clientB.send(MsgChat([0],[],None,"Hi client A"))
+			server.process_events(self)
+			client.process_events(self)
+
+			self.assertEquals(1, len(messages[0]))
+			self.assertEquals("Hi client A", messages[0][0])
+
+			# send from server to all clients
+			server.send(MsgChat([Server.GROUP_CLIENTS],[],Server.SERVER,"Hi all clients"))
+			server.process_events(self)
+			client.process_events(self)
+
+			self.assertEquals(
+		
 	unittest.main()
 	
 	
