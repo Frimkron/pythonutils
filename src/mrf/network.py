@@ -660,7 +660,7 @@ class Message(Event):
 		return self.recipients
 	
 	def get_excludes(self):
-		"""
+		"""	
 		Returns the list of excludes - clients which should be excluded from the 
 		recipient list - which may consist of a mixture of client id numbers and 
 		strings naming node groups.
@@ -921,7 +921,7 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 			The client has requested to enter the game
 			"""
 			try:
-				info = message.get_player_info()
+				info = message.player_info
 
 				# join the game
 				self.machine.server.player_join(self.machine.id, info)
@@ -1065,7 +1065,7 @@ class GameServer(GameNode, Server):
 
 	def get_player_names(self):
 		with self.handlers_lock:
-			return [self.handlers[p].get_player_info["name"] for p in self.get_players()]
+			return [self.handlers[p].player_info["name"] for p in self.get_players()]
 
 	def player_join(self, id, info):
 		"""	
@@ -1139,7 +1139,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 			self.machine.client_id = message.player_id
 			# players_info field is a dictionary containing info about the 
 			# players already connected
-			for k in message.player_info:
+			for k in message.players_info:
 				self.machine.register_player(k, message.players_info[k])
 
 			self.machine.change_state("StateInGame")
@@ -1156,9 +1156,9 @@ class GameClient(GameNode, Client, StateMachineBase):
 
 		pass
 
-	def __init__(self, host, port, player_info):
+	def __init__(self, host, port, player_info, encoder=JsonEncoder(), decoder=JsonEncoder()):
 		GameNode.__init__(self)
-		Client.__init__(self, host, port)
+		Client.__init__(self, host, port, encoder, decoder)
 		StateMachineBase.__init__(self)
 		self.player_list = {}
 		self.player_info = player_info
@@ -1364,11 +1364,14 @@ if __name__ == "__main__":
 				pong_timestamp=987654321)
 			self.doTestMessage(MsgChat,
 				recipients=[7,7], excludes=[5], sender=3, message="hi thar")
-
-	class TestClientServer(unittest.TestCase):
-
-		messages = {}
-
+	
+	class EventHandler(object):
+	
+		messages = []
+		
+		def __init__(self):
+			self.messages = []
+		
 		def handle_EvtClientArrived(self, event):
 			print "Client %d arrived" % event.client_id
 			
@@ -1382,11 +1385,18 @@ if __name__ == "__main__":
 			print "Connection error: %s" % str(event.error.args)
 
 		def handle_MsgChat(self, event):
-			# hash message by recipients
-			for r in event.recipients:
-				if not self.messages.has_key(r):
-					self.messages[r] = []
-			self.messages[r].append(event)
+			print "Chat message: %s" % str(event.message)
+			self.messages.append(event)
+			
+		def handle_MsgAcceptConnect(self, event):
+			print "Connect accepted"
+			self.messages.append(event)
+			
+		def handle_MsgRejectConnect(self, event):
+			print "Connect rejected: %s" % str(event.reason)
+			self.messages.append(event)
+	
+	class TestClientServer(unittest.TestCase):
 
 		def make_client_handler(self,server,socket,client_id):
 			return ClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
@@ -1396,10 +1406,11 @@ if __name__ == "__main__":
 			Test that Server maintains client handler set as expected 
 			"""
 			# create server
+			handler = EventHandler()
 			server = Server(self.make_client_handler,4444)
 			server.start()
 			time.sleep(0.1)			
-			server.process_events(self)
+			server.process_events(handler)
 
 			self.assertEquals(0, server.get_num_clients())
 
@@ -1407,7 +1418,7 @@ if __name__ == "__main__":
 			sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			sock1.connect(("localhost",4444))
 			time.sleep(0.1)
-			server.process_events(self)
+			server.process_events(handler)
 			
 			self.assertEquals(1, server.get_num_clients())
 			
@@ -1415,7 +1426,7 @@ if __name__ == "__main__":
 			sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			sock2.connect(("localhost",4444))
 			time.sleep(0.1)
-			server.process_events(self)
+			server.process_events(handler)
 			
 			self.assertEquals(2, server.get_num_clients())
 			
@@ -1429,7 +1440,7 @@ if __name__ == "__main__":
 			# disconnect first
 			sock1.close()
 			time.sleep(0.1)
-			server.process_events(self)
+			server.process_events(handler)
 			
 			self.assertEquals(0, server.get_num_clients())
 			
@@ -1439,82 +1450,215 @@ if __name__ == "__main__":
 			"""	
 			Test that the client can connect and communicate with the server 
 			"""
-			self.messages = {}
-			
+			server_handler = EventHandler()
 			server = Server(self.make_client_handler,4445)	
 			server.start()
 			time.sleep(0.1)
 			
 			encoder = JsonEncoder()
+			client_handler = EventHandler()
 			client = Client("localhost", 4445, encoder, encoder)
 			client.start()
 			time.sleep(0.1)
 			
-			server.process_events(self)
-			client.process_events(self)
+			server.process_events(server_handler)
+			client.process_events(client_handler)
 			
 			self.assertEquals(1, server.get_num_clients())
 
 			client.send(MsgChat([Server.SERVER],[], None, "Hi server!"))
 			time.sleep(0.1)
 			
-			server.process_events(self)
-			client.process_events(self)
+			server.process_events(server_handler)
+			client.process_events(client_handler)
 			
-			self.assertEquals(1, len(self.messages[Server.SERVER]))
-			self.assertEquals("Hi server!", self.messages[Server.SERVER][0].message)
+			self.assertEquals(1, len(server_handler.messages))
+			self.assertEquals("Hi server!", server_handler.messages[-1].message)
+			self.assertEquals(0, server_handler.messages[-1].sender)
 			
 			server.send(MsgChat([0],[],Server.SERVER,"Hello client!"))
 			time.sleep(0.1)
 			
-			server.process_events(self)
-			client.process_events(self)
+			server.process_events(server_handler)
+			client.process_events(client_handler)
 			
-			self.assertEquals(1, len(self.messages[0]))
-			self.assertEquals("Hello client!", self.messages[0][0].message)
+			self.assertEquals(1, len(client_handler.messages))
+			self.assertEquals("Hello client!", client_handler.messages[-1].message)
+			self.assertEquals(Server.SERVER, client_handler.messages[-1].sender)
 			
 			client.stop()		
 			server.stop()
 			
 		def testMessageDelivery(self):
-		
-			self.messages = {}
-			
+			"""	
+			Test that messages are send to correct recipients
+			"""
+			server_handler = EventHandler()
 			server = Server(self.make_client_handler,4446)
 			server.start()
 			time.sleep(0.1)			
 				
 			encoder = JsonEncoder()
+			clientA_handler = EventHandler()
 			clientA = Client("localhost", 4446, encoder, encoder)
 			clientA.start()
 			time.sleep(0.1)
 			
+			clientB_handler = EventHandler()
 			clientB = Client("localhost", 4446, encoder, encoder)
 			clientB.start()
 			time.sleep(0.1)
 
 			# send from client A to client B
 			clientA.send(MsgChat([1],[],None,"Hi client B"))
-			server.process_events(self)
-			client.process_events(self)
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
 
-			self.assertEquals(1, len(messages[1]))
-			self.assertEquals("Hi client B", messages[1][0])
+			self.assertEquals(1, len(clientB_handler.messages))
+			self.assertEquals("Hi client B", clientB_handler.messages[-1].message)
+			self.assertEquals(0, clientB_handler.messages[-1].sender)
 
 			# send from client B to client A
 			clientB.send(MsgChat([0],[],None,"Hi client A"))
-			server.process_events(self)
-			client.process_events(self)
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
 
-			self.assertEquals(1, len(messages[0]))
-			self.assertEquals("Hi client A", messages[0][0])
+			self.assertEquals(1, len(clientA_handler.messages))
+			self.assertEquals("Hi client A", clientA_handler.messages[-1].message)
+			self.assertEquals(1, clientA_handler.messages[-1].sender)
 
 			# send from server to all clients
 			server.send(MsgChat([Server.GROUP_CLIENTS],[],Server.SERVER,"Hi all clients"))
-			server.process_events(self)
-			client.process_events(self)
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
 
-			self.assertEquals(
+			self.assertEquals(0, len(server_handler.messages))
+			self.assertEquals(2, len(clientA_handler.messages))
+			self.assertEquals("Hi all clients", clientA_handler.messages[-1].message)
+			self.assertEquals(Server.SERVER, clientA_handler.messages[-1].sender)
+			self.assertEquals(2, len(clientB_handler.messages))
+			self.assertEquals("Hi all clients", clientB_handler.messages[-1].message)
+			self.assertEquals(Server.SERVER, clientB_handler.messages[-1].sender)
+		
+			# send from client A to everyone
+			clientA.send(MsgChat([Server.GROUP_ALL],[],None,"Hi everyone"))
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
+			
+			self.assertEquals(1, len(server_handler.messages))
+			self.assertEquals("Hi everyone", server_handler.messages[-1].message)
+			self.assertEquals(0, server_handler.messages[-1].sender)
+			self.assertEquals(3, len(clientA_handler.messages))
+			self.assertEquals("Hi everyone", clientA_handler.messages[-1].message)
+			self.assertEquals(0, clientA_handler.messages[-1].sender)
+			self.assertEquals(3, len(clientB_handler.messages))
+			self.assertEquals("Hi everyone", clientB_handler.messages[-1].message)
+			self.assertEquals(0, clientB_handler.messages[-1].sender)
+			
+			# send from client A to everyone excluding client B
+			clientA.send(MsgChat([Server.GROUP_ALL],[1],None,"Client B sucks"))
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
+			
+			self.assertEquals(2, len(server_handler.messages))
+			self.assertEquals("Client B sucks", server_handler.messages[-1].message)
+			self.assertEquals(0, server_handler.messages[-1].sender)
+			self.assertEquals(4, len(clientA_handler.messages))
+			self.assertEquals("Client B sucks", clientA_handler.messages[-1].message)
+			self.assertEquals(0, clientA_handler.messages[-1].sender)
+			self.assertEquals(3, len(clientB_handler.messages))
+			
+			# send from client A to everyone excluding client A and server
+			clientA.send(MsgChat([Server.GROUP_ALL],[0,Server.SERVER],None,"Two excludes"))
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
+			
+			self.assertEquals(2, len(server_handler.messages))
+			self.assertEquals(4, len(clientA_handler.messages))
+			self.assertEquals(4, len(clientB_handler.messages))
+			self.assertEquals("Two excludes", clientB_handler.messages[-1].message)
+			self.assertEquals(0, clientB_handler.messages[-1].sender)
+
+			clientA.stop()
+			clientB.stop()
+			server.stop()
+
+	class TestGameClientServer(unittest.TestCase):
+	
+		def make_client_handler(self,server,socket,client_id):
+			return GameClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
+
+		def test_client_connection(self):
+			"""	
+			Test that GameClient can connect to the game. 
+			"""
+			server_handler = EventHandler()
+			server = GameServer(2,self.make_client_handler,4447)	
+			server.start()
+			time.sleep(0.1)
+			
+			encoder = JsonEncoder()
+			clientA_handler = EventHandler()
+			clientA = GameClient("localhost", 4447, {"name":"testerA"}, encoder, encoder)
+			clientA.start()
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			
+			self.assertEquals(1, server.get_num_clients())
+			self.assertEquals(1, server.get_num_players())
+			self.assertEquals("testerA", server.get_player_names()[0])
+			
+			# add second player
+			clientB_handler = EventHandler()
+			clientB = GameClient("localhost", 4447, {"name":"testerB"}, encoder, encoder)
+			clientB.start()
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
+			
+			self.assertEquals(2, server.get_num_players())
+			
+			# add third player
+			clientC_handler = EventHandler()
+			clientC = GameClient("localhost", 4447, {"name":"testerC"}, encoder, encoder)
+			clientC.start()
+			time.sleep(0.1)
+			
+			server.process_events(server_handler)
+			clientA.process_events(clientA_handler)
+			clientB.process_events(clientB_handler)
+			clientC.process_events(clientC_handler)
+			
+			# third player should have been rejected because max is 2
+			self.assertEquals(1, len(clientC_handler.messages))
+			self.assertEquals(MsgRejectConnect,clientC_handler.messages[-1].__class__)
+			
+			clientA.stop()
+			clientB.stop()
+			clientC.stop()
+			server.stop()
 		
 	unittest.main()
 	
