@@ -11,13 +11,9 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: client id generation has been changed in attempt to remedy json dict key problem
-	but this messes up the distinction between direct client addressing and client group
-	addressing. Needs to think of something better!
-TODO: JSON format doesn't allow non-string dictionary keys. Must re-think encoding
-	and/or use of int keys in message dictionaries.
-TODO: recv doesn't necessarily return the entire message! Must redesign message
-	format to include a content length somehow
+TODO: Ping sender should add errors to event queue
+TODO: Ping sender is trying to write to closed socket, I think. All sends 
+	should poll the socket to check it is writable first.
 TODO: Unit tests for client/server
 TODO: Structure diagram
 TODO: Refactor telnet module to use generic client/server classes
@@ -247,7 +243,7 @@ class Server(Node, NetworkThread):
 		)
 
 	def make_client_id(self):
-		id = "c"+str(self.next_id)
+		id = self.next_id
 		self.next_id += 1
 		return id
 
@@ -279,7 +275,7 @@ class Server(Node, NetworkThread):
 								
 				if wait_for_data(self.listen_socket, Server.ACCEPT_POLL_INTERVAL):
 					conn,addr = self.listen_socket.accept()
-					new_id = make_client_id()
+					new_id = self.make_client_id()
 					handler = self.client_factory(self,conn,new_id)
 					with self.handlers_lock:
 						self.handlers[new_id] = handler
@@ -414,11 +410,12 @@ class SocketListener(NetworkThread):
 	"""
 
 	READ_POLL_INTERVAL = 0.5
+	ENVELOPE_SIZE_FIELD_LENGTH = 2
 
-	def __init__(self, encoder, decoder):
+	def __init__(self, encoder):
 		NetworkThread.__init__(self)
 		self.encoder = encoder
-		self.decoder = decoder
+		self.decoder = encoder
 
 	def get_socket(self):
 		"""	
@@ -438,14 +435,40 @@ class SocketListener(NetworkThread):
 		"""
 		pass
 
+	def _encode_data_length(self, length):
+		l = length
+		e = ""
+		for i in range(SocketListener.ENVELOPE_SIZE_FIELD_LENGTH):
+			e = chr(l%256) + e
+			l = l/256
+		return e
+		
+	def _decode_data_length(self, bytes):
+		l = 0
+		for i in range(SocketListener.ENVELOPE_SIZE_FIELD_LENGTH):
+			l += ord(bytes[-(i+1)]) << (8*i)
+		return l
+
 	def send(self, message):
 		"""	
 		Encodes the given message and sends it down the socket.
 		"""
+		# TODO
+		# is the socket listener in the process of stopping?
+		#should_send = True
+		
+		
 		data = self.encoder.encode(message)
+		length = len(data)
+		if length >= (1<<(8*SocketListener.ENVELOPE_SIZE_FIELD_LENGTH)):
+			raise MessageError("Message too long: %d" % length)
+		length_encoded = self._encode_data_length(length)
 		sent = 0
 		# need to acquire lock to write to socket
 		with self.get_socket_lock():
+			# send x bytes describing the message size
+			self.get_socket().sendall(length_encoded)
+			# send the message itself
 			self.get_socket().sendall(data)
 
 	def received(self, message):
@@ -466,6 +489,9 @@ class SocketListener(NetworkThread):
 		Blocks, waiting for messages on the socket. Raises socket.error if there is a 
 		problem reading from the socket.
 		"""
+		data = ""
+		length = 0
+		reading_message = False
 		try:
 			while True:
 				# exit loop if shutting down
@@ -474,13 +500,30 @@ class SocketListener(NetworkThread):
 						break				
 				
 				# dont need to lock read from socket
-				# TODO: implement envelope to ensure entire message is read
 				if wait_for_data(self.get_socket(), SocketListener.READ_POLL_INTERVAL):
-					data = self.get_socket().recv(1024)
-					if len(data) == 0:
-						raise socket.error("Socket closed")
-					message = self.decoder.decode(data)
-					self.received(message)
+					if not reading_message:
+						# receive some more of the message length
+						got = self.get_socket().recv(SocketListener.ENVELOPE_SIZE_FIELD_LENGTH-len(data))
+						if len(got) == 0:
+							raise socket.error("Socket closed")
+						data += got
+						assert len(data) <= SocketListener.ENVELOPE_SIZE_FIELD_LENGTH
+						if len(data) == SocketListener.ENVELOPE_SIZE_FIELD_LENGTH:
+							length = self._decode_data_length(data)
+							data = ""
+							reading_message = True
+					else:
+						# receive some more of the message body
+						got = self.get_socket().recv(length-len(data))
+						if len(got) == 0:
+							raise socket.error("Socket closed")
+						data += got
+						assert len(data) <= length
+						if len(data) == length:
+							message = self.decoder.decode(data)
+							self.received(message)
+							data = ""
+							reading_message = False
 				
 		except socket.error as e:
 			# catch socket errors			
@@ -504,8 +547,8 @@ class ClientHandler(SocketListener):
 	to begin ClientHandler running in its own thread.
 	"""
 
-	def __init__(self, server, socket, id, encoder, decoder):
-		SocketListener.__init__(self, encoder, decoder)
+	def __init__(self, server, socket, id, encoder):
+		SocketListener.__init__(self, encoder)
 		self.server = server		
 		self.id = id		
 		lockable_attrs(self,
@@ -556,8 +599,8 @@ class Client(SocketListener, Node):
 	to start the client running in its own thread.
 	"""
 
-	def __init__(self, host, port, encoder, decoder):
-		SocketListener.__init__(self, encoder, decoder)
+	def __init__(self, host, port, encoder):
+		SocketListener.__init__(self, encoder)
 		Node.__init__(self)
 		self.host = host
 		self.port  = port
@@ -711,6 +754,7 @@ class JsonEncoder(object):
 	Encodes Message objects in JSON format. Will not handle subclasses of Message
 	which are nested classes - they must be in module scope.	
 	"""
+	types = (int,float,bool,str,unicode)
 
 	def encode(self, message):
 		data = message.to_dict()
@@ -721,14 +765,10 @@ class JsonEncoder(object):
 			"sender" : message.get_sender(),
 			"data" : data
 		}
-		if message.__class__.__name__ == "MsgAcceptConnect":
-			print "Encode before: %s" % str(dict)
-			foo = json.dumps(dict)
-			print "Encode after: %s" % foo
-		return json.dumps(dict)
+		return json.dumps(self._encode_dict(dict))
 
 	def decode(self, data):
-		dict = json.loads(data)
+		dict = json.loads(data, object_hook=self._decode_dict)
 		
 		typename = dict["type"]
 		classname = typename.split(".")[-1]
@@ -747,6 +787,36 @@ class JsonEncoder(object):
 		message.from_dict(dict["data"])
 		return message
 
+	def _encode_dict(self, d):
+		"""	
+		Use special encoding of dictionary keys because json format only allows string
+		keys in objects.	
+		"""
+		newd = {}
+		for k in d:
+			if isinstance(d[k], dict):
+				newd[self._encode_dict_key(k)] = self._encode_dict(d[k])
+			else:
+				newd[self._encode_dict_key(k)] = d[k]
+			
+		return newd
+		
+	def _decode_dict(self, d):
+		newd = {}
+		for k in d:
+			newd[self._decode_dict_key(k)] = d[k]
+		return newd
+
+	def _decode_dict_key(self, key):
+		for t in self.types:
+			if key.startswith(t.__name__[0]):
+				return t(key[1:])
+
+	def _encode_dict_key(self, key):
+		for t in self.types:
+			if isinstance(key, t):
+				return t.__name__[0]+unicode(key)
+				
 
 class MsgPlayerConnect(Message):
 	"""	
@@ -769,7 +839,6 @@ class MsgPlayerDisconnect(Message):
 
 	def __init__(self, recipients, excludes, sender=-1, player_id=-1, reason=""):
 		Message.__init__(self, recipients, excludes, sender)
-		print "MsgPlayerDisconnect set player_id to %s %s" % (str(type(player_id)),str(player_id))
 		self.player_id = player_id
 		self.reason = reason
 
@@ -813,7 +882,6 @@ class MsgAcceptConnect(Message):
 		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
 		self.players_info = players_info
-		print "players_info: %s" % str(players_info)
 
 	def to_dict(self):
 		return self._get_attrs(("player_id","players_info"))
@@ -963,8 +1031,8 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 	class StateInGame(StateMachineBase.State):
 		pass
 
-	def __init__(self, server, socket, id, encoder, decoder):
-		ClientHandler.__init__(self, server, socket, id, encoder, decoder)
+	def __init__(self, server, socket, id, encoder):
+		ClientHandler.__init__(self, server, socket, id, encoder)
 		StateMachineBase.__init__(self)
 		self.player_info = {}
 		self.change_state("StateConnecting")
@@ -985,7 +1053,7 @@ class GameServer(GameNode, Server):
 	GROUP_PLAYERS = "players"
 	
 	def __init__(self, max_players=4, 
-			client_factory=lambda server,socket,client_id: GameClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder()), 
+			client_factory=lambda server,socket,client_id: GameClientHandler(server,socket,client_id,JsonEncoder()), 
 			port=57810):
 		"""	
 		Initialises the server with default handler GameClientHandler and using
@@ -1073,7 +1141,6 @@ class GameServer(GameNode, Server):
 		# inform other players
 		if send_msg:
 			# TODO: Reason parameter should tell players whether client left or was kicked
-			print "sending MsgPlayerDisconnect, id type is %s" % str(type(client_id))
 			self.send(MsgPlayerDisconnect([GameServer.GROUP_PLAYERS],[client_id],
 					GameServer.SERVER, client_id, ""))
 			
@@ -1120,7 +1187,6 @@ class GameServer(GameNode, Server):
 				
 		if joined:
 			# notify players
-			print "sending MsgPlayerConnect, id type is %s" % str(type(id))
 			self.send(MsgPlayerConnect([GameServer.GROUP_PLAYERS], [id], 
 				GameServer.SERVER, id, info))
 		
@@ -1177,7 +1243,6 @@ class GameClient(GameNode, Client, StateMachineBase):
 			Client should receive MsgRejectConnect from the server to
 			indicate that connection was unsuccessful
 			"""
-			print "Got reject message"
 			# not allowed to enter game - shut down the client
 			self.machine.stop()
 
@@ -1185,9 +1250,9 @@ class GameClient(GameNode, Client, StateMachineBase):
 
 		pass
 
-	def __init__(self, host, port, player_info, encoder=JsonEncoder(), decoder=JsonEncoder()):
+	def __init__(self, host, port, player_info, encoder=JsonEncoder()):
 		GameNode.__init__(self)
-		Client.__init__(self, host, port, encoder, decoder)
+		Client.__init__(self, host, port, encoder)
 		StateMachineBase.__init__(self)
 		self.player_list = {}
 		self.player_info = player_info
@@ -1204,11 +1269,11 @@ class GameClient(GameNode, Client, StateMachineBase):
 	
 	def run_ping_sender(self):		
 		while True:
+			time.sleep(3.0)
 			# break if client has been stopped
 			with self.stopping_lock:
 				if self.stopping:
-					break						
-			time.sleep(3.0)
+					break									
 			self.send(MsgPing([Server.SERVER],[],-1,self.get_timestamp()))			
 	
 	def after_connect(self):
@@ -1233,7 +1298,6 @@ class GameClient(GameNode, Client, StateMachineBase):
 				should_send = not self.stopping
 			if should_send:
 				# send disconnect message
-				print "(client) sending MsgPlayerDisconnect, id type is %s" % str(type(self.client_id))
 				self.send(MsgPlayerDisconnect([Server.SERVER],[],self.client_id,self.client_id,""))
 		# shut down client
 		Client.stop(self)
@@ -1452,7 +1516,7 @@ if __name__ == "__main__":
 	class TestClientServer(unittest.TestCase):
 
 		def make_client_handler(self,server,socket,client_id):
-			return ClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
+			return ClientHandler(server,socket,client_id,JsonEncoder())
 
 		def testServerNumClients(self):
 			"""	
@@ -1510,7 +1574,7 @@ if __name__ == "__main__":
 			
 			encoder = JsonEncoder()
 			client_handler = EventHandler()
-			client = Client("localhost", 4445, encoder, encoder)
+			client = Client("localhost", 4445, encoder)
 			client.start()
 			time.sleep(0.1)
 			
@@ -1553,12 +1617,12 @@ if __name__ == "__main__":
 				
 			encoder = JsonEncoder()
 			clientA_handler = EventHandler()
-			clientA = Client("localhost", 4446, encoder, encoder)
+			clientA = Client("localhost", 4446, encoder)
 			clientA.start()
 			time.sleep(0.1)
 			
 			clientB_handler = EventHandler()
-			clientB = Client("localhost", 4446, encoder, encoder)
+			clientB = Client("localhost", 4446, encoder)
 			clientB.start()
 			time.sleep(0.1)
 
@@ -1657,7 +1721,7 @@ if __name__ == "__main__":
 	class TestGameClientServer(unittest.TestCase):
 	
 		def make_client_handler(self,server,socket,client_id):
-			return GameClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
+			return GameClientHandler(server,socket,client_id,JsonEncoder())
 
 		def test_client_connection(self):
 			"""	
@@ -1670,7 +1734,7 @@ if __name__ == "__main__":
 			
 			encoder = JsonEncoder()
 			clientA_handler = EventHandler()
-			clientA = GameClient("localhost", 4447, {"name":"testerA"}, encoder, encoder)
+			clientA = GameClient("localhost", 4447, {"name":"testerA"}, encoder)
 			clientA.start()
 			time.sleep(0.1)
 			
@@ -1687,7 +1751,7 @@ if __name__ == "__main__":
 			
 			# add second player with taken name
 			clientB1_handler = EventHandler()
-			clientB1 = GameClient("localhost", 4447, {"name":"testerA"}, encoder, encoder)
+			clientB1 = GameClient("localhost", 4447, {"name":"testerA"}, encoder)
 			clientB1.start()
 			time.sleep(0.1)
 			
@@ -1706,7 +1770,7 @@ if __name__ == "__main__":
 			
 			# add second player with unique name
 			clientB2_handler = EventHandler()
-			clientB2 = GameClient("localhost", 4447, {"name":"testerB"}, encoder, encoder)
+			clientB2 = GameClient("localhost", 4447, {"name":"testerB"}, encoder)
 			clientB2.start()
 			time.sleep(0.1)
 			
@@ -1731,7 +1795,7 @@ if __name__ == "__main__":
 			
 			# add third player
 			clientC_handler = EventHandler()
-			clientC = GameClient("localhost", 4447, {"name":"testerC"}, encoder, encoder)
+			clientC = GameClient("localhost", 4447, {"name":"testerC"}, encoder)
 			clientC.start()
 			time.sleep(0.1)
 			
