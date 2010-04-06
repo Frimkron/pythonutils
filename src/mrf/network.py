@@ -11,8 +11,8 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: disconnect_client is hanging because of a deadlock on handlers_lock.
-	Needs investigating further.
+TODO: Test for receipt of server shutdown message failing.
+TODO: Remove debug prints
 TODO: Unit tests for client/server
 TODO: Structure diagram
 TODO: Refactor telnet module to use generic client/server classes
@@ -307,6 +307,7 @@ class Server(Node, NetworkThread):
 			if self.listen_socket != None:
 				self.listen_socket.close()
 			# stop client handler threads
+			print "%s stopping handlers" % self.__class__.__name__
 			self.stop_handlers()
 	
 	def handle_network_error(self, error_info):
@@ -344,9 +345,13 @@ class Server(Node, NetworkThread):
 		"""	
 		Invoked when the server is shutting down. Stops the client handler threads.
 		"""
+		templist = []
 		with self.handlers_lock:
 			for c in self.handlers:
-				self.handlers[c].stop()			
+				templist.append(self.handlers[c])
+				
+		for handler in templist:
+			handler.stop()
 
 	def client_arrived(self, client_id):
 		"""	
@@ -1170,12 +1175,15 @@ class GameServer(GameNode, Server):
 		May be invoked to "kick" a player from the server
 		"""
 		handler = None
+		print "%s acquiring handlers_lock" % self.__class__.__name__
 		with self.handlers_lock:
 			if self.handlers.has_key(client_id):
 				handler = self.handlers[client_id]
+		print "%s lock released" % self.__class__.__name__
 		if handler != None:
 			# stop the handler. client_departed will later be invoked
 			# to clean up handler.
+			print "%s stopping handler" % self.__class__.__name__
 			self.handlers[client_id].stop()
 		
 	def client_departed(self, client_id):
@@ -1188,6 +1196,7 @@ class GameServer(GameNode, Server):
 		print "%s acquiring handlers_lock" % self.__class__.__name__
 		send_msg = False
 		with self.handlers_lock:
+			print "%s handlers has key?" % self.__class__.__name__
 			if self.handlers.has_key(client_id):
 				print "%s acquiring node_groups_lock" % self.__class__.__name__
 				with self.node_groups_lock:			
@@ -2025,23 +2034,29 @@ if __name__ == "__main__":
 				self.assertEquals(MsgPlayerDisconnect, clientB_handler.messages[-1].__class__)
 				self.assertEquals(0, clientB_handler.messages[-1].player_id)
 			
+				print "shutting server down"
 				# server shuts down
 				server.stop()
 				time.sleep(0.1)
 			
+				print "processing events after server shutdown"
 				server.process_events(server_handler)
 				clientB.process_events(clientB_handler)
 			
 				# player 1 should be notified
 				# MsgAcceptConnect, MsgPlayerDisconnect, MsgServerShutdown
+				print "clientB_handler.messages %s" % str(clientB_handler.messages)
 				self.assertEquals(3, len(clientB_handler.messages))
 				self.assertEquals(MsgServerShutdown, clientB_handler.messages[-1].__class__)
 
 			finally:
+				print "stopping client A"
 				if clientA:
 					clientA.stop()
+				print "stopping client B"
 				if clientB:
 					clientB.stop()
+				print "stopping server"
 				if server:
 					server.stop()
 						
