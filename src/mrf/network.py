@@ -1165,6 +1165,11 @@ class GameServer(GameNode, Server):
 			if hasattr(ch, handler_name):
 				getattr(ch, handler_name)(event)
 				return True
+		else:
+			# if we can't find the client handler, this shouldn't count as 
+			# having no event handler method, as the client may have simply
+			# disconnected - so return true.
+			return True
 		
 		return False
 	
@@ -1227,7 +1232,11 @@ class GameServer(GameNode, Server):
 	def get_player_names(self):
 		with self.handlers_lock:
 			return [self.handlers[p].player_info["name"] for p in self.get_players()]
-
+	
+	def is_player(self, client_id):
+		with self.node_groups_lock:
+			return GameServer.GROUP_PLAYERS in self.node_groups.get_item_tags(client_id)
+	
 	def player_join(self, id, info):
 		"""	
 		Attempt to receive the player into the game and notify others
