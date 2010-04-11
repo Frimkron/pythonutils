@@ -1,3 +1,34 @@
+"""	
+Copyright (c) 2010 Mark Frimston
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------
+
+Networking Module
+
+Classes for client-server games
+"""
+
 import socket
 import threading
 import select
@@ -11,9 +42,6 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: Test for receipt of server shutdown message failing.
-TODO: Remove debug prints
-TODO: Unit tests for client/server
 TODO: Structure diagram
 TODO: Refactor telnet module to use generic client/server classes
 
@@ -53,13 +81,9 @@ class NetworkThread(threading.Thread):
 		running. Should be overidden to perform any other cleanup tasks required 
 		to shut down the thread.
 		"""
-		print "%s acquiring stopping lock" % self.__class__.__name__
 		with self.stopping_lock:
-			print "%s set stopping = True" % self.__class__.__name__
 			self.stopping = True
-		print "%s wait for thread end" % self.__class__.__name__
 		self.join()
-		print "%s stop complete" % self.__class__.__name__
 	
 	def handle_network_error(self, error_info):
 		"""	
@@ -307,7 +331,6 @@ class Server(Node, NetworkThread):
 			if self.listen_socket != None:
 				self.listen_socket.close()
 			# stop client handler threads
-			print "%s stopping handlers" % self.__class__.__name__
 			self.stop_handlers()
 	
 	def handle_network_error(self, error_info):
@@ -514,7 +537,6 @@ class SocketListener(NetworkThread):
 		overidden in subclasses.
 		"""
 		self.listen_on_socket()
-		print "%s run ended" % self.__class__.__name__
 
 	def listen_on_socket(self):
 		"""	
@@ -528,7 +550,6 @@ class SocketListener(NetworkThread):
 				# exit loop if shutting down
 				with self.stopping_lock:
 					if self.stopping:
-						print "%s stopping" % self.__class__.__name__
 						break				
 				
 				# dont need to lock read from socket
@@ -557,26 +578,19 @@ class SocketListener(NetworkThread):
 							data = ""
 							reading_message = False
 				
-			print "%s end of loop" % self.__class__.__name__	
-				
 		except socket.error as e:
-			print "socket error in socketlistener: %s, %s" % (self.__class__.__name__,str(e))
 			# catch socket errors			
 			self.handle_network_error((self.get_connected_to(),e))
 					
 		except:
-			print "error in socketlistener: %s, %s" % (self.__class__.__name__,str(sys.exc_info()[1]))
 			# catch all other errors
 			self.handle_unexpected_error((self.get_connected_to(),sys.exc_info()[1]))
 					
 		finally:
 			# clean up
-			print "%s clean up" % self.__class__.__name__
 			with self.get_socket_lock():
 				if self.get_socket() != None:
-					print "%s closing socket" % self.__class__.__name__
 					self.get_socket().close()
-					print "%s socket closed" % self.__class__.__name__
 
 
 class ClientHandler(SocketListener):
@@ -608,14 +622,11 @@ class ClientHandler(SocketListener):
 		"""	
 		Overidden from SocketListener. Invoked when thread is started.	
 		"""
-		print "%s running client_arrived" % self.__class__.__name__
 		self.server.client_arrived(self.id)	
 		try:	
 			self.listen_on_socket()
 		finally:
-			print "%s running client_departed" % self.__class__.__name__
 			self.server.client_departed(self.id)
-			print "%s client_departed done" % self.__class__.__name__
 
 	def received(self, message):
 		"""	
@@ -1175,15 +1186,12 @@ class GameServer(GameNode, Server):
 		May be invoked to "kick" a player from the server
 		"""
 		handler = None
-		print "%s acquiring handlers_lock" % self.__class__.__name__
 		with self.handlers_lock:
 			if self.handlers.has_key(client_id):
 				handler = self.handlers[client_id]
-		print "%s lock released" % self.__class__.__name__
 		if handler != None:
 			# stop the handler. client_departed will later be invoked
 			# to clean up handler.
-			print "%s stopping handler" % self.__class__.__name__
 			self.handlers[client_id].stop()
 		
 	def client_departed(self, client_id):
@@ -1193,27 +1201,21 @@ class GameServer(GameNode, Server):
 		client was a player in the game, informs other players of their departure.
 		"""
 		# Client exists and had entered the game?
-		print "%s acquiring handlers_lock" % self.__class__.__name__
 		send_msg = False
 		with self.handlers_lock:
-			print "%s handlers has key?" % self.__class__.__name__
 			if self.handlers.has_key(client_id):
-				print "%s acquiring node_groups_lock" % self.__class__.__name__
 				with self.node_groups_lock:			
 					if GameServer.GROUP_PLAYERS in self.node_groups.get_item_tags(client_id):
 						send_msg = True
 				
 		# remove client from groups and remove handler
-		print "%s Server.client_departed" % self.__class__.__name__
 		Server.client_departed(self, client_id)
 						
 		# inform other players
 		if send_msg:
 			# TODO: Reason parameter should tell players whether client left or was kicked
-			print "%s sending disconnect message" % self.__class__.__name__
 			self.send(MsgPlayerDisconnect([GameServer.GROUP_PLAYERS],[client_id],
 					GameServer.SERVER, client_id, ""))
-			print "%s disconnect message sent" % self.__class__.__name__
 			
 	def get_num_players(self):
 		return len(self.get_players())
@@ -1321,7 +1323,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 
 		pass
 
-	def __init__(self, host, port, player_info, encoder=JsonEncoder()):
+	def __init__(self, player_info, host, port=57810, encoder=JsonEncoder()):
 		GameNode.__init__(self)
 		Client.__init__(self, host, port, encoder)
 		StateMachineBase.__init__(self)
@@ -1602,6 +1604,7 @@ if __name__ == "__main__":
 			
 		def handle_MsgServerShutdown(self, event):
 			print "Server shutdown"
+			self.messages.append(event)
 			
 	
 	class TestClientServer(unittest.TestCase):
@@ -1840,7 +1843,7 @@ if __name__ == "__main__":
 			Test that time calculations in pong handler are correct 
 			"""
 			encoder = JsonEncoder()
-			client = GameClient("localhost", 4447, {"name":"tester"}, encoder)
+			client = GameClient({"name":"tester"},"localhost", 4447,encoder)
 			round_trips = [300,100,1200,200]
 			offset = 500
 			for rt in round_trips:
@@ -1871,7 +1874,7 @@ if __name__ == "__main__":
 			
 				encoder = JsonEncoder()
 				clientA_handler = EventHandler()
-				clientA = GameClient("localhost", 4447, {"name":"testerA"}, encoder)
+				clientA = GameClient({"name":"testerA"},"localhost", 4447, encoder)
 				clientA.start()
 				time.sleep(0.1)
 			
@@ -1888,7 +1891,7 @@ if __name__ == "__main__":
 			
 				# add second player with taken name
 				clientB1_handler = EventHandler()
-				clientB1 = GameClient("localhost", 4447, {"name":"testerA"}, encoder)
+				clientB1 = GameClient({"name":"testerA"},"localhost", 4447,  encoder)
 				clientB1.start()
 				time.sleep(0.1)
 			
@@ -1907,7 +1910,7 @@ if __name__ == "__main__":
 			
 				# add second player with unique name
 				clientB2_handler = EventHandler()
-				clientB2 = GameClient("localhost", 4447, {"name":"testerB"}, encoder)
+				clientB2 = GameClient({"name":"testerB"},"localhost", 4447,  encoder)
 				clientB2.start()
 				time.sleep(0.1)
 			
@@ -1931,7 +1934,7 @@ if __name__ == "__main__":
 			
 				# add third player
 				clientC_handler = EventHandler()
-				clientC = GameClient("localhost", 4447, {"name":"testerC"}, encoder)
+				clientC = GameClient({"name":"testerC"},"localhost", 4447,  encoder)
 				clientC.start()
 				time.sleep(0.1)
 			
@@ -1966,7 +1969,6 @@ if __name__ == "__main__":
 					server.stop()
 			
 		def test_player_arrive_depart_notification(self):
-			print "test_player_arrive_depart_notification"
 		
 			server = None
 			clientA = None
@@ -1982,7 +1984,7 @@ if __name__ == "__main__":
 				# add player 0
 				encoder = JsonEncoder()
 				clientA_handler = EventHandler()
-				clientA = GameClient("localhost", 4448, {"name":"testerA"}, encoder)
+				clientA = GameClient({"name":"testerA"},"localhost", 4448,  encoder)
 				clientA.start()
 				time.sleep(0.1)
 			
@@ -1993,11 +1995,10 @@ if __name__ == "__main__":
 				
 				# add player 1
 				clientB_handler = EventHandler()
-				clientB = GameClient("localhost", 4448, {"name":"testerB"}, encoder)
+				clientB = GameClient({"name":"testerB"},"localhost", 4448,  encoder)
 				clientB.start()
 				time.sleep(0.1)
 			
-				print "process events after player 1"
 				for i in range(2):
 					server.process_events(server_handler)
 					clientA.process_events(clientA_handler)
@@ -2013,15 +2014,9 @@ if __name__ == "__main__":
 				self.assertEquals(1, clientA_handler.messages[-1].player_id)
 				self.assertEquals({"name":"testerB"}, clientA_handler.messages[-1].player_info)
 			
-				print "kick player 0"
-				#import pdb
-				#pdb.set_trace()
-				# server kicks player 0
-				server.disconnect_client(0)
-				print "kicked"
+				server.disconnect_client(0)			
 				time.sleep(0.1)
 			
-				print "process events after kick"
 				server.process_events(server_handler)
 				clientA.process_events(clientA_handler)
 				clientB.process_events(clientB_handler)
@@ -2034,39 +2029,25 @@ if __name__ == "__main__":
 				self.assertEquals(MsgPlayerDisconnect, clientB_handler.messages[-1].__class__)
 				self.assertEquals(0, clientB_handler.messages[-1].player_id)
 			
-				print "shutting server down"
 				# server shuts down
 				server.stop()
 				time.sleep(0.1)
 			
-				print "processing events after server shutdown"
 				server.process_events(server_handler)
 				clientB.process_events(clientB_handler)
 			
 				# player 1 should be notified
 				# MsgAcceptConnect, MsgPlayerDisconnect, MsgServerShutdown
-				print "clientB_handler.messages %s" % str(clientB_handler.messages)
 				self.assertEquals(3, len(clientB_handler.messages))
 				self.assertEquals(MsgServerShutdown, clientB_handler.messages[-1].__class__)
 
 			finally:
-				print "stopping client A"
 				if clientA:
 					clientA.stop()
-				print "stopping client B"
 				if clientB:
 					clientB.stop()
-				print "stopping server"
 				if server:
 					server.stop()
-						
-			
-	def print_queue(queue):
-		print "queue:"
-		try:
-			print "\t%s" % str(queue.get_nowait())
-		except Empty:
-			pass
 		
 	unittest.main()
 	

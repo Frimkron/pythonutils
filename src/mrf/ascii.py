@@ -1,4 +1,4 @@
-"""
+"""	
 Copyright (c) 2009 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
@@ -30,7 +30,7 @@ Utilities for handling ascii art
 """
 
 class Canvas(object):
-	"""
+	"""	
 	Class facilitating ascii art by allowing characters at arbitrary coordinates to
 	be set and then the full character space be printed out line by line.
 	"""
@@ -39,7 +39,7 @@ class Canvas(object):
 		self.clear()
 		
 	def clear(self):
-		"""
+		"""	
 		Clears the canvas
 		"""
 		self.grid = {}
@@ -47,7 +47,7 @@ class Canvas(object):
 		self.height = 0
 		
 	def set(self, x, y, char):
-		"""
+		"""	
 		Sets the position at x,y to the given character
 		"""
 		self.grid[(x,y)] = char
@@ -57,7 +57,7 @@ class Canvas(object):
 			self.height = y+1
 	
 	def get(self, x, y):
-		"""
+		"""	
 		Returns the character at position x,y
 		"""
 		if self.grid.has_key((x,y)):
@@ -66,7 +66,7 @@ class Canvas(object):
 			return ' '
 			
 	def write(self, x,y, text, maxlength=-1):
-		"""
+		"""	
 		Writes a sequence of characters into the space, starting at x,y and writing 
 		left to right. maxlength can be specified to cut short the text at a maximum
 		length
@@ -80,7 +80,7 @@ class Canvas(object):
 			i+=1
 	
 	def render(self):
-		"""
+		"""	
 		Returns a string representation of the full canvas
 		"""
 		str = ""
@@ -91,7 +91,7 @@ class Canvas(object):
 		return str
 			
 	def print_out(self):
-		"""
+		"""	
 		Prints the full canvas
 		"""
 		print self.render()
