@@ -1,3 +1,34 @@
+"""	
+Copyright (c) 2010 Mark Frimston
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------
+
+Networking Module
+
+Classes for client-server games
+"""
+
 import socket
 import threading
 import select
@@ -11,11 +42,6 @@ from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
 
 """	
-TODO: recv doesn't necessarily return the entire message! Must redesign message
-	format to include a content length somehow
-TODO: Unit tests for client/server
-TODO: MsgPlayerConnect should have player info dict not just name. Check this is 
-	correct throughout code.
 TODO: Structure diagram
 TODO: Refactor telnet module to use generic client/server classes
 
@@ -97,7 +123,10 @@ class EvtFatalError(Event):
 
 class EvtConnectionError(Event):
 	"""	
-	Added to the event queue when an exception is raised by a socket
+	Added to the event queue when an exception is raised by a socket.
+	to_client field indicates which node the connection was to. -1 indicates
+	the server. The server might raise this event with a -1 client if 
+	there was a problem accepting new clients.
 	"""
 	
 	def __init__(self, to_client, error):
@@ -144,7 +173,7 @@ class Node(object):
 		and if found, the message is handled by it. If no intercept method is 
 		found, the message is simply added to the event queue to be picked up 
 		by the game loop, which is how most messages should be handled.
-		"""		
+		"""
 		hname = "intercept_"+message.__class__.__name__
 		if hasattr(self, hname):
 			getattr(self, hname)(message)
@@ -152,6 +181,13 @@ class Node(object):
 			self.event_queue.put(message)
 
 	def get_node_id(self):
+		pass
+
+	def recipient_to_next_node(self, recipient):
+		"""	
+		Helper method to return the next node a message will pass through to
+		reach the given recipient.
+		"""
 		pass
 	
 	def take_events(self):
@@ -243,6 +279,11 @@ class Server(Node, NetworkThread):
 			node_groups = TagLookup()
 		)
 
+	def make_client_id(self):
+		id = self.next_id
+		self.next_id += 1
+		return id
+
 	def run(self):
 		"""	
 		Overridden from Thread - runs the server, listening on the specified port for 
@@ -269,13 +310,13 @@ class Server(Node, NetworkThread):
 					if self.stopping:
 						break
 								
-				if wait_for_data(self.listen_socket, Server.ACCEPT_POLL_INTERVAL):							
-					conn,addr = self.listen_socket.accept()								
-					handler = self.client_factory(self,conn,self.next_id)					
+				if wait_for_data(self.listen_socket, Server.ACCEPT_POLL_INTERVAL):
+					conn,addr = self.listen_socket.accept()
+					new_id = self.make_client_id()
+					handler = self.client_factory(self,conn,new_id)
 					with self.handlers_lock:
-						self.handlers[self.next_id] = handler
-					handler.start()				
-					self.next_id += 1	
+						self.handlers[new_id] = handler
+					handler.start()
 				
 		except socket.error as e:	
 			# handle socket error		
@@ -327,9 +368,13 @@ class Server(Node, NetworkThread):
 		"""	
 		Invoked when the server is shutting down. Stops the client handler threads.
 		"""
+		templist = []
 		with self.handlers_lock:
 			for c in self.handlers:
-				self.handlers[c].stop()			
+				templist.append(self.handlers[c])
+				
+		for handler in templist:
+			handler.stop()
 
 	def client_arrived(self, client_id):
 		"""	
@@ -372,7 +417,13 @@ class Server(Node, NetworkThread):
 		for r in recips:
 			with self.handlers_lock:
 				if self.handlers.has_key(r):
-					self.handlers[r].send(message)
+					try:					
+						self.handlers[r].send(message)
+						
+					except socket.error as e:
+						self.handle_network_error((r,e))
+					except:
+						self.handle_unexpected_error((r,sys.exc_info()[1]))
 
 	def resolve_message_recipients(self, message):
 		with self.node_groups_lock:
@@ -395,6 +446,9 @@ class Server(Node, NetworkThread):
 	def get_node_id(self):
 		return Server.SERVER
 
+	def recipient_to_next_node(self, recipient):
+		return recipient
+
 	def get_num_clients(self):
 		with self.handlers_lock:
 			return len(self.handlers)
@@ -406,11 +460,12 @@ class SocketListener(NetworkThread):
 	"""
 
 	READ_POLL_INTERVAL = 0.5
+	ENVELOPE_SIZE_FIELD_LENGTH = 2
 
-	def __init__(self, encoder, decoder):
+	def __init__(self, encoder):
 		NetworkThread.__init__(self)
 		self.encoder = encoder
-		self.decoder = decoder
+		self.decoder = encoder
 
 	def get_socket(self):
 		"""	
@@ -430,15 +485,45 @@ class SocketListener(NetworkThread):
 		"""
 		pass
 
+	def _encode_data_length(self, length):
+		l = length
+		e = ""
+		for i in range(SocketListener.ENVELOPE_SIZE_FIELD_LENGTH):
+			e = chr(l%256) + e
+			l = l/256
+		return e
+		
+	def _decode_data_length(self, bytes):
+		l = 0
+		for i in range(SocketListener.ENVELOPE_SIZE_FIELD_LENGTH):
+			l += ord(bytes[-(i+1)]) << (8*i)
+		return l
+
 	def send(self, message):
 		"""	
-		Encodes the given message and sends it down the socket.
+		Encodes the given message and sends it down the socket. Won't send if 
+		the SocketListener is stopping. May raise socket.error if the socket
+		has closed or is otherwise unwritable.
 		"""
-		data = self.encoder.encode(message)
-		sent = 0
-		# need to acquire lock to write to socket
-		with self.get_socket_lock():
-			self.get_socket().sendall(data)
+		# don't send if stopping
+		should_send = True
+		with self.stopping_lock:
+			if self.stopping:
+				should_send = False	
+		
+		if should_send:
+			data = self.encoder.encode(message)
+			length = len(data)
+			if length >= (1<<(8*SocketListener.ENVELOPE_SIZE_FIELD_LENGTH)):
+				raise MessageError("Message too long: %d" % length)
+			length_encoded = self._encode_data_length(length)
+			sent = 0
+			# need to acquire lock to write to socket
+			with self.get_socket_lock():
+				# send x bytes describing the message size
+				self.get_socket().sendall(length_encoded)
+				# send the message itself
+				self.get_socket().sendall(data)
 
 	def received(self, message):
 		"""	
@@ -455,9 +540,11 @@ class SocketListener(NetworkThread):
 
 	def listen_on_socket(self):
 		"""	
-		Blocks, waiting for messages on the socket. Raises socket.error if there is a 
-		problem reading from the socket.
+		Blocks, waiting for messages on the socket.
 		"""
+		data = ""
+		length = 0
+		reading_message = False
 		try:
 			while True:
 				# exit loop if shutting down
@@ -466,13 +553,30 @@ class SocketListener(NetworkThread):
 						break				
 				
 				# dont need to lock read from socket
-				# TODO: implement envelope to ensure entire message is read
 				if wait_for_data(self.get_socket(), SocketListener.READ_POLL_INTERVAL):
-					data = self.get_socket().recv(1024)
-					if len(data) == 0:
-						raise socket.error("Socket closed")
-					message = self.decoder.decode(data)
-					self.received(message)
+					if not reading_message:
+						# receive some more of the message length
+						got = self.get_socket().recv(SocketListener.ENVELOPE_SIZE_FIELD_LENGTH-len(data))
+						if len(got) == 0:
+							raise socket.error("Socket closed")
+						data += got
+						assert len(data) <= SocketListener.ENVELOPE_SIZE_FIELD_LENGTH
+						if len(data) == SocketListener.ENVELOPE_SIZE_FIELD_LENGTH:
+							length = self._decode_data_length(data)
+							data = ""
+							reading_message = True
+					else:
+						# receive some more of the message body
+						got = self.get_socket().recv(length-len(data))
+						if len(got) == 0:
+							raise socket.error("Socket closed")
+						data += got
+						assert len(data) <= length
+						if len(data) == length:
+							message = self.decoder.decode(data)
+							self.received(message)
+							data = ""
+							reading_message = False
 				
 		except socket.error as e:
 			# catch socket errors			
@@ -496,8 +600,8 @@ class ClientHandler(SocketListener):
 	to begin ClientHandler running in its own thread.
 	"""
 
-	def __init__(self, server, socket, id, encoder, decoder):
-		SocketListener.__init__(self, encoder, decoder)
+	def __init__(self, server, socket, id, encoder):
+		SocketListener.__init__(self, encoder)
 		self.server = server		
 		self.id = id		
 		lockable_attrs(self,
@@ -548,8 +652,8 @@ class Client(SocketListener, Node):
 	to start the client running in its own thread.
 	"""
 
-	def __init__(self, host, port, encoder, decoder):
-		SocketListener.__init__(self, encoder, decoder)
+	def __init__(self, host, port, encoder):
+		SocketListener.__init__(self, encoder)
 		Node.__init__(self)
 		self.host = host
 		self.port  = port
@@ -620,6 +724,9 @@ class Client(SocketListener, Node):
 	def get_node_id(self):
 		return self.client_id
 
+	def recipient_to_next_node(self, recipient):
+		return Server.SERVER
+
 	def after_connect(self):
 		"""	
 		Invoked just after client connects to server and before client starts 
@@ -660,7 +767,7 @@ class Message(Event):
 		return self.recipients
 	
 	def get_excludes(self):
-		"""
+		"""	
 		Returns the list of excludes - clients which should be excluded from the 
 		recipient list - which may consist of a mixture of client id numbers and 
 		strings naming node groups.
@@ -703,6 +810,7 @@ class JsonEncoder(object):
 	Encodes Message objects in JSON format. Will not handle subclasses of Message
 	which are nested classes - they must be in module scope.	
 	"""
+	types = (int,float,bool,str,unicode)
 
 	def encode(self, message):
 		data = message.to_dict()
@@ -713,10 +821,10 @@ class JsonEncoder(object):
 			"sender" : message.get_sender(),
 			"data" : data
 		}
-		return json.dumps(dict)
+		return json.dumps(self._encode_val(dict))
 
 	def decode(self, data):
-		dict = json.loads(data)
+		dict = self._decode_val(json.loads(data))
 		
 		typename = dict["type"]
 		classname = typename.split(".")[-1]
@@ -735,19 +843,55 @@ class JsonEncoder(object):
 		message.from_dict(dict["data"])
 		return message
 
+	def _encode_val(self, val):
+		"""	
+		Use special encoding of dictionary keys because json format only allows string
+		keys in objects. And encoding of strings because json only uses unicode.
+		"""
+		if isinstance(val, basestring):
+			return self._val_to_unicode(val)
+		elif isinstance(val, dict):
+			newd = {}
+			for k in val:
+				newd[self._val_to_unicode(k)] = self._encode_val(val[k])
+			return newd
+		else:
+			return val
+		
+	def _decode_val(self, val):
+		if isinstance(val, unicode):
+			return self._val_from_unicode(val)
+		elif isinstance(val, dict):
+			newd = {}
+			for k in val:
+				newd[self._val_from_unicode(k)] = self._decode_val(val[k])
+			return newd
+		else:
+			return val
+
+	def _val_from_unicode(self, uni):
+		for t in self.types:
+			if uni.startswith(t.__name__[0]):
+				return t(uni[1:])
+
+	def _val_to_unicode(self, val):
+		for t in self.types:
+			if isinstance(val, t):
+				return t.__name__[0]+unicode(val)
+				
 
 class MsgPlayerConnect(Message):
 	"""	
 	Sent by server to inform clients of a new player's arrival
 	"""
 
-	def __init__(self, recipients, excludes, sender=-1, player_id=-1, name=""):
+	def __init__(self, recipients, excludes, sender=-1, player_id=-1, player_info={}):
 		Message.__init__(self, recipients, excludes, sender)
 		self.player_id = player_id
-		self.name = name
+		self.player_info = player_info
 
 	def to_dict(self):
-		return self._get_attrs(("player_id","name"))
+		return self._get_attrs(("player_id","player_info"))
 		
 
 class MsgPlayerDisconnect(Message):
@@ -897,14 +1041,22 @@ class GameNode(Node):
 		return int(time.time()*1000)
 
 	def intercept_MsgPing(self, message):
-		"""
+		"""	
 		Respond with MsgPong as soon as MsgPing is received. Don't wait for
 		game loop.
 		"""
 		resp = MsgPong([message.sender], [], self.get_node_id(), 
 			message.ping_timestamp, self.get_timestamp())
-		self.send(resp)
-
+		try:
+			self.send(resp)
+		
+		# socket error indicates the recipient is no longer listening. Add the event
+		# but continue anyway.
+		except socket.error as e:
+			self.handle_network_error((self.recipient_to_next_node(message.sender),e))
+			
+		# other (unexpected) errors should float up to the listener and subsequently kill it
+	
 
 class GameClientHandler(ClientHandler, StateMachineBase):
 	"""	
@@ -921,7 +1073,7 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 			The client has requested to enter the game
 			"""
 			try:
-				info = message.get_player_info()
+				info = message.player_info
 
 				# join the game
 				self.machine.server.player_join(self.machine.id, info)
@@ -937,7 +1089,7 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 				# change state
 				self.machine.change_state("StateInGame")
 				
-			except GameFullError:				
+			except GameFullError:			
 				self.machine.server.send(MsgRejectConnect([self.machine.id], [], 
 					Server.SERVER, "The game is full"))
 				
@@ -949,8 +1101,8 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 	class StateInGame(StateMachineBase.State):
 		pass
 
-	def __init__(self, server, socket, id, encoder, decoder):
-		ClientHandler.__init__(self, server, socket, id, encoder, decoder)
+	def __init__(self, server, socket, id, encoder):
+		ClientHandler.__init__(self, server, socket, id, encoder)
 		StateMachineBase.__init__(self)
 		self.player_info = {}
 		self.change_state("StateConnecting")
@@ -971,7 +1123,7 @@ class GameServer(GameNode, Server):
 	GROUP_PLAYERS = "players"
 	
 	def __init__(self, max_players=4, 
-			client_factory=lambda server,socket,client_id: GameClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder()), 
+			client_factory=lambda server,socket,client_id: GameClientHandler(server,socket,client_id,JsonEncoder()), 
 			port=57810):
 		"""	
 		Initialises the server with default handler GameClientHandler and using
@@ -1022,16 +1174,25 @@ class GameServer(GameNode, Server):
 		are intentionally leaving the game. On receipt, server stops client handler
 		"""
 		self.disconnect_client(message.player_id)
+
+	def handle_EvtPlayerAccepted(self, event):
+		pass
+		
+	def handle_EvtPlayerRejected(self, event):
+		pass
 		
 	def disconnect_client(self, client_id):
 		"""	
 		May be invoked to "kick" a player from the server
 		"""
+		handler = None
 		with self.handlers_lock:
 			if self.handlers.has_key(client_id):
-				# stop the handler. client_departed will later be invoked
-				# to clean up handler.
-				self.handlers[client_id].stop()
+				handler = self.handlers[client_id]
+		if handler != None:
+			# stop the handler. client_departed will later be invoked
+			# to clean up handler.
+			self.handlers[client_id].stop()
 		
 	def client_departed(self, client_id):
 		"""	
@@ -1065,7 +1226,7 @@ class GameServer(GameNode, Server):
 
 	def get_player_names(self):
 		with self.handlers_lock:
-			return [self.handlers[p].get_player_info["name"] for p in self.get_players()]
+			return [self.handlers[p].player_info["name"] for p in self.get_players()]
 
 	def player_join(self, id, info):
 		"""	
@@ -1083,13 +1244,16 @@ class GameServer(GameNode, Server):
 			
 			elif info["name"] in self.get_player_names():
 				
-				# add e vent as application hook
-				self.event_queue.put(EvtPlayerAccepted(id, "The player name is taken"))
+				# add event as application hook
+				self.event_queue.put(EvtPlayerRejected(id, "The player name is taken"))
 				
 				# raise exception
 				raise NameTakenError()
 			
 			else:			
+				# add event as application hook
+				self.event_queue.put(EvtPlayerAccepted(id))
+			
 				# add into group of connected players
 				self.node_groups.tag_item(id, GameServer.GROUP_PLAYERS)
 				joined = True
@@ -1097,14 +1261,14 @@ class GameServer(GameNode, Server):
 		if joined:
 			# notify players
 			self.send(MsgPlayerConnect([GameServer.GROUP_PLAYERS], [id], 
-				GameServer.SERVER, id, info["name"]))
+				GameServer.SERVER, id, info))
 		
 	def get_info_on_players(self):
 		"""	
 		Returns info on players in game, suitable for sending to newly connected 
 		players
 		"""
-		with self.handlers_lock:
+		with self.handlers_lock:		
 			return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
 		
 	def stop(self):
@@ -1113,7 +1277,10 @@ class GameServer(GameNode, Server):
 		down the server and all client handlers.
 		"""
 		# send shutdown message to clients
-		self.send(MsgServerShutdown([GameServer.GROUP_CLIENTS],[],GameServer.SERVER))
+		with self.stopping_lock:
+			should_send = not self.stopping
+		if should_send:
+			self.send(MsgServerShutdown([GameServer.GROUP_CLIENTS],[],GameServer.SERVER))
 		# close listener socket and stop client handlers
 		Server.stop(self)
 		
@@ -1139,7 +1306,7 @@ class GameClient(GameNode, Client, StateMachineBase):
 			self.machine.client_id = message.player_id
 			# players_info field is a dictionary containing info about the 
 			# players already connected
-			for k in message.player_info:
+			for k in message.players_info:
 				self.machine.register_player(k, message.players_info[k])
 
 			self.machine.change_state("StateInGame")
@@ -1156,13 +1323,13 @@ class GameClient(GameNode, Client, StateMachineBase):
 
 		pass
 
-	def __init__(self, host, port, player_info):
+	def __init__(self, player_info, host, port=57810, encoder=JsonEncoder()):
 		GameNode.__init__(self)
-		Client.__init__(self, host, port)
+		Client.__init__(self, host, port, encoder)
 		StateMachineBase.__init__(self)
 		self.player_list = {}
 		self.player_info = player_info
-		self.latencies = [],
+		self.latencies = []
 		lockable_attrs(self,
 			latency = 0,
 			time_delta = 0
@@ -1174,13 +1341,25 @@ class GameClient(GameNode, Client, StateMachineBase):
 		Client.run(self)
 	
 	def run_ping_sender(self):		
-		while True:
-			# break if client has been stopped
-			with self.stopping_lock:
-				if self.stopping:
-					break						
-			time.sleep(3.0)
-			self.send(MsgPing([Server.SERVER],[],-1,self.get_timestamp()))			
+		try:
+			while True:
+			
+				# break if client has been stopped
+				with self.stopping_lock:
+					if self.stopping:
+						break									
+						
+				self.send(MsgPing([Server.SERVER],[],-1,self.get_timestamp()))			
+			
+				time.sleep(3.0)
+				
+		except socket.error as e:	
+			# handle socket error		
+			self.handle_network_error((self.get_connected_to(),e))
+								
+		except:
+			# handle all other errors
+			self.handle_unexpected_error((self.get_connected_to(),sys.exc_info()[1]))
 	
 	def after_connect(self):
 		"""	
@@ -1191,13 +1370,27 @@ class GameClient(GameNode, Client, StateMachineBase):
 		self.pinger_thread = threading.Thread(target=self.run_ping_sender)
 		self.pinger_thread.start()
 	
+	def is_in_game(self):
+		return self.get_state() == "StateInGame"
+	
 	def stop(self):
 		"""	
 		Overidden from Client. Sends disconnect message to server before closing
 		the socket.
 		"""
-		# send disconnect message
-		self.send(MsgPlayerDisconnect([Server.SERVER],[],self.client_id,""))
+		if self.is_in_game():
+			with self.stopping_lock:
+				should_send = not self.stopping
+			if should_send:
+				# send disconnect message
+				try:
+					self.send(MsgPlayerDisconnect([Server.SERVER],[],self.client_id,self.client_id,""))
+				# catch error and raise event but continue
+				except socket.error as  e:
+					self.handle_network_error((Server.SERVER,e))
+				except:
+					self.handle_unexpected_error((Server.SERVER,sys.exc_info()[1]))
+					
 		# shut down client
 		Client.stop(self)
 	
@@ -1229,13 +1422,10 @@ class GameClient(GameNode, Client, StateMachineBase):
 		del(self.player_list[id])
 
 	def _player_connected(self, message):
-		self.register_player(message.player_id, {
-			"name" : message.name
-		})		
+		self.register_player(message.player_id, message.player_info)		
 
-	def _player_disconnectd(self, message):
+	def _player_disconnected(self, message):
 		if self.player_list.has_key(message.player_id):
-			name = self.player_list(message.player_id)
 			self.deregister_player(message.player_id)
 
 	def intercept_MsgPong(self, message):
@@ -1318,14 +1508,14 @@ if __name__ == "__main__":
 			self.encoder = JsonEncoder()
 
 		def testEncodeDecode(self):
-			m = TestMessage([1,2,3],[],1,"Frank", 25, 123.5)
+			m = TestMessage(["c1","c2","c3"],[],"c1","Frank", 25, 123.5)
 			j = self.encoder.encode(m)
 			print j
 			m2 = self.encoder.decode(j)
 			self.assertEquals(TestMessage, m2.__class__)
-			self.assertEquals([1,2,3],m2.get_recipients())
+			self.assertEquals(["c1","c2","c3"],m2.get_recipients())
 			self.assertEquals([],m2.get_excludes())
-			self.assertEquals(1,m2.get_sender())
+			self.assertEquals("c1",m2.get_sender())
 			self.assertEquals("Frank", m2.name)
 			self.assertEquals(25, m2.age)
 			self.assertEquals(123.5, m2.weight)
@@ -1345,7 +1535,7 @@ if __name__ == "__main__":
 		
 		def testMessages(self):
 			self.doTestMessage(MsgPlayerConnect, 
-				recipients=["players",1], excludes=[2], sender=2, player_id=1, name="dave")
+				recipients=["players",1], excludes=[2], sender=2, player_id=1, player_info={"name":"dave","age":21})
 			self.doTestMessage(MsgPlayerDisconnect,
 				recipients=[2,"players"], excludes=[3], sender=5, player_id=9, reason="test")
 			self.doTestMessage(MsgServerShutdown,
@@ -1364,11 +1554,14 @@ if __name__ == "__main__":
 				pong_timestamp=987654321)
 			self.doTestMessage(MsgChat,
 				recipients=[7,7], excludes=[5], sender=3, message="hi thar")
-
-	class TestClientServer(unittest.TestCase):
-
-		messages = {}
-
+	
+	class EventHandler(object):
+	
+		messages = []
+		
+		def __init__(self):
+			self.messages = []
+		
 		def handle_EvtClientArrived(self, event):
 			print "Client %d arrived" % event.client_id
 			
@@ -1379,142 +1572,482 @@ if __name__ == "__main__":
 			print "Fatal error: %s" % str(event.error.args)			
 		
 		def handle_EvtConnectionError(self, event):
-			print "Connection error: %s" % str(event.error.args)
+			print "Connection error to %d: %s" % (event.to_client,str(event.error.args))
 
 		def handle_MsgChat(self, event):
-			# hash message by recipients
-			for r in event.recipients:
-				if not self.messages.has_key(r):
-					self.messages[r] = []
-			self.messages[r].append(event)
+			print "Chat message: %s" % str(event.message)
+			self.messages.append(event)
+			
+		def handle_MsgAcceptConnect(self, event):
+			print "Connect accepted"
+			self.messages.append(event)
+			
+		def handle_MsgRejectConnect(self, event):
+			print "Connect rejected: %s" % str(event.reason)
+			self.messages.append(event)
+
+		def handle_EvtPlayerAccepted(self, event):
+			print "Player accepted: %d" % event.client_id
+			self.messages.append(event)
+			
+		def handle_EvtPlayerRejected(self, event):
+			print "Player rejected: %d" % event.client_id
+			self.messages.append(event)
+			
+		def handle_MsgPlayerConnect(self, event):
+			print "Player connected: %d, %s" % (event.player_id, event.player_info["name"])
+			self.messages.append(event)
+			
+		def handle_MsgPlayerDisconnect(self, event):
+			print "Player disconnect: %d" % event.player_id
+			self.messages.append(event)
+			
+		def handle_MsgServerShutdown(self, event):
+			print "Server shutdown"
+			self.messages.append(event)
+			
+	
+	class TestClientServer(unittest.TestCase):
 
 		def make_client_handler(self,server,socket,client_id):
-			return ClientHandler(server,socket,client_id,JsonEncoder(),JsonEncoder())
+			return ClientHandler(server,socket,client_id,JsonEncoder())
 
 		def testServerNumClients(self):
 			"""	
 			Test that Server maintains client handler set as expected 
 			"""
-			# create server
-			server = Server(self.make_client_handler,4444)
-			server.start()
-			time.sleep(0.1)			
-			server.process_events(self)
+			
+			server = None
+			try:
+			
+				# create server
+				handler = EventHandler()
+				server = Server(self.make_client_handler,4444)
+				server.start()
+				time.sleep(0.1)			
+				server.process_events(handler)
 
-			self.assertEquals(0, server.get_num_clients())
+				self.assertEquals(0, server.get_num_clients())
 
-			# connect to server
-			sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			sock1.connect(("localhost",4444))
-			time.sleep(0.1)
-			server.process_events(self)
+				# connect to server
+				sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				sock1.connect(("localhost",4444))
+				time.sleep(0.1)
+				server.process_events(handler)
 			
-			self.assertEquals(1, server.get_num_clients())
+				self.assertEquals(1, server.get_num_clients())
 			
-			# connect second client
-			sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			sock2.connect(("localhost",4444))
-			time.sleep(0.1)
-			server.process_events(self)
+				# connect second client
+				sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				sock2.connect(("localhost",4444))
+				time.sleep(0.1)
+				server.process_events(handler)
 			
-			self.assertEquals(2, server.get_num_clients())
+				self.assertEquals(2, server.get_num_clients())
 			
-			# disconnect second
-			sock2.close()
-			time.sleep(0.1)
-			server.process_events(self)
+				# disconnect second
+				sock2.close()
+				time.sleep(0.1)
+				server.process_events(self)
 			
-			self.assertEquals(1, server.get_num_clients())
+				self.assertEquals(1, server.get_num_clients())
 			
-			# disconnect first
-			sock1.close()
-			time.sleep(0.1)
-			server.process_events(self)
+				# disconnect first
+				sock1.close()
+				time.sleep(0.1)
+				server.process_events(handler)
+				
+				self.assertEquals(0, server.get_num_clients())
 			
-			self.assertEquals(0, server.get_num_clients())
-			
-			server.stop()
+			finally:
+				if server:
+					server.stop()
 			
 		def testClientConnection(self):
 			"""	
 			Test that the client can connect and communicate with the server 
 			"""
-			self.messages = {}
 			
-			server = Server(self.make_client_handler,4445)	
-			server.start()
-			time.sleep(0.1)
+			server = None
+			client = None
+			try:
 			
-			encoder = JsonEncoder()
-			client = Client("localhost", 4445, encoder, encoder)
-			client.start()
-			time.sleep(0.1)
+				server_handler = EventHandler()
+				server = Server(self.make_client_handler,4445)	
+				server.start()
+				time.sleep(0.1)
 			
-			server.process_events(self)
-			client.process_events(self)
+				encoder = JsonEncoder()
+				client_handler = EventHandler()
+				client = Client("localhost", 4445, encoder)
+				client.start()
+				time.sleep(0.1)
 			
-			self.assertEquals(1, server.get_num_clients())
+				server.process_events(server_handler)
+				client.process_events(client_handler)
+			
+				self.assertEquals(1, server.get_num_clients())
 
-			client.send(MsgChat([Server.SERVER],[], None, "Hi server!"))
-			time.sleep(0.1)
+				client.send(MsgChat([Server.SERVER],[], None, "Hi server!"))
+				time.sleep(0.1)
 			
-			server.process_events(self)
-			client.process_events(self)
+				server.process_events(server_handler)
+				client.process_events(client_handler)
 			
-			self.assertEquals(1, len(self.messages[Server.SERVER]))
-			self.assertEquals("Hi server!", self.messages[Server.SERVER][0].message)
+				self.assertEquals(1, len(server_handler.messages))
+				self.assertEquals("Hi server!", server_handler.messages[-1].message)
+				self.assertEquals(0, server_handler.messages[-1].sender)
 			
-			server.send(MsgChat([0],[],Server.SERVER,"Hello client!"))
-			time.sleep(0.1)
+				server.send(MsgChat([0],[],Server.SERVER,"Hello client!"))
+				time.sleep(0.1)
 			
-			server.process_events(self)
-			client.process_events(self)
+				server.process_events(server_handler)
+				client.process_events(client_handler)
 			
-			self.assertEquals(1, len(self.messages[0]))
-			self.assertEquals("Hello client!", self.messages[0][0].message)
+				self.assertEquals(1, len(client_handler.messages))
+				self.assertEquals("Hello client!", client_handler.messages[-1].message)
+				self.assertEquals(Server.SERVER, client_handler.messages[-1].sender)
 			
-			client.stop()		
-			server.stop()
+			finally:
+				if client:
+					client.stop()		
+				if server:
+					server.stop()
 			
 		def testMessageDelivery(self):
-		
-			self.messages = {}
+			"""	
+			Test that messages are send to correct recipients
+			"""
 			
-			server = Server(self.make_client_handler,4446)
-			server.start()
-			time.sleep(0.1)			
+			server = None
+			clientA = None
+			clientB = None
+			try:
+			
+				server_handler = EventHandler()
+				server = Server(self.make_client_handler,4446)
+				server.start()
+				time.sleep(0.1)			
 				
-			encoder = JsonEncoder()
-			clientA = Client("localhost", 4446, encoder, encoder)
-			clientA.start()
-			time.sleep(0.1)
+				encoder = JsonEncoder()
+				clientA_handler = EventHandler()
+				clientA = Client("localhost", 4446, encoder)
+				clientA.start()
+				time.sleep(0.1)
 			
-			clientB = Client("localhost", 4446, encoder, encoder)
-			clientB.start()
-			time.sleep(0.1)
+				clientB_handler = EventHandler()
+				clientB = Client("localhost", 4446, encoder)
+				clientB.start()
+				time.sleep(0.1)
 
-			# send from client A to client B
-			clientA.send(MsgChat([1],[],None,"Hi client B"))
-			server.process_events(self)
-			client.process_events(self)
+				# send from client A to client B
+				clientA.send(MsgChat([1],[],None,"Hi client B"))
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
 
-			self.assertEquals(1, len(messages[1]))
-			self.assertEquals("Hi client B", messages[1][0])
+				self.assertEquals(1, len(clientB_handler.messages))
+				self.assertEquals("Hi client B", clientB_handler.messages[-1].message)
+				self.assertEquals(0, clientB_handler.messages[-1].sender)
 
-			# send from client B to client A
-			clientB.send(MsgChat([0],[],None,"Hi client A"))
-			server.process_events(self)
-			client.process_events(self)
+				# send from client B to client A
+				clientB.send(MsgChat([0],[],None,"Hi client A"))
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
 
-			self.assertEquals(1, len(messages[0]))
-			self.assertEquals("Hi client A", messages[0][0])
+				self.assertEquals(1, len(clientA_handler.messages))
+				self.assertEquals("Hi client A", clientA_handler.messages[-1].message)
+				self.assertEquals(1, clientA_handler.messages[-1].sender)
 
-			# send from server to all clients
-			server.send(MsgChat([Server.GROUP_CLIENTS],[],Server.SERVER,"Hi all clients"))
-			server.process_events(self)
-			client.process_events(self)
+				# send from server to all clients
+				server.send(MsgChat([Server.GROUP_CLIENTS],[],Server.SERVER,"Hi all clients"))
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
 
-			self.assertEquals(
+				self.assertEquals(0, len(server_handler.messages))
+				self.assertEquals(2, len(clientA_handler.messages))
+				self.assertEquals("Hi all clients", clientA_handler.messages[-1].message)
+				self.assertEquals(Server.SERVER, clientA_handler.messages[-1].sender)
+				self.assertEquals(2, len(clientB_handler.messages))
+				self.assertEquals("Hi all clients", clientB_handler.messages[-1].message)
+				self.assertEquals(Server.SERVER, clientB_handler.messages[-1].sender)
+		
+				# send from client A to everyone
+				clientA.send(MsgChat([Server.GROUP_ALL],[],None,"Hi everyone"))
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
+			
+				self.assertEquals(1, len(server_handler.messages))
+				self.assertEquals("Hi everyone", server_handler.messages[-1].message)
+				self.assertEquals(0, server_handler.messages[-1].sender)
+				self.assertEquals(3, len(clientA_handler.messages))
+				self.assertEquals("Hi everyone", clientA_handler.messages[-1].message)
+				self.assertEquals(0, clientA_handler.messages[-1].sender)
+				self.assertEquals(3, len(clientB_handler.messages))
+				self.assertEquals("Hi everyone", clientB_handler.messages[-1].message)
+				self.assertEquals(0, clientB_handler.messages[-1].sender)
+			
+				# send from client A to everyone excluding client B
+				clientA.send(MsgChat([Server.GROUP_ALL],[1],None,"Client B sucks"))
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
+			
+				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals("Client B sucks", server_handler.messages[-1].message)
+				self.assertEquals(0, server_handler.messages[-1].sender)
+				self.assertEquals(4, len(clientA_handler.messages))
+				self.assertEquals("Client B sucks", clientA_handler.messages[-1].message)
+				self.assertEquals(0, clientA_handler.messages[-1].sender)
+				self.assertEquals(3, len(clientB_handler.messages))
+			
+				# send from client A to everyone excluding client A and server
+				clientA.send(MsgChat([Server.GROUP_ALL],[0,Server.SERVER],None,"Two excludes"))
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
+			
+				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals(4, len(clientA_handler.messages))
+				self.assertEquals(4, len(clientB_handler.messages))
+				self.assertEquals("Two excludes", clientB_handler.messages[-1].message)
+				self.assertEquals(0, clientB_handler.messages[-1].sender)
+
+			finally:
+				if clientA:
+					clientA.stop()
+				if clientB:
+					clientB.stop()
+				if server:
+					server.stop()
+
+	class TestGameClientServer(unittest.TestCase):
+
+		def test_handle_pong(self):
+			"""	
+			Test that time calculations in pong handler are correct 
+			"""
+			encoder = JsonEncoder()
+			client = GameClient({"name":"tester"},"localhost", 4447,encoder)
+			round_trips = [300,100,1200,200]
+			offset = 500
+			for rt in round_trips:
+				start = int(time.time()*1000)-rt
+				client.intercept_MsgPong(MsgPong([],[],-1,ping_timestamp=start,pong_timestamp=start+(rt/2)+offset))
+			self.assertEquals(100, client.get_latency())
+			self.assertEquals(-offset, client.get_time_delta())
+	
+		def make_client_handler(self,server,socket,client_id):
+			return GameClientHandler(server,socket,client_id,JsonEncoder())
+
+		def test_player_connection(self):
+			"""	
+			Test that GameClient can (or cant) connect to the game accordingly
+			"""
+			
+			server = None
+			clientA = None
+			clientB1 = None
+			clientB2 = None
+			clientC = None
+			try:
+			
+				server_handler = EventHandler()
+				server = GameServer(2,self.make_client_handler,4447)	
+				server.start()
+				time.sleep(0.1)
+			
+				encoder = JsonEncoder()
+				clientA_handler = EventHandler()
+				clientA = GameClient({"name":"testerA"},"localhost", 4447, encoder)
+				clientA.start()
+				time.sleep(0.1)
+			
+				for i in range(2):
+					server.process_events(server_handler)								
+					clientA.process_events(clientA_handler)
+					time.sleep(0.1)
+			
+				self.assertEquals(1, server.get_num_clients())
+				self.assertEquals(1, server.get_num_players())
+				self.assertEquals("testerA", server.get_player_names()[0])
+				self.assertEquals(1, len(server_handler.messages))
+				self.assertEquals(EvtPlayerAccepted, server_handler.messages[-1].__class__)
+			
+				# add second player with taken name
+				clientB1_handler = EventHandler()
+				clientB1 = GameClient({"name":"testerA"},"localhost", 4447,  encoder)
+				clientB1.start()
+				time.sleep(0.1)
+			
+				for i in range(3):
+					server.process_events(server_handler)
+					clientA.process_events(clientA_handler)
+					clientB1.process_events(clientB1_handler)
+					time.sleep(0.1)
+			
+				# second player should have been rejected because name is taken
+				self.assertEquals(1, server.get_num_players())
+				self.assertEquals(1, len(clientB1_handler.messages))
+				self.assertEquals(MsgRejectConnect,clientB1_handler.messages[-1].__class__)
+				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
+			
+				# add second player with unique name
+				clientB2_handler = EventHandler()
+				clientB2 = GameClient({"name":"testerB"},"localhost", 4447,  encoder)
+				clientB2.start()
+				time.sleep(0.1)
+			
+				for i in range(3):
+					server.process_events(server_handler)
+					clientA.process_events(clientA_handler)
+					clientB2.process_events(clientB2_handler)
+					time.sleep(0.1)
+			
+				self.assertEquals(2, server.get_num_players())
+				self.assertEquals(3, len(server_handler.messages))
+				self.assertEquals(EvtPlayerAccepted, server_handler.messages[-1].__class__)
+				self.assertEquals(2, len(clientA_handler.messages))
+				self.assertEquals(MsgPlayerConnect, clientA_handler.messages[-1].__class__)
+				self.assertEquals(2, clientA_handler.messages[-1].player_id)
+				self.assertEquals("testerB", clientA_handler.messages[-1].player_info["name"])
+				self.assertEquals(1, len(clientB2_handler.messages))
+				self.assertEquals(MsgAcceptConnect, clientB2_handler.messages[-1].__class__)
+				self.assertTrue(clientB2_handler.messages[-1].players_info.has_key(0))
+				self.assertEquals("testerA", clientB2_handler.messages[-1].players_info[0]["name"])
+			
+				# add third player
+				clientC_handler = EventHandler()
+				clientC = GameClient({"name":"testerC"},"localhost", 4447,  encoder)
+				clientC.start()
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB2.process_events(clientB2_handler)
+				clientC.process_events(clientC_handler)
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB2.process_events(clientB2_handler)
+				clientC.process_events(clientC_handler)
+				time.sleep(0.1)
+			
+				# third player should have been rejected because max is 2
+				self.assertEquals(1, len(clientC_handler.messages))
+				self.assertEquals(MsgRejectConnect,clientC_handler.messages[-1].__class__)
+				self.assertEquals(4, len(server_handler.messages))
+				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
+			
+			finally:
+				if clientA:
+					clientA.stop()
+				if clientB1:
+					clientB1.stop()
+				if clientB2:
+					clientB2.stop()
+				if clientC:
+					clientC.stop()
+				if server:
+					server.stop()
+			
+		def test_player_arrive_depart_notification(self):
+		
+			server = None
+			clientA = None
+			clientB = None
+			try:
+		
+				# start server
+				server_handler = EventHandler()
+				server = GameServer(8,self.make_client_handler,4448)	
+				server.start()
+				time.sleep(0.1)
+			
+				# add player 0
+				encoder = JsonEncoder()
+				clientA_handler = EventHandler()
+				clientA = GameClient({"name":"testerA"},"localhost", 4448,  encoder)
+				clientA.start()
+				time.sleep(0.1)
+			
+				for i in range(2):
+					server.process_events(server_handler)								
+					clientA.process_events(clientA_handler)
+					time.sleep(0.1)
+				
+				# add player 1
+				clientB_handler = EventHandler()
+				clientB = GameClient({"name":"testerB"},"localhost", 4448,  encoder)
+				clientB.start()
+				time.sleep(0.1)
+			
+				for i in range(2):
+					server.process_events(server_handler)
+					clientA.process_events(clientA_handler)
+					clientB.process_events(clientB_handler)
+					time.sleep(0.1)
+				
+				self.assertEquals(2, server.get_num_players())
+				
+				# player 0 should be notified
+				# MsgAcceptConnect, MsgPlayerConnect
+				self.assertEquals(2, len(clientA_handler.messages))
+				self.assertEquals(MsgPlayerConnect, clientA_handler.messages[-1].__class__)
+				self.assertEquals(1, clientA_handler.messages[-1].player_id)
+				self.assertEquals({"name":"testerB"}, clientA_handler.messages[-1].player_info)
+			
+				server.disconnect_client(0)			
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientA.process_events(clientA_handler)
+				clientB.process_events(clientB_handler)
+			
+				self.assertEquals(1, server.get_num_players())
+			
+				# player 1 should be notified
+				# MsgAcceptConnect, MsgPlayerDisconnect
+				self.assertEquals(2, len(clientB_handler.messages))
+				self.assertEquals(MsgPlayerDisconnect, clientB_handler.messages[-1].__class__)
+				self.assertEquals(0, clientB_handler.messages[-1].player_id)
+			
+				# server shuts down
+				server.stop()
+				time.sleep(0.1)
+			
+				server.process_events(server_handler)
+				clientB.process_events(clientB_handler)
+			
+				# player 1 should be notified
+				# MsgAcceptConnect, MsgPlayerDisconnect, MsgServerShutdown
+				self.assertEquals(3, len(clientB_handler.messages))
+				self.assertEquals(MsgServerShutdown, clientB_handler.messages[-1].__class__)
+
+			finally:
+				if clientA:
+					clientA.stop()
+				if clientB:
+					clientB.stop()
+				if server:
+					server.stop()
 		
 	unittest.main()
 	
