@@ -110,6 +110,67 @@ class Angle(object):
 	def __repr__(self):
 		return "Angle(%f)" % self.val
 
+	def __hash__(self):
+		return hash("Angle") ^ hash(self.val)
+
+class Rotation(object):
+	"""	
+	A 3-dimensional orientation consisting of roll, pitch and yaw values.
+	"""
+	
+	def __init__(self, roll, pitch, yaw):
+		if hasattr(roll,"to_rad"):
+			roll = roll.to_rad()
+		self.roll = Angle(roll)
+		if hasattr(pitch,"to_rad"):
+			pitch = pitch.to_rad()
+		self.pitch = Angle(pitch)
+		if hasattr(yaw,"to_rad"):
+			yaw = yaw.to_rad()
+		self.yaw = Angle(yaw)
+		
+	def get_roll(self):
+		return self.roll
+
+	def get_pitch(self):
+		return self.pitch
+
+	def get_yaw(self):
+		return self.yaw
+
+	def to_tuple(self):
+		return (self.roll.val,self.pitch.val,self.yaw.val)
+
+	def __eq__(self,r):
+		if not hasattr(r,"to_tuple"):
+			return False
+		return self.to_tuple() == r.to_tuple()
+
+	def __ne__(self,r):
+		if not hasattr(r,"to_tuple"):
+			return True
+		return self.to_tuple() != r.to_tuple()
+
+	def __str__(self):
+		return str(self.to_tuple())
+
+	def __repr__(self):
+		return "Rotation(%f,%f,%f)" % self.to_tuple()
+	
+	def __add__(self,r):
+		if not hasattr(r,"to_tuple"):
+			raise TypeError("Cannot add %s" % str(r))
+		r_roll,r_pitch,r_yaw = r.to_tuple()	
+		return Rotation(self.roll+r_roll, self.pitch+r_pitch, self.yaw+r_yaw)
+
+	def __sub__(self,r):
+		if not hasattr(r,"to_tuple"):
+			raise TypeError("Cannot subtract %s" % str(r))
+		r_roll,r_pitch,r_yaw = r.to_tuple()
+		return Rotation(self.roll-r_roll, self.pitch-r_pitch, self.yaw-r_yaw)
+		
+	def __hash__(self):
+		return hash("Rotation") ^ hash(self.to_tuple())
 
 class Vector2d(object):
 
@@ -141,7 +202,7 @@ class Vector2d(object):
 		return self.i*w.i + self.j*w.j
 	
 	def __str__(self):
-		return "vec(%f, %f)" % (self.i,self.j) 
+		return str(self.to_tuple())
 	
 	def __eq__(self,w):
 		if type(w) != type(self): 
@@ -154,7 +215,7 @@ class Vector2d(object):
 		return self.i != w.i or self.j != w.j
 	
 	def __repr__(self):
-		return "Vector2d(%f,%f)" % (self.i,self.j)
+		return "Vector2d(%f,%f)" % self.to_tuple()
 	
 	def get_dir(self):
 		return Angle(math.atan2(self.j,self.i))
@@ -175,15 +236,98 @@ class Vector2d(object):
 			return self.j
 		else:
 			raise IndexError("Index must be 0 or 1")
-		
-	def __setitem__(self, index, value):
-		if index == 0:
-			self.i = value
-		elif index == 1:
-			self.j = value
-		else:
-			raise IndexError("Index must be 0 or 1")
+
+	def __hash__(self):
+		return hash("Vector2d") ^ hash(self.i) ^ hash(self.j)
 	
+
+class Vector3d(object):
+	
+	def __init__(self, i=0, j=0, k=0, dir=0, mag=0):
+		if dir!=0 or mag!=0:
+			if hasattr(dir, "to_tuple"):
+				dir = dir.to_tuple()
+			roll = dir[0]
+			pitch = dir[1]
+			yaw = dir[2]
+			fwd = math.cos(pitch) * mag
+			up = math.sin(pitch) * mag
+			self.i = math.cos(yaw) * fwd
+			self.j = math.sin(yaw) * fwd
+			self.k = up
+		else:
+			self.i = i
+			self.j = j
+			self.k = k
+
+	def __add__(self, w):
+		# addition of another Vector3d
+		return Vector3d(self.i + w[0], self.j + w[1], self.k + w[2])
+
+	def __sub__(self, w):
+		# subtraction of another Vector3d
+		return Vector3d(self.i - w[0], self.j - w[1], self.k - w[2])
+	
+	def __mul__(self, w):
+		# multiplication with scalar value
+		return Vector3d(self.i * w, self.j * w, self.k * w)
+	
+	def __div__(self, w):
+		# division by scalar value
+		return Vector3d(self.i / w, self.j / w, self.k / w)
+	def __truediv__(self, w):
+		# division by scalar value
+		return Vector3d(self.i / w, self.j / w, self.k / w)
+	
+	def __str__(self):
+		return str(self.to_tuple())
+	
+	def __eq__(self,w):
+		if type(w) != type(self): 
+			return False
+		return self.i == w.i and self.j == w.j and self.k == w.k
+	
+	def __ne__(self,w):
+		if type(w) != type(self):
+			return False
+		return self.i != w.i or self.j != w.j or self.i != w.k
+	
+	def __repr__(self):
+		return "Vector3d(%f,%f,%f)" % self.to_tuple()
+	
+	def get_dir(self):
+		yaw = math.atan2(self.j,self.i)
+		fwd = math.sqrt(math.pow(self.i,2)+math.pow(self.j,2))
+		pitch = math.atan2(self.k,fwd)
+		return Rotation(0.0, pitch, yaw)
+		
+	def get_mag(self):
+		return math.sqrt(math.pow(self.i,2)+math.pow(self.j,2)+math.pow(self.k,2))
+	
+	def dot(self, w):
+		return self.i*w.i + self.j*w.j + self.k*w.k
+
+	def cross(self, w):
+		return Vector3d(self.j*w.k-self.k*w.j, self.k*w.i-self.i*w.k, self.i*w.j-self.j*w.i)
+
+	def unit(self):
+		return self / self.get_mag()
+	
+	def to_tuple(self):
+		return (self.i, self.j, self.k)
+	
+	def __getitem__(self, index):
+		if index == 0:
+			return self.i
+		elif index == 1:
+			return self.j
+		elif index == 2:
+			return self.k
+		else:
+			raise IndexError("Index must be 0, 1 or 2")
+	
+	def __hash__(self):
+		return hash("Vector3d") ^ hash(self.i) ^ hash(self.j) ^ hash(self.k)
 	
 def sigmoid(x):
 	"""	
@@ -213,7 +357,7 @@ def deviation(values, val):
 	return float(dev)/sd if sd!=0 else 0.0 
 	
 	
-def dist_to_line(line, point):
+def dist_to_line2d(line, point):
 	"""	
 	Finds a point's distance from a line of infinite length. To find a point's
 	distance from a line segment, use dist_to_line_seg instead.
@@ -239,7 +383,7 @@ def dist_to_line(line, point):
 	
 	return dist
 	
-def dist_to_line_seg(line, point):
+def dist_to_line2d_seg(line, point):
 	"""	
 	Finds a point's distance from a line segment. To find a point's distance
 	from a line of infinite length, use dist_to_line instead.
@@ -273,7 +417,7 @@ def dist_to_line_seg(line, point):
 	return dist
 
 	
-class Line(object):
+class Line2d(object):
 	
 	def __init__(self, a, b):
 		"""	
@@ -288,10 +432,10 @@ class Line(object):
 		a Vector2d instance. Returns the distance between the point and the line
 		segment.
 		"""
-		return dist_to_line_seg((self.a.to_tuple(),self.b.to_tuple()), point.to_tuple())
+		return dist_to_line2d_seg((self.a.to_tuple(),self.b.to_tuple()), point.to_tuple())
 
 	def __repr__(self):
-		return "Line(%s,%s)" % (repr(self.a),repr(self.b))
+		return "Line2d(%s,%s)" % (repr(self.a),repr(self.b))
 
 	def __eq__(self, other):
 		if type(self) != type(other): return False
@@ -301,7 +445,36 @@ class Line(object):
 		if type(self) != type(other): return True
 		return self.a != other.a or self.b != other.b
 
-class Polygon(object):
+	def __hash__(self):
+		return hash("Line2d") ^ hash(self.a) ^ hash(self.b)
+
+class Line3d(object):
+	"""	
+	A line between two 3-dimensional points.
+	"""
+	
+	def __init__(self, a, b):
+		"""	
+		Takes two 3d  vectors - the start and end points of the line
+		"""
+		self.a = a
+		self.b = b
+
+	def __repr__(self):
+		return "Line3d(%s,%s)" % (repr(self.a),repr(self.b),repr(self.c))
+
+	def __eq__(self, other):
+		if type(self) != type(other): return False
+		return self.a == other.a and self.b == other.b
+
+	def __ne__(self, other):
+		if type(self) != type(other): return True
+		return self.a != other.a or self.b != other.b
+
+	def __hash__(self):
+		return hash("Line3d") ^ hash(self.a) ^ hash(self.b)
+
+class Polygon2d(object):
 	"""	
 	A 2-dimensional shape
 	"""
@@ -320,14 +493,14 @@ class Polygon(object):
 		for i in range(len(self.points)-1):
 			a = self.points[i]
 			b = self.points[i+1]
-			lines.append(Line(a,b))
+			lines.append(Line2d(a,b))
 		a = self.points[-1]
 		b = self.points[0]
-		lines.append(Line(a,b))
+		lines.append(Line2d(a,b))
 		return lines
 
 	def __repr__(self):
-		return "Polygon(%s)" % repr(self.get_points())
+		return "Polygon2d(%s)" % repr(self.get_points())
 
 	def __eq__(self, other):
 		if type(self) != type(other): return False
@@ -337,8 +510,11 @@ class Polygon(object):
 		if type(self) != type(other): return True
 		return self.points != other.points
 
+	def __hash__(self):
+		return hash("Polygon2d") ^ hash(self.points)
 
-class Rectangle(Polygon):
+
+class Rectangle(Polygon2d):
 	"""	
 	A 2-dimensional, axis-aligned shape with 2 pairs of parallel sides. 
 	"""
@@ -395,6 +571,42 @@ class Rectangle(Polygon):
 				Vector2d(in_right,in_bottom)
 			)
 			
+class Polygon3d(object):
+	"""	
+	A 3-dimensional shape
+	"""
+
+	def __init__(self, lines):
+		"""	
+		lines is a list of 3d lines representing the edges of the shape.
+		"""
+		self.lines = lines
+		self.points = set()
+		for l in lines:
+			if not l.a in self.points:
+				self.points.add(l.a)
+			if not l.b in self.points:
+				self.points.add(l.b)
+
+	def get_points(self):
+		return self.points
+
+	def get_lines(self):
+		return self.lines
+
+	def __repr__(self):
+		return "Polygon3d(%s)" % repr(self.get_lines())
+
+	def __eq__(self, other):
+		if type(self) != type(other): return False
+		return self.lines == other.lines
+
+	def __ne__(self, other):
+		if type(self) != type(other): return True
+		return self.lines != other.lines
+
+	def __hash__(self):
+		return hash("Polygon3d") ^ hash(self.lines)
 
 def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
 	"""	
@@ -420,6 +632,8 @@ def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
 	"""	
 	# Check for situations with no solution
 	if target_speed > bullet_speed:
+		# TODO target being faster than bullet does not necessarily mean no collision
+		# - e.g. head on collision
 		return None
 	if target_disp[0]==0 and target_disp[1]==0:
 		return None
@@ -479,6 +693,26 @@ if __name__ == '__main__':
 			self.assertEqual(Angle(-math.pi/2) - Angle(math.pi), Angle(math.pi/2))
 			self.assertAlmostEqual(Angle(math.pi/2).to_deg(), 90, 4) 
 
+			self.assertTrue(Angle(10) in set([Angle(10)]))
+			self.assertFalse(Angle(10) in set([Angle(11)]))
+		
+		def testRotations(self):
+			self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(0.5,1.5,2.5))
+			self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(2*math.pi+0.5, 2*math.pi+1.5, 2*math.pi+2.5))
+			self.assertNotEqual(Rotation(0.5,1.5,2.5),Rotation(0.5,1.5,2.6))
+			self.assertNotEqual(Rotation(0.5,1.5,2.5),0.0)
+
+			self.assertEqual(Rotation(0.5,1.5,2.5) + Rotation(0.1,0.0,0.0), Rotation(0.6,1.5,2.5))
+			self.assertEqual(Rotation(0.5,1.5,2.5) + Rotation(0.0,4*math.pi,0.0), Rotation(0.5,1.5,2.5))
+			self.assertEqual(Rotation(0.5,1.5,2.5) + Rotation(0.0,0.0,0.2), Rotation(0.5,1.5,2.7))
+
+			self.assertEqual(Rotation(0.5,1.5,2.5) - Rotation(0.1,0.0,0.0), Rotation(0.4,1.5,2.5))
+			self.assertEqual(Rotation(0.5,1.5,2.5) - Rotation(0.0,4*math.pi,0.0), Rotation(0.5,1.5,2.5))
+			self.assertEqual(Rotation(0.5,1.5,2.5) - Rotation(0.0,0.0,0.2), Rotation(0.5,1.5,2.3))
+
+			self.assertTrue(Rotation(1,2,3) in set([Rotation(1,2,3)]))
+			self.assertFalse(Rotation(1,2,3) in set([Rotation(2,3,4)]))
+
 		def testVector2dMath(self):
 			self.assertEqual(Vector2d(0,0), Vector2d(0,0))
 			self.assertNotEqual(Vector2d(0,0), Vector2d(0,1))
@@ -486,11 +720,53 @@ if __name__ == '__main__':
 			self.assertEqual(Vector2d(1,2) + Vector2d(2,3), Vector2d(3,5))
 			self.assertEqual(Vector2d(1,2) - Vector2d(2,3), Vector2d(-1,-1))
 			self.assertEqual(Vector2d(1,2) * 5, Vector2d(5,10))
+
 			self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).i, Vector2d(0,2).i, 4)
 			self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).j, Vector2d(0,2).j, 4)
+
 			self.assertAlmostEqual(Vector2d(3,4).get_mag(), 5, 4)
 			self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
 			self.assertAlmostEqual(Vector2d(3,4).unit().get_mag(), 1.0, 4)
+
+			a = Vector2d(2,0)
+			b = Vector2d(2,2)
+			self.assertAlmostEqual(a.dot(b), a.get_mag()*b.get_mag()*math.cos(math.pi/4), 4)
+
+			self.assertEqual(Vector2d(1,2)[0], 1.0)
+			self.assertEqual(Vector2d(1,2)[1], 2.0)
+
+			self.assertTrue(Vector2d(1,2) in set([Vector2d(1,2)]))
+			self.assertFalse(Vector2d(1,2) in set([Vector2d(2,3)]))
+		
+		def testVector3dMath(self):
+			self.assertEqual(Vector3d(0,0,0), Vector3d(0,0,0))
+			self.assertNotEqual(Vector3d(0,0,0), Vector3d(0,1,2))
+
+			self.assertEqual(Vector3d(1,2,3) + Vector3d(2,3,4), Vector3d(3,5,7))
+			self.assertEqual(Vector3d(1,2,3) - Vector3d(2,3,4), Vector3d(-1,-1,-1))
+			self.assertEqual(Vector3d(1,2,3) * 5, Vector3d(5,10,15))
+
+			self.assertAlmostEqual(Vector3d(dir=Rotation(0.5,math.pi/4,math.pi/2),mag=2).i, Vector3d(0,1.4142,1.4142).i, 4)
+			self.assertAlmostEqual(Vector3d(dir=Rotation(0.5,math.pi/4,math.pi/2),mag=2).j, Vector3d(0,1.4142,1.4142).j, 4)
+			self.assertAlmostEqual(Vector3d(dir=Rotation(0.5,math.pi/4,math.pi/2),mag=2).k, Vector3d(0,1.4142,1.4142).k, 4)
+
+			self.assertAlmostEqual(Vector3d(0,4,3).get_mag(), 5, 4)
+
+			self.assertAlmostEqual(Vector3d(0,4,4).get_dir().roll.val,  Rotation(0.0,math.pi/4,math.pi/2).roll.val,  4)	
+			self.assertAlmostEqual(Vector3d(0,4,4).get_dir().pitch.val, Rotation(0.0,math.pi/4,math.pi/2).pitch.val, 4)	
+			self.assertAlmostEqual(Vector3d(0,4,4).get_dir().yaw.val,   Rotation(0.0,math.pi/4,math.pi/2).yaw.val,   4)
+
+			self.assertAlmostEqual(Vector3d(9,8,7).unit().get_mag(), 1.0, 4)
+
+			self.assertAlmostEqual(Vector3d(1,2,3).dot(Vector3d(4,5,6)), 1*4+2*5+3*6 ,4)
+			self.assertEqual(Vector3d(1,2,3).cross(Vector3d(4,5,6)), Vector3d(2*6-3*5,3*4-1*6,1*5-2*4))
+
+			self.assertEqual(Vector3d(9,8,7)[0], 9.0)
+			self.assertEqual(Vector3d(9,8,7)[1], 8.0)
+			self.assertEqual(Vector3d(9,8,7)[2], 7.0)
+
+			self.assertTrue(Vector3d(1,2,3) in set([Vector3d(1,2,3)]))
+			self.assertFalse(Vector3d(1,2,3) in set([Vector3d(2,3,4)]))
 
 		def testStandardDeviation(self):
 			self.assertEquals(8.0,mean([2,6,4,20]))
@@ -527,23 +803,90 @@ if __name__ == '__main__':
 			self.assertEquals(None,lead_angle((1.0,1.0),1.0,0.0,0.9))
 
 		
-		def testLine(self):
-			line1 = Line(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
-			line2 = Line(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
-			line3 = Line(Vector2d(0.0,0.0),Vector2d(1.0,0.0))
+		def testLine2d(self):
+			line1 = Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
+			line2 = Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
+			line3 = Line2d(Vector2d(0.0,0.0),Vector2d(1.0,0.0))
 			self.assertEquals(line1, line2)
 			self.assertNotEquals(line2, line3)
 			self.assertNotEquals(line3, line1)
-		
-		def testPolygon(self):
-			p = Polygon([Vector2d(0.0,0.0), Vector2d(1.0,0.0), Vector2d(1.0,1.0)])
+
+			self.assertTrue(Line2d(Vector2d(0,0),Vector2d(1,2)) in set([Line2d(Vector2d(0,0),Vector2d(1,2))]))
+			self.assertFalse(Line2d(Vector2d(0,0),Vector2d(1,2)) in set([Line2d(Vector2d(0,0),Vector2d(2,3))]))
+			
+		def testLine3d(self):
+			line1 = Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,1.0,1.0))
+			line2 = Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,1.0,1.0))
+			line3 = Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,0.0,1.0))
+			self.assertEquals(line1, line2)
+			self.assertNotEquals(line2, line3)
+			self.assertNotEquals(line3, line1)
+
+			self.assertTrue(Line3d(Vector3d(0,0,0),Vector3d(1,2,3)) in set([Line3d(Vector3d(0,0,0),Vector3d(1,2,3))]))
+			self.assertFalse(Line3d(Vector3d(0,0,0),Vector3d(1,2,3)) in set([Line3d(Vector3d(0,0,0),Vector3d(2,3,4))]))
+	
+		def testPolygon2d(self):
+			p = Polygon2d([Vector2d(0.0,0.0), Vector2d(1.0,0.0), Vector2d(1.0,1.0)])
 			lines = [
-				Line(Vector2d(0.0,0.0),Vector2d(1.0,0.0)),
-				Line(Vector2d(1.0,0.0),Vector2d(1.0,1.0)),
-				Line(Vector2d(1.0,1.0),Vector2d(0.0,0.0))
+				Line2d(Vector2d(0.0,0.0),Vector2d(1.0,0.0)),
+				Line2d(Vector2d(1.0,0.0),Vector2d(1.0,1.0)),
+				Line2d(Vector2d(1.0,1.0),Vector2d(0.0,0.0))
 			]
 			self.assertEquals(lines, p.get_lines())
 
+			self.assertTrue(Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3))) 
+				in set([Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3)))]))
+			self.assertFalse(Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3))) 
+				in set([Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(4,5)))]))
+
+		def testPolygon3d(self):
+			p = Polygon3d([
+				Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,0.0,0.0)),
+				Line3d(Vector3d(1.0,0.0,0.0),Vector3d(0.0,1.0,0.0)),
+				Line3d(Vector3d(0.0,1.0,0.0),Vector3d(0.0,0.0,0.0)),
+				Line3d(Vector3d(0.0,0.0,0.0),Vector3d(0.0,0.0,1.0)),
+				Line3d(Vector3d(1.0,0.0,0.0),Vector3d(0.0,0.0,1.0)),
+				Line3d(Vector3d(0.0,1.0,0.0),Vector3d(0.0,0.0,1.0))
+			])
+			points = set([
+				Vector3d(0.0,0.0,0.0), Vector3d(1.0,0.0,0.0),
+				Vector3d(0.0,1.0,0.0), Vector3d(0.0,0.0,1.0)
+			])
+			self.assertEquals(points, p.get_points())
+
+			self.assertTrue(Polygon3d((
+					Line3d(Vector3d(0,0,0),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(1,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,1,0))
+				))
+				in set([Polygon3d((
+					Line3d(Vector3d(0,0,0),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(1,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,1,0))
+				))]))
+			self.assertFalse(Polygon3d((
+					Line3d(Vector3d(0,0,0),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(1,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,1,0))
+				))
+				in set([Polygon3d((
+					Line3d(Vector3d(0,9,0),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(1,0,0),Vector3d(0,1,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(1,0,0)),
+					Line3d(Vector3d(0,0,1),Vector3d(0,1,0))
+				))]))
+	
 		def testRectangle(self):
 			r1 = Rectangle(Vector2d(0.0,0.0), Vector2d(5.0,10.0))
 			r2 = Rectangle(Vector2d(0.0,0.0), Vector2d(5.0,10.0))
