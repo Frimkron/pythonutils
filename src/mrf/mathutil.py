@@ -29,7 +29,10 @@ Math Utils Module
 Math utilities. Notably:
 
 	Angle		- angle class
+	Rotation    - 3d rotation class
 	Vector2d	- 2D vector class
+	Vector3d    - 3D vector class
+	Matrix      - n x m Matrix class
 	Line		- 2D line
 	Polygon		- 2D shape
 	Rectangle	- 2D rectangle
@@ -114,7 +117,12 @@ class Angle(object):
 	def __hash__(self):
 		return hash("Angle") ^ hash(self.val)
 		
-	def rotation_matrix(self):
+	def matrix(self):
+		"""	
+		Returns a 2x2 rotation matrix suitable for rotating pairs of x,y coordinates.
+		Uses a right-handed coordinate system so a positive rotation will be clockwise
+		where the x axis points right and the y axis points down.
+		"""
 		return Matrix((
 			( math.cos(self.val), -math.sin(self.val) ),
 			( math.sin(self.val),  math.cos(self.val) )
@@ -179,19 +187,27 @@ class Rotation(object):
 	def __hash__(self):
 		return hash("Rotation") ^ hash(self.to_tuple())
 		
-	def rotation_matrix(self):
+	def matrix(self):
+		"""	
+		Returns a 3x3 rotation matrix suitable for rotating sets of x,y,z coordinates.
+		Uses a left-handed coordinate system where roll is about the x axis, pitch about
+		the y and yaw about the z, so a positive rotation will be clockwise
+		when looking in the direction of the axis. Rotation uses a z-y-x convention, 
+		applying yaw, then pitch, then roll.
+		"""
+		# apply yaw, then pitch, then roll
 		return Matrix((
-			(	1,	0,						0),
-			(	0,	math.cos(self.roll),	-math.sin(self.roll) ),
-			(	0,	math.sin(self.roll),	math.cos(self.roll) )
+			(	1,	0,							0							),
+			(	0,	math.cos(self.roll.val),	-math.sin(self.roll.val)	),
+			(	0,	math.sin(self.roll.val),	math.cos(self.roll.val)		)
+		))* Matrix((
+			(	math.cos(self.pitch.val),	0,	math.sin(self.pitch.val)	),
+			(	0,							1,	0 							),
+			(	-math.sin(self.pitch.val),	0,	math.cos(self.pitch.val)	)
 		)) * Matrix((
-			(	math.cos(self.pitch),	0,	math.sin(self.pitch) ),
-			(	0,						1,	0 ),
-			(	-math.sin(self.pitch),	0,	math.cos(self.pitch) )
-		)) * Matrix((
-			(	math.cos(self.yaw),		-math.sin(self.yaw),	0 ),
-			(	math.sin(self.yaw),		math.cos(self.yaw),		0 ),
-			(	0,						0,						1 )
+			(	math.cos(self.yaw.val),	-math.sin(self.yaw.val),	0	),
+			(	math.sin(self.yaw.val),	math.cos(self.yaw.val),		0	),
+			(	0,						0,							1	)
 		))
 
 class Vector2d(object):
@@ -202,6 +218,8 @@ class Vector2d(object):
 				dir = dir.to_rad()
 			self.i = math.cos(dir) * mag
 			self.j = math.sin(dir) * mag
+		elif isiterable(i):
+			self.i,self.j = i
 		else:
 			self.i = i
 			self.j = j
@@ -268,10 +286,35 @@ class Vector2d(object):
 	def __len__(self):
 		return 2
 	
+	def rotate(self, angle):
+		"""	
+		Rotate the vector by the given Angle or radian value. Uses 
+		a right-hand coordinate system so positive angle will rotate
+		clockwise where the x axis points right and the y axis points
+		down.
+		"""
+		if not isinstance(angle, Angle):
+			angle = Angle(angle)
+		return angle.matrix() * self
+		
+	def rotate_about(self, angle, point):
+		"""	
+		Rotate the vector by the given Angle or radian value, about
+		the given Vector2d or (x,y) point. Uses a right-hand coordinate
+		system so a positive angle will rotate clockwise where the x
+		axis points right and the y axis points down.
+		"""
+		if not isinstance(point, Vector2d):
+			point = Vector2d(*point)
+		return (self - point).rotate(angle) + point
 
 class Vector3d(object):
 	
 	def __init__(self, i=0, j=0, k=0, dir=0, mag=0):
+		"""	
+		Can construct from i,j,k parameters, dir and mag parameters
+		or with a single (i,j,k) tuple.	
+		"""
 		if dir!=0 or mag!=0:
 			if hasattr(dir, "to_tuple"):
 				dir = dir.to_tuple()
@@ -283,6 +326,8 @@ class Vector3d(object):
 			self.i = math.cos(yaw) * fwd
 			self.j = math.sin(yaw) * fwd
 			self.k = up
+		elif isiterable(i):
+			self.i,self.j,self.k = i
 		else:
 			self.i = i
 			self.j = j
@@ -362,6 +407,27 @@ class Vector3d(object):
 
 	def __len__(self):
 		return 3
+		
+	def rotate(self, rotation):
+		"""	
+		Rotate the vector by the given Rotation or (roll,pitch,yaw) value.
+		Uses a right-handed coordinate system so a positive angle will 
+		result in a clockwise rotation when looking in the axis direction.
+		"""
+		if not isinstance(rotation,Rotation):
+			rotation = Rotation(*rotation)
+		return rotation.matrix() * self
+		
+	def rotate_about(self, rotation, point):
+		"""	
+		Rotate the vector by the given Rotation or (roll,pitch,yaw) value,
+		about the given Vector3d or (x,y,z) point. Uses a right-handed
+		coordinate system so a positive angle will result in a clockwise
+		rotation when looking in the axis direction.	
+		"""
+		if not isinstance(point,Vector3d):
+			point = Vector3d(*point)
+		return (self - point).rotate(rotation) + point
 
 class Matrix(object):
 
@@ -461,7 +527,10 @@ class Matrix(object):
 		if not isinstance(oth_m, Matrix):
 			oth_m = Matrix(oth_m)
 		res_m = oth_m._add(self)
-		return type(oth)(res_m._unnest())
+		if isinstance(oth,Matrix):
+			return res_m
+		else:
+			return type(oth)(res_m._unnest())
 			
 	def _sub(self, oth):
 		if self.rows != oth.rows or self.cols != oth.cols:
@@ -488,7 +557,10 @@ class Matrix(object):
 		if not isinstance(oth_m,Matrix):
 			oth_m = Matrix(oth_m)
 		res_m = oth_m._sub(self)
-		return type(oth)(res_m._unnest())
+		if isinstance(oth,Matrix):
+			return res_m
+		else:
+			return type(oth)(res_m._unnest())
 		
 	def _mat_mul(self,oth):
 		if self.cols != oth.rows:
@@ -499,43 +571,53 @@ class Matrix(object):
 		
 	def __mul__(self, oth):
 		"""	
-		Can multiply by a scalar, other matrix (where cols in lhs equals rows in rhs)
-		or any similar nested iterable.
+		Can apply this matrix to another matrix or any similar nested iterable 
+		(where cols in lhs equals rows in rhs), resulting in the same type as 
+		the operand, or can apply to scalar, resulting in a matrix.
 		"""
 		if isinstance(oth, Matrix) or isiterable(oth):
 			# matrix
-			if not isinstance(oth, Matrix):
-				oth = Matrix(oth)			
-			return self._mat_mul(oth)	
+			oth_m = oth
+			if not isinstance(oth_m, Matrix):
+				oth_m = Matrix(oth_m)			
+			res_m = self._mat_mul(oth_m)
+			if isinstance(oth, Matrix):
+				return res_m
+			else:
+				return type(oth)(res_m._unnest())
 		else:
 			# scalar
 			return Matrix._make_new(lambda i,j: self.data[i][j] * oth, self.rows, self.cols)
 		
 	def __rmul__(self,oth):
 		"""	
-		Can multiply another matrix or nested iterable (where cols in lhs equals rows in rhs)
-		by this matrix. The result is of the same type as the operand
+		Can apply another matrix or similar nested iterable (where cols in lhs equals
+		rows in rhs), or a scalar value, to this matrix. The result is a matrix.
 		"""
-		oth_m = oth
-		if not isinstance(oth_m,Matrix):
-			oth_m = Matrix(oth_m)
-		res_m = oth_m._mat_mul(self)
-		return type(oth)(res_m._unnest())
+		if isinstance(oth,Matrix) or isiterable(oth):
+			# matrix
+			oth_m = oth
+			if not isinstance(oth_m,Matrix):
+				oth_m = Matrix(oth_m)
+			return oth_m._mat_mul(self)
+		else:
+			# scalar
+			return Matrix._make_new(lambda i,j: oth * self.data[i][j], self.rows, self.cols)
 		
 	def __div__(self, oth):
 		"""	
 		Can divide by a scalar
 		"""
-		if isinstance(oth, Matrix) or isiterable(oth):
-			raise TypeError("Cannot divide matrix")
-		else:
-			return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
+		return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
 			
 	def __truediv__(self, oth):
-		if isinstance(oth, Matrix) or isiterable(oth):
-			raise TypeError("Cannot divide matrix")
-		else:
-			return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
+		return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
+		
+	def __rdiv__(self, oth):
+		return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
+		
+	def __rtruediv__(self, oth):
+		return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
 		
 	def transpose(self):
 		return Matrix._make_new(lambda i,j: self.data[j][i], self.cols, self.rows)
@@ -910,8 +992,8 @@ if __name__ == '__main__':
 			self.assertTrue(Angle(10) in set([Angle(10)]))
 			self.assertFalse(Angle(10) in set([Angle(11)]))
 			
-			self.assertAlmostEquals((Angle(math.pi/2).rotation_matrix() * (4,8))[0], (-8,4)[0], 4)
-			self.assertAlmostEquals((Angle(math.pi/2).rotation_matrix() * (4,8))[1], (-8,4)[1], 4)
+			self.assertAlmostEquals((Angle(math.pi/2).matrix() * (4,8))[0], (-8,4)[0], 4)
+			self.assertAlmostEquals((Angle(math.pi/2).matrix() * (4,8))[1], (-8,4)[1], 4)
 		
 		def testRotations(self):
 			self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(0.5,1.5,2.5))
@@ -929,6 +1011,11 @@ if __name__ == '__main__':
 
 			self.assertTrue(Rotation(1,2,3) in set([Rotation(1,2,3)]))
 			self.assertFalse(Rotation(1,2,3) in set([Rotation(2,3,4)]))
+			
+			self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[0], (0,-2,-8)[0], 4)
+			self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[1], (0,-2,-8)[1], 4)
+			self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[2], (0,-2,-8)[2], 4)			
+			
 
 		def testVector2dMath(self):
 			self.assertEqual(Vector2d(0,0), Vector2d(0,0))
@@ -951,6 +1038,12 @@ if __name__ == '__main__':
 
 			self.assertEqual(Vector2d(1,2)[0], 1.0)
 			self.assertEqual(Vector2d(1,2)[1], 2.0)
+
+			self.assertAlmostEqual((Vector2d(1,2).rotate(math.pi/2))[0], Vector2d(-2,1)[0], 4)
+			self.assertAlmostEqual((Vector2d(1,2).rotate(math.pi/2))[1], Vector2d(-2,1)[1], 4)
+
+			self.assertAlmostEqual((Vector2d(1,2).rotate_about(math.pi/2,(2,3)))[0], Vector2d(3,2)[0], 4)
+			self.assertAlmostEqual((Vector2d(1,2).rotate_about(math.pi/2,(2,3)))[1], Vector2d(3,2)[1], 4)
 
 			self.assertTrue(Vector2d(1,2) in set([Vector2d(1,2)]))
 			self.assertFalse(Vector2d(1,2) in set([Vector2d(2,3)]))
@@ -981,6 +1074,14 @@ if __name__ == '__main__':
 			self.assertEqual(Vector3d(9,8,7)[0], 9.0)
 			self.assertEqual(Vector3d(9,8,7)[1], 8.0)
 			self.assertEqual(Vector3d(9,8,7)[2], 7.0)
+
+			self.assertAlmostEqual((Vector3d(5,0,0).rotate((-math.pi/2,math.pi/2,math.pi/2)))[0],Vector3d(0,0,-5)[0], 4)
+			self.assertAlmostEqual((Vector3d(5,0,0).rotate((-math.pi/2,math.pi/2,math.pi/2)))[1],Vector3d(0,0,-5)[1], 4)
+			self.assertAlmostEqual((Vector3d(5,0,0).rotate((-math.pi/2,math.pi/2,math.pi/2)))[2],Vector3d(0,0,-5)[2], 4)
+
+			self.assertAlmostEqual((Vector3d(5,0,0).rotate_about((-math.pi/2,0,0),(5,-5,0)))[0], Vector3d(5,-5,-5)[0], 4)
+			self.assertAlmostEqual((Vector3d(5,0,0).rotate_about((-math.pi/2,0,0),(5,-5,0)))[1], Vector3d(5,-5,-5)[1], 4)
+			self.assertAlmostEqual((Vector3d(5,0,0).rotate_about((-math.pi/2,0,0),(5,-5,0)))[2], Vector3d(5,-5,-5)[2], 4)
 
 			self.assertTrue(Vector3d(1,2,3) in set([Vector3d(1,2,3)]))
 			self.assertFalse(Vector3d(1,2,3) in set([Vector3d(2,3,4)]))
@@ -1175,20 +1276,18 @@ if __name__ == '__main__':
 			self.assertEquals( Matrix((2,3,4)) - (1,2,3), Matrix((1,1,1)) )
 
 			self.assertEquals( Matrix(((1,2,3),(4,5,6))) * 2.0, Matrix(((2,4,6),(8,10,12))) )
+			self.assertEquals( 2.0 * Matrix(((1,2,3),(4,5,6))), Matrix(((2,4,6),(8,10,12))) )
 
 			self.assertEquals( Matrix(((1,2,3),(4,5,6))) / 2.0, Matrix(((0.5,1,1.5),(2,2.5,3))) )
 			
 			self.assertEquals( Matrix(((1,2,3),(4,5,6))) * Matrix(((1,2),(3,4),(5,6))),
 				Matrix(((1*1+2*3+3*5, 1*2+2*4+3*6),(4*1+5*3+6*5, 4*2+5*4+6*6))) )
 				
-			self.assertRaises(TypeError, 
-				lambda: Matrix(((1,2,3),(4,5,6))) / Matrix(((1,2),(3,4),(5,6))) )
+			self.assertEquals( [[1,2,3],[4,5,6]] * Matrix([9,8,7]),
+				Matrix([1*9+2*8+3*7,4*9+5*8+6*7]) )
 				
 			self.assertEquals( Matrix(((1,2,3),(4,5,6))) * [[9],[8],[7]],
-				 Matrix(((1*9+2*8+3*7),(4*9+5*8+6*7))) )
-				 
-			self.assertEquals( [[1,2,3],[4,5,6]] * Matrix([9,8,7]),
-				[1*9+2*8+3*7,4*9+5*8+6*7] )
+				 [1*9+2*8+3*7, 4*9+5*8+6*7] )
 				
 			self.assertEquals(Matrix.identity(2), Matrix(((1,0),(0,1))))
 			
