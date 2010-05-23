@@ -38,6 +38,7 @@ Math utilities. Notably:
 import math
 import unittest
 import random
+from mrf.structs import isindexable, isiterable
 
 class Angle(object):
 
@@ -112,6 +113,12 @@ class Angle(object):
 
 	def __hash__(self):
 		return hash("Angle") ^ hash(self.val)
+		
+	def rotation_matrix(self):
+		return Matrix((
+			( math.cos(self.val), -math.sin(self.val) ),
+			( math.sin(self.val),  math.cos(self.val) )
+		))
 
 class Rotation(object):
 	"""	
@@ -171,6 +178,21 @@ class Rotation(object):
 		
 	def __hash__(self):
 		return hash("Rotation") ^ hash(self.to_tuple())
+		
+	def rotation_matrix(self):
+		return Matrix((
+			(	1,	0,						0),
+			(	0,	math.cos(self.roll),	-math.sin(self.roll) ),
+			(	0,	math.sin(self.roll),	math.cos(self.roll) )
+		)) * Matrix((
+			(	math.cos(self.pitch),	0,	math.sin(self.pitch) ),
+			(	0,						1,	0 ),
+			(	-math.sin(self.pitch),	0,	math.cos(self.pitch) )
+		)) * Matrix((
+			(	math.cos(self.yaw),		-math.sin(self.yaw),	0 ),
+			(	math.sin(self.yaw),		math.cos(self.yaw),		0 ),
+			(	0,						0,						1 )
+		))
 
 class Vector2d(object):
 
@@ -229,6 +251,9 @@ class Vector2d(object):
 	def to_tuple(self):
 		return (self.i, self.j)
 	
+	def to_matrix(self):
+		return Matrix((self.to_tuple()))
+	
 	def __getitem__(self, index):
 		if index == 0:
 			return self.i
@@ -239,6 +264,9 @@ class Vector2d(object):
 
 	def __hash__(self):
 		return hash("Vector2d") ^ hash(self.i) ^ hash(self.j)
+	
+	def __len__(self):
+		return 2
 	
 
 class Vector3d(object):
@@ -315,6 +343,9 @@ class Vector3d(object):
 	
 	def to_tuple(self):
 		return (self.i, self.j, self.k)
+
+	def to_matrix(self):
+		return Matrix((self.to_tuple()))
 	
 	def __getitem__(self, index):
 		if index == 0:
@@ -328,6 +359,189 @@ class Vector3d(object):
 	
 	def __hash__(self):
 		return hash("Vector3d") ^ hash(self.i) ^ hash(self.j) ^ hash(self.k)
+
+	def __len__(self):
+		return 3
+
+class Matrix(object):
+
+	@staticmethod
+	def identity(size):
+		return Matrix._make_new(lambda i,j: 1 if i==j else 0, size, size)
+
+	def __init__(self,data):
+		"""	
+		Can construct from singly or doubly nested iterable. Each inner item
+		forms a row in the matrix. E.g:
+		
+		(1,2,3) => | 1 |
+		           | 2 |
+		           | 3 |
+		          
+		(
+			(1,2,3),  =>  | 1 2 3 |
+			(4,5,6)       | 4 5 6 |
+		)          
+		"""
+		self.data = tuple([tuple(x) if isiterable(x) else (x,) for x in data])
+		self.rows = len(self.data)
+		self.cols = len(self.data[0]) if len(self.data)>0 else 0
+		
+	def get(self, ref):
+		return self.data[ref[0]][ref[1]]
+		
+	def __getitem__(self, index):
+		return self.data[index]
+		
+	def __str__(self):
+		col_widths = []
+		for i in range(self.cols):
+			widest = 0
+			for j in range(self.rows):
+				l = len(str(self.data[j][i]))
+				if l > widest:
+					widest = l
+			col_widths.append(widest)
+		s = "\n"
+		for r in self.data:
+			s += "|"
+			for i in range(len(r)):
+				s += str(r[i]).rjust(col_widths[i]+1)
+			s += " |\n"
+		return s
+				
+	def __repr__(self):
+		return "Matrix(%s)" % str(self.data)
+		
+	def __eq__(self,oth):
+		if not isinstance(oth, Matrix):
+			return False
+		return self.data == oth.data
+		
+	def __ne__(self,oth):
+		if not isinstance(oth, Matrix):
+			return True
+		return self.data != oth.data
+		
+	@staticmethod
+	def _make_new(callback, rows, cols):
+		new_data = []
+		for i in range(rows):
+			new_row = []
+			for j in range(cols):
+				new_row.append(callback(i,j))
+			new_data.append(new_row)
+		return Matrix(new_data)
+		
+	def _unnest(self):
+		return [x if len(x)!=1 else x[0] for x in self.data]
+		
+	def _add(self, oth):
+		if self.rows != oth.rows or self.cols != oth.cols:
+			raise TypeError("Matrices must be the same size")
+		return Matrix._make_new(lambda i,j: self.data[i][j] + oth.data[i][j], 
+			self.rows, self.cols)
+		
+	def __add__(self, oth):
+		"""	
+		Can add another matrix of the same size or any similar nested iterable.
+		The result is a matrix.
+		"""
+		if not isinstance(oth, Matrix):
+			oth = Matrix(oth)
+		return self._add(oth)		
+			
+	def __radd__(self, oth):
+		"""	
+		Can add the matrix to another matrix or any similar nested iterable
+		which can be constructed like a list. The result is of the same type
+		as the operand
+		"""
+		oth_m = oth
+		if not isinstance(oth_m, Matrix):
+			oth_m = Matrix(oth_m)
+		res_m = oth_m._add(self)
+		return type(oth)(res_m._unnest())
+			
+	def _sub(self, oth):
+		if self.rows != oth.rows or self.cols != oth.cols:
+			raise TypeError("Matrices must be the same size")
+		return Matrix._make_new(lambda i,j: self.data[i][j] - oth.data[i][j], 
+			self.rows, self.cols)
+			
+	def __sub__(self, oth):
+		"""	
+		Can subtract another matrix of the same size or any similar nested iterable.
+		The result is a matrix.
+		"""
+		if not isinstance(oth, Matrix):
+			oth = Matrix(oth)
+		return self._sub(oth)
+		
+	def __rsub__(self,oth):
+		"""	
+		Subtract the matrix from another matrix or any similar nested iterable
+		which can be constructed like a list. The result is of the same type as
+		the operand
+		"""
+		oth_m = oth
+		if not isinstance(oth_m,Matrix):
+			oth_m = Matrix(oth_m)
+		res_m = oth_m._sub(self)
+		return type(oth)(res_m._unnest())
+		
+	def _mat_mul(self,oth):
+		if self.cols != oth.rows:
+			raise TypeError("Cols in left matrix must equal rows in right matrix")
+		return Matrix._make_new(lambda i,j: sum([
+				self.data[i][x] * oth.data[x][j] for x in range(self.cols) ]), 
+				self.rows, oth.cols)						
+		
+	def __mul__(self, oth):
+		"""	
+		Can multiply by a scalar, other matrix (where cols in lhs equals rows in rhs)
+		or any similar nested iterable.
+		"""
+		if isinstance(oth, Matrix) or isiterable(oth):
+			# matrix
+			if not isinstance(oth, Matrix):
+				oth = Matrix(oth)			
+			return self._mat_mul(oth)	
+		else:
+			# scalar
+			return Matrix._make_new(lambda i,j: self.data[i][j] * oth, self.rows, self.cols)
+		
+	def __rmul__(self,oth):
+		"""	
+		Can multiply another matrix or nested iterable (where cols in lhs equals rows in rhs)
+		by this matrix. The result is of the same type as the operand
+		"""
+		oth_m = oth
+		if not isinstance(oth_m,Matrix):
+			oth_m = Matrix(oth_m)
+		res_m = oth_m._mat_mul(self)
+		return type(oth)(res_m._unnest())
+		
+	def __div__(self, oth):
+		"""	
+		Can divide by a scalar
+		"""
+		if isinstance(oth, Matrix) or isiterable(oth):
+			raise TypeError("Cannot divide matrix")
+		else:
+			return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
+			
+	def __truediv__(self, oth):
+		if isinstance(oth, Matrix) or isiterable(oth):
+			raise TypeError("Cannot divide matrix")
+		else:
+			return Matrix._make_new(lambda i,j: self.data[i][j] / oth, self.rows, self.cols)
+		
+	def transpose(self):
+		return Matrix._make_new(lambda i,j: self.data[j][i], self.cols, self.rows)
+
+	def __hash__(self):
+		return hash("Matrix") ^ hash(self.data)
 	
 def sigmoid(x):
 	"""	
@@ -695,6 +909,9 @@ if __name__ == '__main__':
 
 			self.assertTrue(Angle(10) in set([Angle(10)]))
 			self.assertFalse(Angle(10) in set([Angle(11)]))
+			
+			self.assertAlmostEquals((Angle(math.pi/2).rotation_matrix() * (4,8))[0], (-8,4)[0], 4)
+			self.assertAlmostEquals((Angle(math.pi/2).rotation_matrix() * (4,8))[1], (-8,4)[1], 4)
 		
 		def testRotations(self):
 			self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(0.5,1.5,2.5))
@@ -938,6 +1155,49 @@ if __name__ == '__main__':
 			isect = Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,5.0))
 			self.assertEqual(isect, r1.intersection(r3))
 			self.assertEqual(r1, r1.intersection(r2))
+
+		def testMatrix(self):
+		
+			self.assertEqual(Matrix(((1,2),(3,4))),Matrix(((1,2),(3,4))))
+			self.assertNotEqual(Matrix(((1,2),(3,4))),Matrix(((5,6,7),(8,9,10))))
+			
+			self.assertEquals( Matrix(((1,2,3),(4,5,6)))+Matrix(((3,4,5),(6,7,8))), 
+				Matrix(((4,6,8),(10,12,14))) )
+			self.assertEquals( Matrix(((1,2,3),(4,5,6)))-Matrix(((3,4,5),(6,7,8))),
+				Matrix(((-2,-2,-2),(-2,-2,-2))) )
+				
+			self.assertRaises(TypeError, 
+				lambda: Matrix(((1,2,3),(4,5,6))) + Matrix(((1,2),(3,4),(5,6))) )
+			self.assertRaises(TypeError,
+				lambda: Matrix(((1,2,3),(4,5,6))) - Matrix(((1,2),(3,4),(5,6))) )
+
+			self.assertEquals( Matrix((2,3,4)) + (1,2,3), Matrix((3,5,7)) )
+			self.assertEquals( Matrix((2,3,4)) - (1,2,3), Matrix((1,1,1)) )
+
+			self.assertEquals( Matrix(((1,2,3),(4,5,6))) * 2.0, Matrix(((2,4,6),(8,10,12))) )
+
+			self.assertEquals( Matrix(((1,2,3),(4,5,6))) / 2.0, Matrix(((0.5,1,1.5),(2,2.5,3))) )
+			
+			self.assertEquals( Matrix(((1,2,3),(4,5,6))) * Matrix(((1,2),(3,4),(5,6))),
+				Matrix(((1*1+2*3+3*5, 1*2+2*4+3*6),(4*1+5*3+6*5, 4*2+5*4+6*6))) )
+				
+			self.assertRaises(TypeError, 
+				lambda: Matrix(((1,2,3),(4,5,6))) / Matrix(((1,2),(3,4),(5,6))) )
+				
+			self.assertEquals( Matrix(((1,2,3),(4,5,6))) * [[9],[8],[7]],
+				 Matrix(((1*9+2*8+3*7),(4*9+5*8+6*7))) )
+				 
+			self.assertEquals( [[1,2,3],[4,5,6]] * Matrix([9,8,7]),
+				[1*9+2*8+3*7,4*9+5*8+6*7] )
+				
+			self.assertEquals(Matrix.identity(2), Matrix(((1,0),(0,1))))
+			
+			self.assertEquals(Matrix(((1,2),(3,4),(5,6))).transpose(), Matrix(((1,3,5),(2,4,6))))
+			
+			self.assertTrue(Matrix(((1,2),(3,4))) in set([Matrix(((1,2),(3,4)))]))
+			self.assertFalse(Matrix(((1,2),(3,4))) in set([Matrix(((9,8),(7,6)))]))
+			
+			
 
 	unittest.main()
     
