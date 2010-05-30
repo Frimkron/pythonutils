@@ -72,7 +72,15 @@ def iscollection(item):
 	if isinstance(item,basestring):
 		return False
 	return isiterable(item)
-	
+
+def isindexable(item):
+	try:
+		item[0]
+		return True
+	except TypeError:
+		return False
+	except IndexError:
+		return True
 	
 class IntrospectType(type):
 	"""	
