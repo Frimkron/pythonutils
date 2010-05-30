@@ -448,6 +448,26 @@ class Line2d(object):
 	def __hash__(self):
 		return hash("Line2d") ^ hash(self.a) ^ hash(self.b)
 
+	def intersects(self, line):
+		"""	
+		Returns true if the line intersects the given Line2d
+		"""
+		# TODO
+		pass
+
+	def clip(self, rect):
+		"""	
+		Returns a new Line2d which has been clipped to the given Rectangle,
+		or None if no line segment is within the rectangle.
+		"""
+		# at least one end of the line must be inside the rectangle
+		# otherwise just return None
+		if not (rect.point_inside(self.a) or rect.point_inside(self.b)):
+			return None
+
+		# TODO: find intersections with edges and make these new endpoints
+		pass
+
 class Line3d(object):
 	"""	
 	A line between two 3-dimensional points.
@@ -570,7 +590,7 @@ class Rectangle(Polygon2d):
 				Vector2d(in_left,in_top),
 				Vector2d(in_right,in_bottom)
 			)
-			
+
 class Polygon3d(object):
 	"""	
 	A 3-dimensional shape
@@ -607,6 +627,91 @@ class Polygon3d(object):
 
 	def __hash__(self):
 		return hash("Polygon3d") ^ hash(self.lines)
+
+class Cuboid(Polygon3d):
+	"""	
+	A 3-dimensional, axis-aligned shape with 3 pairs of parallel sides. 
+	"""
+
+	def __init__(self, a, b):
+		"""	
+		Takes 2 vectors - opposite corners of the cuboid	
+		"""
+		# the cuboid faces down the x axis so the front is the greater x,
+		# the left is the lesser y and the top is the lesser z.
+		self.a = a
+		self.b = b
+		self.front = max(self.a[0],self.b[0])
+		self.back = min(self.a[0],self.b[0])
+		self.left = min(self.a[1],self.b[1])
+		self.right = max(self.a[1],self.b[1])
+		self.top = min(self.a[2],self.b[2])
+		self.bottom = max(self.a[2],self.b[2])	
+		# call polygon constructor with lines
+		Polygon3d.__init__(self, (
+			Line3d(Vector3d(self.front,self.left,self.top),Vector3d(self.front,self.right,self.top)),
+			Line3d(Vector3d(self.front,self.right,self.top),Vector3d(self.back,self.right,self.top)),
+			Line3d(Vector3d(self.back,self.right,self.top),Vector3d(self.back,self.left,self.top)),
+			Line3d(Vector3d(self.back,self.left,self.top),Vector3d(self.front,self.left,self.top)),
+
+			Line3d(Vector3d(self.front,self.left,self.bottom),Vector3d(self.front,self.right,self.bottom)),
+			Line3d(Vector3d(self.front,self.right,self.bottom),Vector3d(self.back,self.right,self.bottom)),
+			Line3d(Vector3d(self.back,self.right,self.bottom),Vector3d(self.back,self.left,self.bottom)),
+			Line3d(Vector3d(self.back,self.left,self.bottom),Vector3d(self.front,self.left,self.bottom)),
+
+			Line3d(Vector3d(self.front,self.left,self.top),Vector3d(self.front,self.left,self.bottom)),
+			Line3d(Vector3d(self.front,self.right,self.top),Vector3d(self.front,self.right,self.bottom)),
+			Line3d(Vector3d(self.back,self.right,self.top),Vector3d(self.back,self.right,self.bottom)),
+			Line3d(Vector3d(self.back,self.left,self.top),Vector3d(self.back,self.left,self.bottom)),
+		))
+	
+	def get_depth(self):
+		# returns the x axis size
+		return self.front - self.back
+
+	def get_width(self):
+		# returns the y axis size
+		return self.right - self.left
+
+	def get_height(self):
+		# returns the z axis size
+		return self.bottom - self.top
+
+	def point_inside(self, point):
+		# returns true if the given vector point is inside the shape
+		return( point[0] >= self.back and point[0] < self.front
+			and point[1] >= self.left and point[1] < self.right
+			and point[2] >= self.top and point[2] < self.bottom )
+
+	def intersects(self, cuboid):
+		"""	
+		Return True if this Cuboid overlaps the given Cuboid.
+		"""
+		return ( cuboid.front >= self.back and cuboid.back < self.front
+			and cuboid.right >= self.left and cuboid.left < self.right
+			and cuboid.bottom >= self.top and cuboid.top < self.bottom )
+			
+
+	def intersection(self, cuboid):
+		"""	
+		Returns a new Cuboid representing the area where this Cuboid
+		and cuboid overlap, or None if they do not overlap
+		"""
+		if not self.intersects(cuboid):
+			return None
+		else:
+			in_back = max(self.back, cuboid.back)
+			in_front = min(self.front, cuboid.front)
+			in_left = max(self.left, cuboid.left)
+			in_right = min(self.right, cuboid.right)
+			in_top = max(self.top, cuboid.top)
+			in_bottom = min(self.bottom, cuboid.bottom)
+			return Cuboid(
+				Vector3d(in_back,in_left,in_top),
+				Vector3d(in_front,in_right,in_bottom)
+			)
+			
+
 
 def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
 	"""	
