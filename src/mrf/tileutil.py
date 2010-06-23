@@ -513,7 +513,16 @@ class Dir4(object):
 	def move(self, pos=(0,0), rel=(0,1)):
 		return (pos[0]+self._fwd_offset[0]*rel[1]+self._side_offset[0]*rel[0], 
 				pos[1]+self._fwd_offset[1]*rel[1]+self._side_offset[1]*rel[0])
-		
+	
+	def get_move_rel(self, pos_a, pos_b):
+		"""	
+		Returns the direction-relative offset used to move from pos_a to pos_b
+		"""
+		return( (pos_b[0]-pos_a[0])*self._side_offset[0]
+				+ (pos_b[1]-pos_a[1])*self._side_offset[1],
+			(pos_b[0]-pos_a[0])*self._fwd_offset[0]
+				+ (pos_b[1]-pos_a[1])*self._fwd_offset[1] )
+	
 	def rel(self, dir):
 		return self.turn_cw(dir._val)
 		
@@ -1030,6 +1039,12 @@ if __name__ == "__main__":
 			self.assertEquals((0,1), Dir4.WEST.move(pos=(1,1)))
 			self.assertEquals((3,7), Dir4.SOUTH.move((3,2),(0,5)))
 			self.assertEquals((3,3), Dir4.EAST.move(pos=(1,2),rel=(1,2)))
+		
+		def test_get_move_rel(self):
+			self.assertEquals((3,2), Dir4.EAST.get_move_rel((0,2),(2,5)))
+			self.assertEquals((4,-1), Dir4.WEST.get_move_rel((3,3),(4,-1)))
+			self.assertEquals((-1,2), Dir4.SOUTH.get_move_rel((1,2),(2,4)))
+			self.assertEquals((1,2), Dir4.NORTH.get_move_rel((3,2),(4,0)))
 		
 	class TestLosMap(unittest.TestCase):
 			
