@@ -1,5 +1,5 @@
 """	
-Copyright (c) 2009 Mark Frimston
+Copyright (c) 2010 Mark Frimston
 
 Permission is hereby granted, free of charge, to any person
 obtaining a copy of this software and associated documentation
@@ -36,6 +36,12 @@ Math utilities. Notably:
 	Line		- 2D line
 	Polygon		- 2D shape
 	Rectangle	- 2D rectangle
+"""
+
+"""	
+	TODO: test cuboid
+	TODO: test 2d line intersection
+	TODO: test 2d line clipping
 """
 
 import math
@@ -748,21 +754,72 @@ class Line2d(object):
 		"""	
 		Returns true if the line intersects the given Line2d
 		"""
-		# TODO
-		pass
+		return self.intersection(lint) != None
+		
+	def intersection(self, line):
+		"""	
+		Returns the intersection point of this line and the given Line2d as
+		a Vector2d if the segments intersect, or None otherwise. Will return
+		None if the lines are coincident.
+		"""
+		denom = (line.b[1]-line.a[1])*(self.b[0]-self.a[0]) - (line.b[0]-line.a[0])*(self.b[1]-self.a[1])
+		# denominator is 0 if lines are parallel
+		if denom == 0:
+			return None
+		
+		num_a = (line.b[0]-line.a[0])*(self.a[1]-line.a[1]) - (line.b[1]-line.a[1])*(self.a[0]-line.a[0])
+		num_b = (self.b[0]-self.a[0])*(self.a[1]-line.a[1]) - (self.b[1]-self.a[1])*(self.a[0]-line.a[0])
+		# if both numerators are 0 then lines are coincident
+		if num_a==0 and num_b==0:
+			return None
+			
+		u_a = num_a/denom
+		u_b = num_b/denom
+			
+		if 0 <= u_a <= 1 and 0 <= u_b <= 1:
+			return self.a + uA*(self.b-self.a)
+		else:
+			return None
+		
 
 	def clip(self, rect):
 		"""	
 		Returns a new Line2d which has been clipped to the given Rectangle,
 		or None if no line segment is within the rectangle.
 		"""
-		# at least one end of the line must be inside the rectangle
-		# otherwise just return None
-		if not (rect.point_inside(self.a) or rect.point_inside(self.b)):
+		a_in = rect.point_inside(self.a)
+		b_in = rect.point_inside(self.b)
+		
+		# if point a outside and point b inside
+		if not a_in and b_in:
+			# test intersection with each side
+			new_a = self.a
+			for side in rect.lines:
+				isect = self.intersection(side)
+				if isect != None:
+					new_a = isect
+					break
+			return Line2d(new_a,self.b)
+		
+		# if point a inside and point b outside
+		elif a_in and not b_in:
+			# test intersection with each side
+			new_b = self.b
+			for side in rect.lines:
+				isect = self.intersection(side)
+				if isect != None:
+					new_b = isect
+					break
+			return Line2d(self.a,new_b)
+		
+		# both points inside
+		elif a_in and b_in:
+			return self
+			
+		# both points outside
+		else:
 			return None
-
-		# TODO: find intersections with edges and make these new endpoints
-		pass
+		
 
 class Line3d(object):
 	"""	
@@ -1073,7 +1130,6 @@ def weighted_roulette(item_dict, normalised=False, rand=None):
 			return k
 	return None	
 	
-
 
     
 #---------------------------------------------------------------------------------
