@@ -95,3 +95,53 @@ class Canvas(object):
 		Prints the full canvas
 		"""
 		print self.render()
+
+
+
+def visbar(frac,length=80,start='[',end=']',full='#',empty=' '):
+	"""	
+	Returns a string visualising the given 0-1 value as an ascii bar.
+	"""
+	s = ""
+	s += start
+	endslen = len(start)+len(end)
+	midlen = length-endslen
+	if length > endslen:
+		for i in range(midlen):
+			if float(i)/midlen <= frac:
+				s += full
+			else:
+				s += empty
+	s += end
+	return s
+
+
+def barchart(values,labels=None,length=80,vertical=False):
+	c = Canvas()
+	maxval = max(values)
+	endchar = '-' if vertical else '|'
+	if not labels is None:
+		maxlab = max([len(x) for x in labels])
+		barlen = length-maxlab
+	else:
+		maxlab = 0
+		barlen = length
+
+	for i,val in enumerate(values):
+		if not labels is None:
+			for j,char in enumerate(labels[i]):
+				if vertical:
+					c.set(i*2,barlen+j,char)
+				else:
+					c.set(j,i,char)
+		bar = visbar(float(val)/maxval,length=barlen,start=endchar,end=endchar)
+		for j,char in enumerate(bar):
+			if vertical:
+				c.set(i*2,barlen-j-1,char)
+			else:
+				c.set(maxlab+j,i,char)
+		if vertical:
+			for i in range(len(values)):
+				c.set(i*2+1,0,endchar)
+				c.set(i*2+1,barlen-1,endchar)
+	return c.render()
