@@ -56,7 +56,7 @@ def _trc_check_axis(axis, start_pos, diff, dir, grid_size, end_pos,
 		pos = (start_pos[0], start_pos[1])
 		
 		# calculate gradient
-		grad = diff[oth_ax] / diff[axis]
+		grad = float(diff[oth_ax]) / diff[axis]
 		
 		# work out how far to move to the next boundary on this axis. This will be
 		# one of the boundaries enclosing the starting tile.
@@ -693,6 +693,30 @@ if __name__ == "__main__":
 			end_pos = (7.5 * 32, 4.5 * 32)
 			coll = tile_ray_cast(start_pos, end_pos, (32, 32), self.ray_collide)
 			expected = ((6 * 32, 5.25 * 32), (6, 5), (-1, 0))	 
+			self.assertEqual(coll, expected)
+			
+		def testNonSquareTileSize(self):
+			w = 43
+			h = 17
+			
+			start_pos = (5.5 * w, 5.5 * h)
+			end_pos = (7.5 * w, 4.5 * h)
+			coll = tile_ray_cast(start_pos, end_pos, (w, h), self.ray_collide)
+			expected = ((6 * w, 5.25 * h), (6, 5), (-1, 0))	 
+			self.assertEqual(coll, expected)
+			
+			start_pos = (7.5 * w, 4.5 * h)
+			end_pos = (5.5 * w, 5.5 * h)
+			coll = tile_ray_cast(start_pos, end_pos, (w, h), self.ray_collide)
+			expected = ((6.5 * w, 5 * h), (6, 5), (0, -1))
+			self.assertEqual(coll, expected)
+			
+		def testIntCoordinates(self):
+			
+			start_pos = (7*64+32, 4*32+16)
+			end_pos = (5*64+32, 5*32+16)
+			coll = tile_ray_cast(start_pos, end_pos, (64,32), self.ray_collide)
+			expected = ((6*64+32, 5*32), (6, 5), (0, -1))
 			self.assertEqual(coll, expected)
 			
 		def testSameTile(self):
