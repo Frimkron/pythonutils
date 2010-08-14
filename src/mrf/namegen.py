@@ -58,14 +58,14 @@ class NameGenerator(object):
 					return name		
 	
 	def save(self, filename):
-		with open(filename,"w") as file:
+		with open(filename,"wb") as file:
 			pickle.dump((self.mkv.order,self.mkv.graph),file)
 		
 	@staticmethod
 	def load(filename):
 		ng = NameGenerator()
 		order,graph = None,None		
-		with open(filename,"r") as file:
+		with open(filename,"rb") as file:
 			order, graph = pickle.load(file)
 		ng.mkv.order = order
 		ng.mkv.graph = graph
@@ -74,7 +74,7 @@ class NameGenerator(object):
 	@staticmethod
 	def from_list_file(filename, allow_originals=False, mkv_order=1):
 		ng = NameGenerator(mkv_order)
-		with open(filename,"r") as file:
+		with open(filename,"rb") as file:
 			ng.add_example_names(file, allow_originals)
 		return ng
 				
