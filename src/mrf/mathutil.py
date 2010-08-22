@@ -122,6 +122,9 @@ class Angle(object):
 
 	def __hash__(self):
 		return hash("Angle") ^ hash(self.val)
+
+	def __neg__(self):
+		return Angle(-self.val)
 		
 	def matrix(self):
 		"""	
@@ -270,7 +273,10 @@ class Vector2d(object):
 		return math.sqrt(math.pow(self.i,2)+math.pow(self.j,2))
 	
 	def unit(self):
-		return self / self.get_mag()
+		if self.get_mag() != 0:
+			return self / self.get_mag()
+		else:
+			return Vector2d(0,0)
 	
 	def to_tuple(self):
 		return (self.i, self.j)
@@ -291,6 +297,9 @@ class Vector2d(object):
 	
 	def __len__(self):
 		return 2
+	
+	def __neg__(self):
+		return Vector2d(-self.i,-self.j)
 	
 	def rotate(self, angle):
 		"""	
@@ -390,7 +399,10 @@ class Vector3d(object):
 		return Vector3d(self.j*w.k-self.k*w.j, self.k*w.i-self.i*w.k, self.i*w.j-self.j*w.i)
 
 	def unit(self):
-		return self / self.get_mag()
+		if self.get_mag() != 0:
+			return self / self.get_mag()
+		else:
+			return Vector3d(0,0,0)
 	
 	def to_tuple(self):
 		return (self.i, self.j, self.k)
@@ -413,6 +425,9 @@ class Vector3d(object):
 
 	def __len__(self):
 		return 3
+		
+	def __neg__(self):
+		return Vector3d(-self.i, -self.j, -self.k)
 		
 	def rotate(self, rotation):
 		"""	
@@ -637,6 +652,14 @@ def sigmoid(x):
 	an S-shaped curve in between.
 	"""
 	return 1.0/(1.0+math.exp(-(x-0.5)*12.0))
+	
+def smooth_step(x):
+	return x*x * (3 - 2*x)
+	
+def smooth_steps(steps):
+	for i in range(steps):
+		x = float(i)/steps
+		yield smooth_step(x)
 	
 def mean(values):
 	n = len(values)
