@@ -121,9 +121,17 @@ class Behavable(object):
 		Internal function for creating the function which is called to start the 
 		behaviour function chain
 		"""
-		return lambda s, *p, **kp: s.beh_chains[chain_name].function(
-					s.beh_chains[chain_name].behaviour, s, 
-					s.beh_chains[chain_name], *p, **kp) 
+		# define starter function
+		def start_chain(s, *p, **kp):
+			# construct new context object
+			context = BehaviourChainContext()
+			context.owner = s
+			context.nested = s.beh_chains[chain_name] # when called, the chain item invokes its successor
+			# execute the first item's function and return value
+			return s.beh_chains[chain_name].function(s.beh_chains[chain_name].behaviour,
+				context, *p, **kp)
+		# return the starter function
+		return start_chain
 	
 	
 	def has_behaviour(self, beh):
@@ -146,13 +154,18 @@ class BehaviourFunction(object):
 	behaviour is applied.
 	
 	A behaviour function should be an instancemethod, with its second parameter 
-	(after "self") being a reference to the behavable it is attached to, and the 
-	third parameter being the next function in the chain to call. 
+	(after "self") being a reference to a mutable object in which chain-scope 
+	information can be stored. The following special attributes are provided
+	in this object:
+		owner	- a reference to the behavable the behaviour is attached to
+		nested	- a callable which should be called to invoke the next item
+				in the chain. For best results, always call this method.
 	
 	The nested function will take the same parameters as the function itself, 
-	not including "self", the behavable or the nested function. The nested 
-	function returns the results of the next behaviour function in the chain. If 
-	there is no next function, None is returned.
+	not including "self". i.e. the mutable object described above must be passed
+	on along with any custom parameters - all of which can of course have been 
+	altered. The nested function returns the results of the next behaviour function 
+	in the chain. If there is no next function, None is returned.
 	
 	When a behaviour function is attached to a behavable instance, only the custom
 	parameters are required to call it as an instance method.
@@ -168,13 +181,12 @@ class BehaviourFunction(object):
 		
 			# the BehaviourFunction decorator is used to declare a behaviour function
 			@BehaviourFunction(priority=1.0)
-			# "self" is a reference to the behaviour, "owner" is a reference to 
-			# the behavable it is attached to, "nested" is the nested function to 
-			# call within this function, "text" is a custom parameter
-			def print_text(self, owner, nested, text):			
-				print text
-				# nested function must be called with the custom params
-				nested(text)
+			# "self" is a reference to the behaviour, "context" is an object containing 
+			# various information about the behaviour chain, and "foo" is a cutom parameter
+			def print_foo(self, context, foo):			
+				print foo
+				# nested function must be called with the same parameters
+				context.nested(context, foo)
 		
 		# create a behavable
 		foo = Behavable()
@@ -183,7 +195,7 @@ class BehaviourFunction(object):
 		foo.add_behaviour(MyBehaviour())
 		
 		#call newly introduced print_text method
-		foo.print_text("hullo thar")
+		foo.print_foo("hullo thar")
 	"""
 	
 	def __init__(self, **params):
@@ -232,17 +244,47 @@ class BehaviourChainItem(object):
 		item.concept = self.concept
 		
 	
-	def __call__(self, *params, **kwparams):
+	def __call__(self, context, *params, **kwparams):
 		"""	
 		Calling the class like a function invokes the function of the next item
 		in the chain, if one exists, or does nothing otherwise
 		"""
 		if self.next_item != None:
-			return self.next_item.function(self.next_item.behaviour, 
-					self.next_item.owner, self.next_item, *params, **kwparams)
+			# preserve the existing special context attributes
+			specials = context.get_special_attrs()
+			# prepare the context object with new "nested"
+			context.nested = self.next_item
+			# call the function with the prepared context
+			retval = self.next_item.function(self.next_item.behaviour, 
+					context, *params, **kwparams)
+			# restore the context's original "nested" value
+			context.set_special_attrs(specials)
+			# return
+			return retval
 		else:
 			return None
 		
+
+class BehaviourChainContext(object):
+	"""	
+	Used to store information accessible to all items in a behaviour chain.
+	"""
+	SPECIAL_ATTRS = ( "owner", "nested" )
+
+	def __init__(self):
+		for a in BehaviourChainContext.SPECIAL_ATTRS:
+			setattr(self, a, None)
+
+	def get_special_attrs(self):
+		d = {}
+		for a in BehaviourChainContext.SPECIAL_ATTRS:
+			d[a] = getattr(self, a)
+		return d	
+		
+	def set_special_attrs(self, attrdict):
+		for a in BehaviourChainContext.SPECIAL_ATTRS:
+			setattr(self, a, attrdict[a])		
+
 
 class Behaviour(Behavable):
 	"""	
@@ -328,22 +370,22 @@ if __name__ == "__main__":
 			self.health = health
 		
 		@BehaviourFunction(priority=1.0)
-		def get_health(self, owner, nested):			
+		def get_health(self, context):			
 			return self.health
 		
 		@BehaviourFunction(priority=1.0)
-		def hurt(self, owner, nested, power):
+		def hurt(self, context, power):
 			self.health -= power
 			if self.health < 0:
 				self.health = 0
-			nested(power)
+			context.nested(context,power)
 			
 		@BehaviourFunction(priority=1.0)
-		def heal(self, owner, nested, power):
+		def heal(self, context, power):
 			self.health += power
 			if self.health > 100:
 				self.health = 100
-			nested(power)
+			context.nested(context,power)
 			
 	class TestArmoured(Behaviour):
 		
@@ -351,11 +393,11 @@ if __name__ == "__main__":
 			self.strength = strength
 			
 		@BehaviourFunction(priority=2.0)
-		def hurt(self, owner, nested, power):
+		def hurt(self, context, power):
 			if self.strength > 0:
-				nested(power/2)
+				context.nested(context,power/2)
 			else:
-				nested(power)
+				context.nested(context,power)
 			self.strength -= power
 	
 	class TestGuy(Behavable):
@@ -366,7 +408,7 @@ if __name__ == "__main__":
 			self.age = age
 
 		@BehaviourFunction(priority=0.5)
-		def get_health(self, owner, nested):
+		def get_health(self, context):
 			return 10
 	
 	class TestBehaviours(unittest.TestCase):
@@ -449,10 +491,10 @@ if __name__ == "__main__":
 
 			class Cat(Behavable):
 				@BehaviourFunction()
-				def meow(self, owner, nested):
+				def meow(self, context):
 					return "meow"	
 				@BehaviourFunction()
-				def purr(self, owner, nested):
+				def purr(self, context):
 					return "purr"
 
 			c = Cat()
@@ -461,11 +503,11 @@ if __name__ == "__main__":
 			
 			class Tiddles(Cat):
 				@BehaviourFunction()
-				def meow_louder(self, owner, nested):
+				def meow_louder(self, context):
 					return "MEOW"
 				@BehaviourFunction()
-				def purr(self, owner, nested):
-					return "*ahem* "+Cat.purr(self,owner,nested)
+				def purr(self, context):
+					return "*ahem* "+Cat.purr(self,context)
 
 			t = Tiddles()
 			self.assertEquals("meow",t.meow())
@@ -474,20 +516,80 @@ if __name__ == "__main__":
 
 			class MeowWhenPurr(Behaviour):
 				@BehaviourFunction()
-				def purr(self,owner,nested):
-					return owner.meow()+" "+nested()+" "+owner.meow()
+				def purr(self,context):
+					return context.owner.meow()+" "+context.nested(context)+" "+context.owner.meow()
 
 			t.add_behaviour(MeowWhenPurr())
 			self.assertEquals("meow *ahem* purr meow",t.purr())
 			
 			class MeowWhenPurrThenMew(MeowWhenPurr):
 				@BehaviourFunction()
-				def purr(self,owner,nested):
-					return MeowWhenPurr.purr(self,owner,nested)+" mew"
+				def purr(self,context):
+					return MeowWhenPurr.purr(self,context)+" mew"
 
 			t2 = Tiddles()
 			t2.add_behaviour(MeowWhenPurrThenMew())
 			self.assertEquals("meow *ahem* purr meow mew",t2.purr())
+		
+		def testContext(self):
+			
+			class Button(Behavable):
+				@BehaviourFunction()
+				def push(self,context):
+					s = ""
+					n = context.nested(context)
+					if not n is None:
+						s += n
+					return s
+				
+			class LightActivation(Behaviour):
+				@BehaviourFunction()
+				def push(self,context):
+					s = ""
+					if( not hasattr(context,"dinged")
+							or not context.dinged):
+						s += "ding! "
+						context.dinged = True
+					s += "click! "
+					n = context.nested(context)
+					if not n is None:
+						s += n
+					return s
+
+			class FanActivation(Behaviour):
+				@BehaviourFunction()
+				def push(self,context):
+					s = ""
+					if( not hasattr(context,"dinged")
+							or not context.dinged):
+						s += "ding! "
+						context.dinged = True
+					s += "wrrr! "
+					n = context.nested(context)
+					if not n is None:
+						s += n
+					return s
+
+			# do nothing button
+			b = Button()
+			self.assertEquals("", b.push())
+
+			# light-only button
+			b = Button()
+			b.add_behaviour(LightActivation())
+			self.assertEquals("ding! click! ", b.push())
+
+			# fan-only button
+			b = Button()
+			b.add_behaviour(FanActivation())
+			self.assertEquals("ding! wrrr! ", b.push())
+
+			# light and fan button - one ding only
+			b = Button()
+			b.add_behaviour(LightActivation())
+			b.add_behaviour(FanActivation())
+			self.assertEquals("ding! wrrr! click! ", b.push())
+			self.assertEquals("ding! wrrr! click! ", b.push())
 
 	unittest.main()
 
