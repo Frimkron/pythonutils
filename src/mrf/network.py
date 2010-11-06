@@ -831,6 +831,8 @@ class JsonEncoder(object):
 		modname = ".".join(typename.split(".")[:-1])
 
 		if not sys.modules.has_key(modname):
+			import pdb
+			pdb.set_trace()
 			raise MessageError("Module for message type %s not loaded" % typename)
 		mod = sys.modules[modname]
 		if not hasattr(mod, classname):
@@ -846,7 +848,8 @@ class JsonEncoder(object):
 	def _encode_val(self, val):
 		"""	
 		Use special encoding of dictionary keys because json format only allows string
-		keys in objects. And encoding of strings because json only uses unicode.
+		keys in objects. And encoding of strings because json converts string/unicode to
+		whatever it sees fit.
 		"""
 		if isinstance(val, basestring):
 			return self._val_to_unicode(val)
@@ -859,7 +862,7 @@ class JsonEncoder(object):
 			return val
 		
 	def _decode_val(self, val):
-		if isinstance(val, unicode):
+		if isinstance(val, basestring):
 			return self._val_from_unicode(val)
 		elif isinstance(val, dict):
 			newd = {}
