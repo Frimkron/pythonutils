@@ -831,8 +831,6 @@ class JsonEncoder(object):
 		modname = ".".join(typename.split(".")[:-1])
 
 		if not sys.modules.has_key(modname):
-			import pdb
-			pdb.set_trace()
 			raise MessageError("Module for message type %s not loaded" % typename)
 		mod = sys.modules[modname]
 		if not hasattr(mod, classname):
