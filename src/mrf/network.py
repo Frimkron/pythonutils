@@ -74,6 +74,25 @@ class NetworkThread(threading.Thread):
 		lockable_attrs(self,
 			stopping = False
 		)
+		self.started = threading.Event()
+
+	def start(self):
+		"""	
+		Starts the thread, waiting until the 'started' event is triggered. 
+		Overidden from Thread
+		"""
+		threading.Thread.start(self)
+		self.started.wait()
+
+	def run(self):
+		"""	
+		Overidden from Thread
+		"""
+		self.started.set()
+		while True:
+			with self.stopping_lock:
+				if self.stopping:
+					break
 
 	def stop(self):
 		"""	
@@ -84,6 +103,9 @@ class NetworkThread(threading.Thread):
 		with self.stopping_lock:
 			self.stopping = True
 		self.join()
+
+	def is_started(self):
+		return self.started.is_set()
 	
 	def handle_network_error(self, error_info):
 		"""	
@@ -286,7 +308,7 @@ class Server(Node, NetworkThread):
 
 	def run(self):
 		"""	
-		Overridden from Thread - runs the server, listening on the specified port for 
+		Overridden from NetworkThread - runs the server, listening on the specified port for 
 		new clients connecting. For each new client a client handler of the specified 
 		type is created in a new thread.
 		"""
@@ -303,6 +325,9 @@ class Server(Node, NetworkThread):
 			with self.node_groups_lock:
 				self.node_groups = TagLookup()
 				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
+		
+			# server has started
+			self.started.set()
 		
 			while True:				
 				# exit loop if shutting down
@@ -536,6 +561,7 @@ class SocketListener(NetworkThread):
 		Overidden from Thread. Just invokes listen_on_socket. Should be
 		overidden in subclasses.
 		"""
+		self.started.set()
 		self.listen_on_socket()
 
 	def listen_on_socket(self):
@@ -624,6 +650,7 @@ class ClientHandler(SocketListener):
 		"""
 		self.server.client_arrived(self.id)	
 		try:	
+			self.started.set()
 			self.listen_on_socket()
 		finally:
 			self.server.client_departed(self.id)
@@ -679,6 +706,7 @@ class Client(SocketListener, Node):
 				self.socket.setblocking(False)
 				
 			self.after_connect()
+			self.started.set()
 			self.listen_on_socket()
 		
 		except socket.error as e:
