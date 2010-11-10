@@ -314,20 +314,21 @@ class Server(Node, NetworkThread):
 		"""
 			
 		try:
-			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			self.listen_socket.setblocking(False)
-			self.listen_socket.bind((socket.gethostname(),self.port))
-			self.listen_socket.listen(1)
+			try:
+				self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				self.listen_socket.setblocking(False)
+				self.listen_socket.bind((socket.gethostname(),self.port))
+				self.listen_socket.listen(1)
 		
-			self.next_id = 0
-			with self.handlers_lock:
-				self.handlers = {}
-			with self.node_groups_lock:
-				self.node_groups = TagLookup()
-				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
-		
-			# server has started
-			self.started.set()
+				self.next_id = 0
+				with self.handlers_lock:
+					self.handlers = {}
+				with self.node_groups_lock:
+					self.node_groups = TagLookup()
+					self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)					
+			finally:
+				# server has started
+				self.started.set()
 		
 			while True:				
 				# exit loop if shutting down
@@ -648,9 +649,11 @@ class ClientHandler(SocketListener):
 		"""	
 		Overidden from SocketListener. Invoked when thread is started.	
 		"""
-		self.server.client_arrived(self.id)	
-		try:	
+		try:
+			self.server.client_arrived(self.id)	
+		finally:
 			self.started.set()
+		try:				
 			self.listen_on_socket()
 		finally:
 			self.server.client_departed(self.id)
@@ -697,16 +700,19 @@ class Client(SocketListener, Node):
 		messages. Invoked when thread is started.
 		"""
 		try:
-			with self.socket_lock:
-				self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				# connect using blocking call				
-				self.socket.setblocking(True)				
-				self.socket.connect((self.host, self.port))
-				# then set to non-blocking ready for reads.
-				self.socket.setblocking(False)
+			try:
+				with self.socket_lock:
+					self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+					# connect using blocking call				
+					self.socket.setblocking(True)				
+					self.socket.connect((self.host, self.port))
+					# then set to non-blocking ready for reads.
+					self.socket.setblocking(False)
 				
-			self.after_connect()
-			self.started.set()
+				self.after_connect()
+			finally:
+				self.started.set()
+				
 			self.listen_on_socket()
 		
 		except socket.error as e:
