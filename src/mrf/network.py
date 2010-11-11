@@ -74,21 +74,11 @@ class NetworkThread(threading.Thread):
 		lockable_attrs(self,
 			stopping = False
 		)
-		self.started = threading.Event()
-
-	def start(self):
-		"""	
-		Starts the thread, waiting until the 'started' event is triggered. 
-		Overidden from Thread
-		"""
-		threading.Thread.start(self)
-		self.started.wait()
 
 	def run(self):
 		"""	
 		Overidden from Thread
 		"""
-		self.started.set()
 		while True:
 			with self.stopping_lock:
 				if self.stopping:
@@ -102,10 +92,8 @@ class NetworkThread(threading.Thread):
 		"""
 		with self.stopping_lock:
 			self.stopping = True
-		self.join()
-
-	def is_started(self):
-		return self.started.is_set()
+		if self.is_alive():
+			self.join()
 	
 	def handle_network_error(self, error_info):
 		"""	
@@ -306,30 +294,43 @@ class Server(Node, NetworkThread):
 		self.next_id += 1
 		return id
 
+	def start(self):
+		"""	
+		Starts the server. Overidden from NetworkThread
+		"""
+		try:
+			# open listen socket
+			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			self.listen_socket.setblocking(False)
+			self.listen_socket.bind((socket.gethostname(),self.port))
+			self.listen_socket.listen(1)
+		
+			# initialise variables
+			self.next_id = 0
+			with self.handlers_lock:
+				self.handlers = {}
+			with self.node_groups_lock:
+				self.node_groups = TagLookup()
+				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)					
+		
+			# begin running in thread
+			NetworkThread.start(self)
+		
+		except:		
+			# close socket
+			if not self.listen_socket is None:
+				self.listen_socket.close()	
+				
+			raise
+				
+
 	def run(self):
 		"""	
 		Overridden from NetworkThread - runs the server, listening on the specified port for 
 		new clients connecting. For each new client a client handler of the specified 
 		type is created in a new thread.
 		"""
-			
 		try:
-			try:
-				self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				self.listen_socket.setblocking(False)
-				self.listen_socket.bind((socket.gethostname(),self.port))
-				self.listen_socket.listen(1)
-		
-				self.next_id = 0
-				with self.handlers_lock:
-					self.handlers = {}
-				with self.node_groups_lock:
-					self.node_groups = TagLookup()
-					self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)					
-			finally:
-				# server has started
-				self.started.set()
-		
 			while True:				
 				# exit loop if shutting down
 				with self.stopping_lock:
@@ -562,7 +563,6 @@ class SocketListener(NetworkThread):
 		Overidden from Thread. Just invokes listen_on_socket. Should be
 		overidden in subclasses.
 		"""
-		self.started.set()
 		self.listen_on_socket()
 
 	def listen_on_socket(self):
@@ -645,14 +645,17 @@ class ClientHandler(SocketListener):
 	def get_connected_to(self):
 		return self.id
 
+	def start(self):
+		"""	
+		Starts the client handler. Overidden from SocketListener
+		"""
+		self.server.client_arrived(self.id)
+		SocketListener.start(self)
+
 	def run(self):
 		"""	
 		Overidden from SocketListener. Invoked when thread is started.	
 		"""
-		try:
-			self.server.client_arrived(self.id)	
-		finally:
-			self.started.set()
 		try:				
 			self.listen_on_socket()
 		finally:
@@ -694,25 +697,37 @@ class Client(SocketListener, Node):
 			socket = None
 		)
 
-	def run(self):
+	def start(self):
 		"""	
-		Overidden from SocketListener. Connects on socket then listens for
-		messages. Invoked when thread is started.
+		Starts the client. Overidden from SocketListener
 		"""
 		try:
-			try:
-				with self.socket_lock:
-					self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-					# connect using blocking call				
-					self.socket.setblocking(True)				
-					self.socket.connect((self.host, self.port))
-					# then set to non-blocking ready for reads.
-					self.socket.setblocking(False)
+			with self.socket_lock:
+				self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				# connect using blocking call				
+				self.socket.setblocking(True)				
+				self.socket.connect((self.host, self.port))
+				# then set to non-blocking ready for reads.
+				self.socket.setblocking(False)
 				
-				self.after_connect()
-			finally:
-				self.started.set()
-				
+			self.after_connect()
+			
+			# start running in thread
+			SocketListener.start(self)
+			
+		except:
+			# check socket is closed, in case there was an error connecting
+			with self.socket_lock:
+				if not self.socket is None:
+					self.socket.close()						
+			raise
+
+	def run(self):
+		"""	
+		Overidden from SocketListener. Listens for
+		messages on socket. Invoked when thread is started.
+		"""
+		try:				
 			self.listen_on_socket()
 		
 		except socket.error as e:
