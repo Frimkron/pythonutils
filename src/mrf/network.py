@@ -1041,6 +1041,7 @@ class MsgChat(Message):
 
 class GameFullError(Exception): pass
 
+class GameClosedError(Exception): pass
 
 class NameTakenError(Exception): pass
 
@@ -1132,6 +1133,10 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 				self.machine.server.send(MsgRejectConnect([self.machine.id], [], 
 					Server.SERVER, "The game is full"))
 				
+			except GameClosedError:
+				self.machine.server.send(MsgRejectConnect([self.machine.id], [],
+					Server.SERVER, "The game is closed"))
+				
 			except NameTakenError:
 				self.machine.server.send(MsgRejectConnect([self.machine.id], [],
 					Server.SERVER, "Your player name is already taken"))
@@ -1171,6 +1176,7 @@ class GameServer(GameNode, Server):
 		GameNode.__init__(self)
 		Server.__init__(self, client_factory, port)
 		self.max_players = max_players
+		self.closed = False
 
 	def send(self, message):
 		"""	
@@ -1290,6 +1296,14 @@ class GameServer(GameNode, Server):
 				# raise exception
 				raise GameFullError()
 			
+			elif self.closed:
+			
+				# add event as application hook
+				self.event_queue.put(EvtPlayerRejected(id,"The game is closed"))
+				
+				# raise exception
+				raise GameClosedError()
+			
 			elif info["name"] in self.get_player_names():
 				
 				# add event as application hook
@@ -1318,6 +1332,12 @@ class GameServer(GameNode, Server):
 		"""
 		with self.handlers_lock:		
 			return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
+		
+	def is_closed(self):
+		return self.closed
+
+	def set_closed(self, val):
+		self.closed = val
 		
 	def stop(self):
 		"""	
@@ -1937,7 +1957,28 @@ if __name__ == "__main__":
 				self.assertEquals(1, len(server_handler.messages))
 				self.assertEquals(EvtPlayerAccepted, server_handler.messages[-1].__class__)
 			
-				# add second player with taken name
+				# close game, attempt to add player
+				server.set_closed(True)
+				clientB0_handler = EventHandler()
+				clientB0 = GameClient({"name":"testerA1"},"localhost", 4447, encoder)
+				clientB0.start()
+				time.sleep(0.1)
+				
+				for i in range(3):
+					server.process_events(server_handler)
+					clientA.process_events(clientA_handler)
+					clientB0.process_events(clientB0_handler)
+					time.sleep(0.1)
+					
+				# player should have been rejected because game is closed
+				self.assertEquals(1, server.get_num_players())
+				self.assertEquals(1, len(clientB0_handler.messages))
+				self.assertEquals(MsgRejectConnect,clientB0_handler.messages[-1].__class__)
+				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
+			
+				# reopen game, add second player with taken name
+				server.set_closed(False)
 				clientB1_handler = EventHandler()
 				clientB1 = GameClient({"name":"testerA"},"localhost", 4447,  encoder)
 				clientB1.start()
@@ -1946,6 +1987,7 @@ if __name__ == "__main__":
 				for i in range(3):
 					server.process_events(server_handler)
 					clientA.process_events(clientA_handler)
+					clientB0.process_events(clientB0_handler)
 					clientB1.process_events(clientB1_handler)
 					time.sleep(0.1)
 			
@@ -1953,7 +1995,7 @@ if __name__ == "__main__":
 				self.assertEquals(1, server.get_num_players())
 				self.assertEquals(1, len(clientB1_handler.messages))
 				self.assertEquals(MsgRejectConnect,clientB1_handler.messages[-1].__class__)
-				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals(3, len(server_handler.messages))
 				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
 			
 				# add second player with unique name
@@ -1965,20 +2007,22 @@ if __name__ == "__main__":
 				for i in range(3):
 					server.process_events(server_handler)
 					clientA.process_events(clientA_handler)
+					clientB0.process_events(clientB0_handler)
+					clientB1.process_events(clientB1_handler)
 					clientB2.process_events(clientB2_handler)
 					time.sleep(0.1)
 			
 				self.assertEquals(2, server.get_num_players())
-				self.assertEquals(3, len(server_handler.messages))
+				self.assertEquals(4, len(server_handler.messages))
 				self.assertEquals(EvtPlayerAccepted, server_handler.messages[-1].__class__)
 				self.assertEquals(2, len(clientA_handler.messages))
 				self.assertEquals(MsgPlayerConnect, clientA_handler.messages[-1].__class__)
-				self.assertEquals(2, clientA_handler.messages[-1].player_id)
+				self.assertEquals(clientB2.client_id, clientA_handler.messages[-1].player_id)
 				self.assertEquals("testerB", clientA_handler.messages[-1].player_info["name"])
 				self.assertEquals(1, len(clientB2_handler.messages))
 				self.assertEquals(MsgAcceptConnect, clientB2_handler.messages[-1].__class__)
 				self.assertTrue(clientB2_handler.messages[-1].players_info.has_key(0))
-				self.assertEquals("testerA", clientB2_handler.messages[-1].players_info[0]["name"])
+				self.assertEquals("testerA", clientB2_handler.messages[-1].players_info[clientA.client_id]["name"])
 			
 				# add third player
 				clientC_handler = EventHandler()
@@ -2001,12 +2045,14 @@ if __name__ == "__main__":
 				# third player should have been rejected because max is 2
 				self.assertEquals(1, len(clientC_handler.messages))
 				self.assertEquals(MsgRejectConnect,clientC_handler.messages[-1].__class__)
-				self.assertEquals(4, len(server_handler.messages))
+				self.assertEquals(5, len(server_handler.messages))
 				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
 			
 			finally:
 				if clientA:
 					clientA.stop()
+				if clientB0:
+					clientB0.stop()
 				if clientB1:
 					clientB1.stop()
 				if clientB2:
