@@ -28,6 +28,10 @@ Vector Graphics Module
 
 """
 
+# TODO: Change pygame renderer to implement rotation
+# TODO: Change pygame renderer to implement ignore flags
+
+
 import xml.dom.minidom as mdom
 import xml.dom as dom
 import re
@@ -36,15 +40,26 @@ import re
 RENDERER_PYGAME = "pygame"
 RENDERER_OPENGL = "opengl"
 
+FLAG_IGNORE_STROKE = (1<<0)
+FLAG_IGNORE_FILL = (1<<1)
+FLAG_IGNORE_SCALE = (1<<2)
+FLAG_IGNORE_ROTATION = (1<<3)
+
 
 # Command objects:
 
 class Vector(object):
 	
-	def __init__(self, size, components, fillcolour=None):
+	def __init__(self, size, components, strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
 		self.size = size
 		self.components = components
+		self.strokecolour = strokecolour
+		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
+		
+	def __repr__(self):
+		return "Vector(size=%s,components=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % (
+			self.size, self.components, self.strokecolour, self.strokewidth, self.fillcolour )
 
 class Line(object):
 	
@@ -179,27 +194,29 @@ class SvgReader(object):
 	}
 
 	def load(self, filepath):
+	
+		# parse XML DOM
 		svg = mdom.parse(filepath).documentElement
-		style = {}
-		if svg.hasAttribute("style"): style = self._parse_svg_styles(svg.getAttribute("style"))
-		width = None
-		if svg.hasAttribute("width"): 
-			try: width = float(svg.getAttribute("width")) 
-			except ValueError: pass
-		height = None
-		if svg.hasAttribute("height"): 
-			try: height = float(svg.getAttribute("height")) 
-			except ValueError: pass
-		fillcolour = None
-		if svg.hasAttribute("fill"): fillcolour = self._parse_svg_colour(svg.getAttribute("fill"))
-		if "fill" in style: fillcolour = self._parse_svg_colour(style["fill"])
-		fillalpha = 1.0
-		if svg.hasAttribute("fill-opacity"): fillalpha = float(svg.getAttribute("fill-opacity"))
-		if "fill-opacity" in style: fillalpha = float(style["fill-opacity"])	
+		
+		# handle svg element styles
+		
+		style = self._attribute("style", {}, svg, None, self._parse_svg_styles)
+
+		width = self._attribute("width", None, svg, None, float, True)
+		height = self._attribute("height", None, svg, None, float, True)
+		
+		strokecolour = self._attribute("stroke", [0,0,0], svg, style, self._parse_svg_colour)
+		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		
+		strokewidth = self._attribute("stroke-width", 1.0, svg, style, float)
+		
+		fillcolour = self._attribute("fill", None, svg, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, svg, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
-		v = Vector((width,height), [], fillcolour)
+		v = Vector((width,height), [], strokecolour, strokewidth, fillcolour)
 		
+		# parse inner elements of svg, establishing dimensions of image
 		minx, miny, maxx, maxy = 0,0,0,0
 		for component,(ix,ax,iy,ay) in self._handle_svg_child_nodes(svg):
 			v.components.append(component)
@@ -210,6 +227,14 @@ class SvgReader(object):
 		
 		if v.size[0] is None: v.size = (maxx-minx, v.size[1])
 		if v.size[1] is None: v.size = (v.size[0], maxy-miny)
+		
+		centre = ( v.size[0]/2.0, v.size[1]/2.0 )
+		
+		# convert all draw commands to use centre-relative coordinates
+		for component in v.components:
+			hname = "_centre_"+type(component).__name__
+			if hasattr(self,hname):
+				getattr(self,hname)(centre, component)
 			
 		return v
 
@@ -271,40 +296,39 @@ class SvgReader(object):
 		return self._handle_svg_child_nodes(element)
 		
 	def _handle_svg_line(self,element):
-		style = {}
-		if element.hasAttribute("style"): style = self._parse_svg_styles(element.getAttribute("style"))
-		strokecolour = [0,0,0]
-		if element.hasAttribute("stroke"): strokecolour = self._parse_svg_colour(element.getAttribute("stroke"))
-		if "stroke" in style: strokecolour = self._parse_svg_colour(style["stroke"])
+	
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+
+		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
-		strokewidth = 1.0
-		if element.hasAttribute("stroke-width"): strokewidth = float(element.getAttribute("stroke-width"))
-		if "stroke-width" in style: strokewidth = float(style["stroke-width"])
-		start = ( float(element.getAttribute("x1")), float(element.getAttribute("y1")) )
-		end = ( float(element.getAttribute("x2")), float(element.getAttribute("y2")) )
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+
+		sx = self._attribute("x1", 0.0, element, None, float)
+		sy = self._attribute("y1", 0.0, element, None, float)
+		ex = self._attribute("x2", 0.0, element, None, float)
+		ey = self._attribute("y2", 0.0, element, None, float)
+		
 		return [( 
-			Line(start,end,strokecolour,strokewidth),
+			Line( (sx,sy), (ex,ey), strokecolour, strokewidth),
 			( min(start[0],end[0]), max(start[0],end[0]), min(start[1],end[1]), max(start[1],end[1]) )
 		)]
 	
 	def _handle_svg_polyline(self,element):
-		style = {}
-		if element.hasAttribute("style"): style = self._parse_svg_styles(element.getAttribute("style"))
-		strokecolour = [0,0,0]
-		if element.hasAttribute("stroke"): strokecolour = self._parse_svg_colour(element.getAttribute("stroke"))
-		if "stroke" in style: strokecolour = self._parse_svg_colour(style["stroke"])
+	
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+
+		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
-		strokewidth = 1.0
-		if element.hasAttribute("stroke-width"): strokewidth = float(element.getAttribute("stroke-width"))
-		if "stroke-width" in style: strokewidth = float(style["stroke-width"])
-		fillcolour = None
-		if element.hasAttribute("fill"): fillcolour = self._parse_svg_colour(element.getAttribute("fill"))
-		if "fill" in style: fillcolour = self._parse_svg_colour(style["fill"])
-		fillalpha = 1.0
-		if element.hasAttribute("fill-opacity"): fillalpha = float(element.getAttribute("fill-opacity"))
-		if "fill-opacity" in style: fillalpha = float(style["fill-opacity"])
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
-		points = self._parse_svg_points(element.getAttribute("points"))
+		
+		points = self._attribute("points", [], element, None, self._parse_svg_points)
+		
 		return [(
 			Polyline(points, strokecolour, strokewidth, fillcolour) ,
 			( min([p[0] for p in points]), max([p[0] for p in points]), 
@@ -312,23 +336,20 @@ class SvgReader(object):
 		)]
 
 	def _handle_svg_polygon(self,element):
-		style = {}
-		if element.hasAttribute("style"): style = self._parse_svg_styles(element.getAttribute("style"))
-		strokecolour = [0,0,0]
-		if element.hasAttribute("stroke"): strokecolour = self._parse_svg_colour(element.getAttribute("stroke"))
-		if "stroke" in style: strokecolour = self._parse_svg_colour(style["stroke"])
+	
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+	
+		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)	
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
-		strokewidth = 1.0
-		if element.hasAttribute("stroke-width"): strokewidth = float(element.getAttribute("stroke-width"))
-		if "stroke-width" in style: strokewidth = float(style["stroke-width"])
-		fillcolour = None
-		if element.hasAttribute("fill"): fillcolour = self._parse_svg_colour(element.getAttribute("fill"))
-		if "fill" in style: fillcolour = self._parse_svg_colour(style["fill"])
-		fillalpha = 1.0
-		if element.hasAttribute("fill-opacity"): fillalpha = float(element.getAttribute("fill-opacity"))
-		if "fill-opacity" in style: fillalpha = float(style["fill-opacity"])
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)		
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)		
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
-		points = self._parse_svg_points(element.getAttribute("points"))
+		
+		points = self._attribute("points", [], element, None, self._parse_svg_points)
+		
 		return [(
 			Polygon(points, strokecolour, strokewidth, fillcolour),
 			( min([p[0] for p in points]), max([p[0] for p in points]),
@@ -336,105 +357,155 @@ class SvgReader(object):
 		)]
 
 	def _handle_svg_rect(self,element):
-		style = {}
-		if element.hasAttribute("style"): style = self._parse_svg_styles(element.getAttribute("style"))
-		strokecolour = [0,0,0]
-		if element.hasAttribute("stroke"): strokecolour = self._parse_svg_colour(element.getAttribute("stroke"))
-		if "stroke" in style: strokcolour = self._parse_svg_colour(style["stroke"])
+	
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+		
+		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
-		strokewidth = 1.0
-		if element.hasAttribute("stroke-width"): strokewidth = float(element.getAttribute("stroke-width"))
-		if "stroke-width" in style: strokewidth = float(style["stroke-width"])
-		fillcolour = None
-		if element.hasAttribute("fill"): fillcolour = self._parse_svg_colour(element.getAttribute("fill"))
-		if "fill" in style: fillcolour = self._parse_svg_colour(style["fill"])
-		fillalpha = 1.0
-		if element.hasAttribute("fill-opacity"): fillalpha = float(element.getAttribute("fill-opacity"))
-		if "fill-opacity" in style: fillalpha = float(style["fill-opacity"])
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)		
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
-		x = 0.0
-		if element.hasAttribute("x"): x = float(element.getAttribute("x"))
-		y = 0.0
-		if element.hasAttribute("y"): y = float(element.getAttribute("y"))
-		width = float(element.getAttribute("width"))
-		height = float(element.getAttribute("height"))
+		
+		x = self._attribute("x", 0.0, element, None, float)
+		y = self._attribute("y", 0.0, element, None, float)
+
+		width = self._attribute("width", 1.0, element, None, float)
+		height = self._attribute("height", 1.0, element, None, float)
+		
 		return [(
 			 Rectangle((x,y),(width,height),strokecolour,strokewidth,fillcolour),
 			 ( x, x+width, y, y+height )
 		)]
 	
 	def _handle_svg_circle(self,element):
-		style = {}
-		if element.hasAttribute("style"): style = self._parse_svg_styles(element.getAttribute("style"))
-		strokecolour = [0,0,0]
-		if element.hasAttribute("stroke"): strokecolour = self._parse_svg_colour(element.getAttribute("stroke"))
-		if "stroke" in style: strokcolour = self._parse_svg_colour(style["stroke"])
+		
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+
+		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)		
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
-		strokewidth = 1.0
-		if element.hasAttribute("stroke-width"): strokewidth = float(element.getAttribute("stroke-width"))
-		if "stroke-width" in style: strokewidth = float(style["stroke-width"])
-		fillcolour = None
-		if element.hasAttribute("fill"): fillcolour = self._parse_svg_colour(element.getAttribute("fill"))
-		if "fill" in style: fillcolour = self._parse_svg_colour(style["fill"])
-		fillalpha = 1.0
-		if element.hasAttribute("fill-opacity"): fillalpha = float(element.getAttribute("fill-opacity"))
-		if "fill-opacity" in style: fillalpha = float(style["fill-opacity"])
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
-		cx = 0.0
-		if element.hasAttribute("cx"): cx = float(element.getAttribute("cx"))
-		cy = 0.0
-		if element.hasAttribute("cy"): cy = float(element.getAttribute("cy"))
-		radius = float(element.getAttribute("r"))
+		
+		cx = self._attribute("cx", 0.0, element, None, float)
+		cy = self._attribute("cy", 0.0, element, None, float)
+		
+		radius = self._attribute("r", 1.0, element, None float)
+		
 		return [(
 			Circle((cx,cy),radius,strokecolour,strokewidth,fillcolour),
 			( cx-radius, cx+radius, cy-radius, cy+radius ) 
 		)]
 	
 	def _handle_svg_ellipse(self,element):
-		style = {}
-		if element.hasAttribute("style"): style = self._parse_svg_styles(element.getAttribute("style"))
-		strokecolour = [0,0,0]
-		if element.hasAttribute("stroke"): strokecolour = self._parse_svg_colour(element.getAttribute("stroke"))
-		if "stroke" in style: strokcolour = self._parse_svg_colour(style["stroke"])
+	
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+		
+		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
-		strokewidth = 1.0
-		if element.hasAttribute("stroke-width"): strokewidth = float(element.getAttribute("stroke-width"))
-		if "stroke-width" in style: strokewidth = float(style["stroke-width"])
-		fillcolour = None
-		if element.hasAttribute("fill"): fillcolour = self._parse_svg_colour(element.getAttribute("fill"))
-		if "fill" in style: fillcolour = self._parse_svg_colour(style["fill"])
-		fillalpha = 1.0
-		if element.hasAttribute("fill-opacity"): fillalpha = float(element.getAttribute("fill-opacity"))
-		if "fill-opacity" in style: fillalpha = float(style["fill-opacity"])
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
-		cx = 0.0
-		if element.hasAttribute("cx"): cx = float(element.getAttribute("cx"))
-		cy = 0.0
-		if element.hasAttribute("cy"): cy = float(element.getAttribute("cy"))
-		radx = float(element.getAttribute("rx"))
-		rady = float(element.getAttribute("ry"))
+		
+		cx = self._attribute("cx", 0.0, element, None, float)
+		cy = self._attribute("cy", 0.0, element, None, float)
+		
+		radx = self._attribute("rx", 1.0, element, None, float)
+		rady = self._attribute("ry", 1.0, element, None, float)
+		
 		return [( 
 			Ellipse((cx,cy),(radx,rady),strokecolour,strokewidth,fillcolour),
 			( cx-radx, cx+radx, cy-rady, cy+rady )
 		)]
 
+	def _attribute(self, name, default, element=None, styles=None, converter=str, ignore_error=False):
+	
+		val = default
+		
+		if not element is None and element.hasAttribute(name):
+			try:
+				val = converter(element.getAttribute(name))
+			except ValueError as e:
+				if not ignore_error: raise e
+				
+		if not styles is None and name in styles:
+			try:
+				val = converter(styles[name])
+			except ValueError as e:
+				if not ignore_error: raise e
+				
+		return val
+
+	def _translate(self, point, offset):
+		return ( point[0]+offset[0], point[1]+offset[1] )
+		
+	def _negate(self, point):
+		return ( -point[0], -point[1] )
+
+	def _centre_Line(self, centre, line):
+		disp = self._negate(centre)
+		line.start = self._translate(line.start,disp)
+		line.end = self._translate(line.start,disp)
+
+	def _centre_Polyline(self, centre, polyline):
+		disp = self._negate(centre)
+		for i,p in enumerate(polyline.points):
+			polyline.points[i] = self._translate(p,disp)
+
+	def _centre_Polygon(self, centre, polygon):
+		disp = self._negate(centre)
+		for i,p in enumerate(polygon.points):
+			polygon.points[i] = self._translate(p,disp)
+			
+	def _centre_Rectangle(self, centre, rect):
+		disp = self._negate(centre)
+		rect.topleft = self._translage(rect.topleft,disp)
+		
+	def _centre_Circle(self, centre, circle):
+		disp = self._negate(centre)
+		circle.centre = self._translate(circle.centre,disp)
+		
+	def _centre_Ellipse(self, centre, ellipse):
+		disp = self._negate(centre)
+		ellipse.centre = self._translate(ellipse.centre,disp)
+
 
 # Renderers
 
+"""	
+	Renderer interface:
+		
+	def render(self, target, img, pos, scale=1.0, rotation=0.0, stroke_colour=None, fill_colour=None)
+"""
+
 class PygameRenderer(object):
 			
-	def render(self,target,vector,pos,scale):
-		# calculate origin
-		topleft = ( int(pos[0]-vector.size[0]*scale/2), int(pos[1]-vector.size[1]*scale/2) )
+	def __init__(self,flags):
+		# This renderer implementation handles flags on the fly
+		self.flags = flags
+			
+	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,fill_colour=None):
 		
 		# paint canvas rectangle
-		if not vector.fillcolour is None:
-			pygame.draw.rect(target, self._colour(vector.fillcolour),
-				( topleft, (int(vector.size[0]*scale),int(vector.size[1]*scale)) ))
+		if not img.strokecolour is None or not img.fillcolour is None:
+			self._do_Rect(target,
+				Rectangle(pos,img.size,img.strokecolour,img.strokewidth,img.fillcolour),
+				pos, scale, rotation)
 				
 		# paint components
 		for c in vector.components:
 			getattr(self,"_do_"+type(c).__name__)(target,c,topleft,scale)
+		
+	def _scale_rotate(self,
 			
 	def _do_Line(self,target,line,topleft,scale):
 		pygame.draw.line(target, self._colour(line.strokecolour),
@@ -491,9 +562,9 @@ def load(filepath):
 		raise ValueError("Cannot open %s" % filepath)
 
 
-def make_renderer(type):
+def make_renderer(type, flags=0):
 	if type == RENDERER_PYGAME:
-		return PygameRenderer()		
+		return PygameRenderer(flags)		
 	else:
 		raise ValueError("Unknown renderer type %s" % type)
 
