@@ -35,6 +35,7 @@ Vector Graphics Module
 import xml.dom.minidom as mdom
 import xml.dom as dom
 import re
+import mrf.mathutil as mu
 
 
 RENDERER_PYGAME = "pygame"
@@ -311,7 +312,7 @@ class SvgReader(object):
 		
 		return [( 
 			Line( (sx,sy), (ex,ey), strokecolour, strokewidth),
-			( min(start[0],end[0]), max(start[0],end[0]), min(start[1],end[1]), max(start[1],end[1]) )
+			( min(sx,ex), max(sx,ex), min(sy,ey), max(sy,ey) )
 		)]
 	
 	def _handle_svg_polyline(self,element):
@@ -396,7 +397,7 @@ class SvgReader(object):
 		cx = self._attribute("cx", 0.0, element, None, float)
 		cy = self._attribute("cy", 0.0, element, None, float)
 		
-		radius = self._attribute("r", 1.0, element, None float)
+		radius = self._attribute("r", 1.0, element, None, float)
 		
 		return [(
 			Circle((cx,cy),radius,strokecolour,strokewidth,fillcolour),
@@ -468,7 +469,7 @@ class SvgReader(object):
 			
 	def _centre_Rectangle(self, centre, rect):
 		disp = self._negate(centre)
-		rect.topleft = self._translage(rect.topleft,disp)
+		rect.topleft = self._translate(rect.topleft,disp)
 		
 	def _centre_Circle(self, centre, circle):
 		disp = self._negate(centre)
@@ -485,6 +486,9 @@ class SvgReader(object):
 	Renderer interface:
 		
 	def render(self, target, img, pos, scale=1.0, rotation=0.0, stroke_colour=None, fill_colour=None)
+	
+		stroke_colour and fill_colour can be passed in to override the stroke and fill colours
+		specified in the vector image itself.
 """
 
 class PygameRenderer(object):
@@ -493,63 +497,180 @@ class PygameRenderer(object):
 		# This renderer implementation handles flags on the fly
 		self.flags = flags
 			
+			
 	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,fill_colour=None):
+		
+		if self.flags & FLAG_IGNORE_SCALE != 0: scale = 1.0
+		if self.flags & FLAG_IGNORE_ROTATION != 0: rotation = 0.0
 		
 		# paint canvas rectangle
 		if not img.strokecolour is None or not img.fillcolour is None:
-			self._do_Rect(target,
+			self._do_Rectangle(target,
 				Rectangle(pos,img.size,img.strokecolour,img.strokewidth,img.fillcolour),
 				pos, scale, rotation)
 				
 		# paint components
 		for c in vector.components:
-			getattr(self,"_do_"+type(c).__name__)(target,c,topleft,scale)
-		
-	def _scale_rotate(self,
+			getattr(self,"_do_"+type(c).__name__)(target,c,pos,scale,rotation,stroke_colour,fill_colour)
 			
-	def _do_Line(self,target,line,topleft,scale):
-		pygame.draw.line(target, self._colour(line.strokecolour),
-			( int(topleft[0]+line.start[0]*scale), int(topleft[1]+line.start[1]*scale) ),
-			( int(topleft[0]+line.end[0]*scale), int(topleft[1]+line.end[1]*scale) ), 
-			int(line.strokewidth*scale) )
 			
-	def _do_Polyline(self,target,polyline,topleft,scale):
-		pygame.draw.lines(target, self._colour(polyline.strokecolour), False,
-			map(lambda p: ( int(topleft[0]+p[0]*scale), int(topleft[1]+p[1]*scale) ), polyline.points), 
-			int(polyline.strokewidth*scale))
-			
-	def _do_Polygon(self,target,polygon,topleft,scale):
-		points = map(lambda p: ( int(topleft[0]+p[0]*scale), int(topleft[1]+p[1]*scale) ), polygon.points)
-		if not polygon.fillcolour is None:
-			pygame.draw.polygon(target, self._colour(polygon.fillcolour),points, 0)
-		if not polygon.strokecolour is None and polygon.strokewidth > 0:
-			pygame.draw.polygon(target, self._colour(polygon.strokecolour),points,int(polygon.strokewidth*scale))
-			
-	def _do_Rectangle(self,target,rectangle,topleft,scale):
-		rect = ( ( int(topleft[0]+rectangle.topleft[0]*scale), int(topleft[1]+rectangle.topleft[1]*scale) ),
-			(int(rectangle.size[0]*scale),int(rectangle.size[1]*scale)) )
-		if not rectangle.fillcolour is None:
-			pygame.draw.rect(target, self._colour(rectangle.fillcolour), rect, 0)
-		if not rectangle.strokecolour is None and rectangle.strokewidth > 0:
-			pygame.draw.rect(target, self._colour(rectangle.strokecolour), rect, int(rectangle.strokewidth*scale))
-			
-	def _do_Circle(self,target,circle,topleft,scale):
-		centre = ( int(topleft[0]+circle.centre[0]*scale), int(topleft[1]+circle.centre[1]*scale) )
-		radius = int(circle.radius*scale)
-		if not circle.fillcolour is None:
-			pygame.draw.circle(target, self._colour(circle.fillcolour), centre, radius, 0)
-		if not circle.strokecolour is None and circle.strokewidth > 0:
-			pygame.draw.circle(target, self._colour(circle.strokecolour), centre, radius, int(circle.strokewidth*scale))
+	def _do_Line(self,target,line,pos,scale,rotation,stroke_colour,fill_colour):
 	
-	def _do_Ellipse(self,target,ellipse,topleft,scale):
-		topleft = ( int(topleft[0]+ellipse.centre[0]*scale-ellipse.radii[0]*scale),
-			int(topleft[1]+ellipse.centre[1]*scale-ellipse.radii[1]*scale) )
-		size = ( int(ellipse.radii[0]*2*scale), int(ellipse.radii[1]*2*scale) )
-		rect = ( topleft, size )
-		if not ellipse.fillcolour is None:
-			pygame.draw.ellipse(target, self._colour(ellipse.fillcolour), rect, 0)
-		if not ellipse.strokecolour is None and ellipse.strokewidth > 0:
-			pygame.draw.ellipse(target, self._colour(ellipse.strokecolour), rect, int(ellipse.strokewidth*scale))
+		# drawing unnecessary?
+		if( line.strokecolour is None or line.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0 ):
+			return
+	
+		# override colours
+		scolour = line.strokecolour
+		if not scolour is None and not stroke_colour is None: 
+			scolour = stroke_colour
+	
+		self._polygon(target,[line.start,line.end],pos,scale,rotation,scolour,
+			line.strokewidth,None,False)			
+			
+			
+	def _do_Polyline(self,target,polyline,pos,scale,rotation,stroke_colour,fill_colour):
+	
+		# drawing unnecessary?
+		if( polyline.strokecolour is None or poly.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0 ):
+			return
+			
+		# override colours
+		scolour = polyline.strokecolour
+		if not scolour is None and not stroke_colour is None:
+			scolour = stroke_colour
+			
+		self._polygon(target,polyline.points,pos,scale,rotation,scolour,
+			polyline.strokewidth,None,False)	
+			
+			
+	def _do_Polygon(self,target,polygon,pos,scale,rotation,stroke_colour,fill_colour):
+	
+		# drawing unnecessary?
+		if( (polygon.strokecolour is None or polygon.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
+				and (polygon.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
+			return 
+	
+		# override colours
+		scolour = polygon.scolour
+		if not scolour is None and not stroke_colour is None:
+			scolour = stroke_colour
+		fcolour = polygon.fillcolour
+		if not fcolour is None and not fill_colour is None:
+			fcolour = fill_colour
+	
+		self._polygon(target,polygon.points,pos,scale,rotation,scolour,
+			polygon.strokewidth,fcolour,True)
+						
+			
+	def _do_Rectangle(self,target,rectangle,pos,scale,rotation,stroke_colour,fill_colour):
+	
+		# drawing necessary?
+		if( (rectangle.strokecolour is None or rectangle.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
+				and (rectangle.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
+			return		
+	
+		# override colours
+		scolour = rectangle.strokecolour
+		if not scolour is None and not stroke_colour is None:
+			scolour = stroke_colour
+		fcolour = rectangle.fillcolour
+		if not fcolour is None and not fill_colour is None:
+			fcolour = fill_colour
+	
+		t = rectangle.topleft
+		s = rectangle.size
+		self._polygon(target, [ (t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1]) ],
+			pos, scale, rotation, scolour, rectangle.strokewidth, fcolour, True)
+	
+			
+	def _do_Circle(self,target,circle,pos,scale,rotation,stroke_colour,fill_colour):
+	
+		# drawing necessary?
+		if( (circle.strokecolour is None or circle.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
+				and (circle.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
+			return
+
+		# override colours
+		scolour = circle.strokecolour
+		if not scolour is None and not stroke_colour is None:
+			scolour = stroke_colour
+		fcolour = circle.fillcolour
+		if not fcolour is None and not fill_colour is None:
+			fcolour = fill_colour
+	
+		# create a 32-sided polygon
+		points = []
+		for i in range(32):
+			points.append((
+				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/i),
+				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/i)
+			))
+		
+		self._polygon(target, points, pos, scale, rotation, scolour, circle.strokewidth, fcolour, True)	
+	
+	
+	def _do_Ellipse(self,target,ellipse,pos,scale,rotation,stroke_colour,fill_colour):
+	
+		# drawing necessary?
+		if( (ellipse.strokecolour is None or ellipse.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
+				and (ellipse.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
+			return
+	
+		# override colours
+		scolour = ellipse.strokecolour
+		if not scolour is None and not stroke_colour is None:
+			scolour = stroke_colour
+		fcolour = ellipse.fillcolour
+		if not fcolour is None and not fill_colour is None:
+			fcolour = fill_colour
+			
+		# create a 32-sided polygon
+		points = []
+		for i in range(32):
+			points.append((
+				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/i),
+				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/i)
+			))	
+			
+		self._polygon(target, points, pos, scale, rotation, scolour, ellipse.strokewidth, fcolour, True)	
+			
+	
+	def _polygon(self,target,points,pos,scale,rotation,stroke_colour,stroke_width,fill_colour,closed):
+	
+		# transform
+		points = map(lambda p: (int(p[0]),int(p[1])), self._transform(points,pos,scale,rotation))
+	
+		# draw fill
+		if not fill_colour is None:
+			fcolour = self._colour(fill_colour)
+			pygame.draw.polygon(target, fcolour, points, 0)
+			
+		# draw stroke
+		if not stroke_colour is None and stroke_width > 0.0:
+			scolour = self._colour(stroke_colour)
+			swidth = int(stroke_width * scale)
+			pygame.draw.lines(target, scolour, closed, points, swidth)
+			
+			
+	def _transform(self,pointlist,pos,scale,rotation):
+			
+		# prepare point matrix using homogenous coords
+		pm = mu.Matrix([ [p[0] for p in pointlist], [p[1] for p in pointlist], [1]*len(pointlist) ])
+		
+		# prepare transformation matrix
+		tm = mu.Angle(rotation).matrix() * mu.Matrix([
+			[	scale,	0.0, 	pos[0]	],
+			[	0.0, 	scale, 	pos[1]	],
+			[	0.0, 	0.0,	1.0		]
+		])
+		
+		# transform
+		rm = tm * pm
+		
+		# convert back to point list
+		return zip(rm[0],rm[1])		
+			
 			
 	def _colour(self,val):
 		return [int(x*255) for x in val]
@@ -602,14 +723,14 @@ if __name__ == "__main__":
 	
 		screen.fill((0,128,128))
 		
-		renderer.render(screen, v, (160,120), 0.25)
-		renderer.render(screen, v, (480,120), 0.5)
-		renderer.render(screen, v, (160,360), 1.0)
-		renderer.render(screen, v, (480,360), 2.0)
+		renderer.render(screen, v, (160,120), 0.25, 0.0)
+		renderer.render(screen, v, (480,120), 0.5, 0.2, stroke_colour=(1,0,0,1))
+		renderer.render(screen, v, (160,360), 1.0, 0.0, fill_colour=(0,1,1,1))
+		renderer.render(screen, v, (480,360), 2.0, -0.2)
 		
 		a += 0.1
 		scale = 0.3 + (math.sin(a)/2.0+0.5) * 10.0
-		renderer.render(screen, v, (320,240), scale )
+		renderer.render(screen, v, (320,240), scale, a)
 		
 		fpstext = font.render("fps: %d" % clock.get_fps(), True, (255,255,255))
 		screen.blit(fpstext,(10,10))
