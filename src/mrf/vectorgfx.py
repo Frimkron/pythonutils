@@ -136,6 +136,10 @@ class Ellipse(object):
 	def __repr__(self):
 		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % (
 			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )
+
+class Path(object):
+
+	def __init__(self,commands
 	
 	
 # file loaders
@@ -455,7 +459,7 @@ class SvgReader(object):
 	def _centre_Line(self, centre, line):
 		disp = self._negate(centre)
 		line.start = self._translate(line.start,disp)
-		line.end = self._translate(line.start,disp)
+		line.end = self._translate(line.end,disp)
 
 	def _centre_Polyline(self, centre, polyline):
 		disp = self._negate(centre)
@@ -507,10 +511,10 @@ class PygameRenderer(object):
 		if not img.strokecolour is None or not img.fillcolour is None:
 			self._do_Rectangle(target,
 				Rectangle(pos,img.size,img.strokecolour,img.strokewidth,img.fillcolour),
-				pos, scale, rotation)
+				pos, scale, rotation, stroke_colour, fill_colour)
 				
 		# paint components
-		for c in vector.components:
+		for c in img.components:
 			getattr(self,"_do_"+type(c).__name__)(target,c,pos,scale,rotation,stroke_colour,fill_colour)
 			
 			
@@ -532,7 +536,7 @@ class PygameRenderer(object):
 	def _do_Polyline(self,target,polyline,pos,scale,rotation,stroke_colour,fill_colour):
 	
 		# drawing unnecessary?
-		if( polyline.strokecolour is None or poly.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0 ):
+		if( polyline.strokecolour is None or polyline.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0 ):
 			return
 			
 		# override colours
@@ -552,7 +556,7 @@ class PygameRenderer(object):
 			return 
 	
 		# override colours
-		scolour = polygon.scolour
+		scolour = polygon.strokecolour
 		if not scolour is None and not stroke_colour is None:
 			scolour = stroke_colour
 		fcolour = polygon.fillcolour
@@ -603,8 +607,8 @@ class PygameRenderer(object):
 		points = []
 		for i in range(32):
 			points.append((
-				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/i),
-				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/i)
+				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/32*i),
+				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/32*i)
 			))
 		
 		self._polygon(target, points, pos, scale, rotation, scolour, circle.strokewidth, fcolour, True)	
@@ -629,8 +633,8 @@ class PygameRenderer(object):
 		points = []
 		for i in range(32):
 			points.append((
-				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/i),
-				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/i)
+				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/32*i),
+				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/32*i)
 			))	
 			
 		self._polygon(target, points, pos, scale, rotation, scolour, ellipse.strokewidth, fcolour, True)	
@@ -642,12 +646,12 @@ class PygameRenderer(object):
 		points = map(lambda p: (int(p[0]),int(p[1])), self._transform(points,pos,scale,rotation))
 	
 		# draw fill
-		if not fill_colour is None:
+		if not fill_colour is None and self.flags & FLAG_IGNORE_FILL == 0:
 			fcolour = self._colour(fill_colour)
 			pygame.draw.polygon(target, fcolour, points, 0)
 			
 		# draw stroke
-		if not stroke_colour is None and stroke_width > 0.0:
+		if not stroke_colour is None and stroke_width > 0.0 and self.flags & FLAG_IGNORE_STROKE == 0:
 			scolour = self._colour(stroke_colour)
 			swidth = int(stroke_width * scale)
 			pygame.draw.lines(target, scolour, closed, points, swidth)
@@ -659,13 +663,21 @@ class PygameRenderer(object):
 		pm = mu.Matrix([ [p[0] for p in pointlist], [p[1] for p in pointlist], [1]*len(pointlist) ])
 		
 		# prepare transformation matrix
-		tm = mu.Angle(rotation).matrix() * mu.Matrix([
-			[	scale,	0.0, 	pos[0]	],
-			[	0.0, 	scale, 	pos[1]	],
-			[	0.0, 	0.0,	1.0		]
+		tm = mu.Matrix([ #translation
+			[	1,		0,		pos[0]	],
+			[	0,		1,		pos[1]	],
+			[	0,		0,		1		]
+		]) * mu.Matrix([ #rotation
+			[	math.cos(rotation),	-math.sin(rotation),	0	],
+			[	math.sin(rotation),	math.cos(rotation),		0	],
+			[	0,					0,						1	]
+		]) * mu.Matrix([ #scale
+			[	scale,	0,		0	],
+			[	0,		scale,	0	],
+			[	0,		0,		1	]
 		])
-		
-		# transform
+			
+		# perform transformation		
 		rm = tm * pm
 		
 		# convert back to point list
@@ -677,7 +689,7 @@ class PygameRenderer(object):
 
 
 def load(filepath):
-	if filepath.endswith(".xml"):
+	if filepath.endswith(".svg"):
 		return SvgReader().load(filepath)
 	else:
 		raise ValueError("Cannot open %s" % filepath)
