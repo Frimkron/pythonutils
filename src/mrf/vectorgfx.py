@@ -136,11 +136,11 @@ class Ellipse(object):
 	def __repr__(self):
 		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % (
 			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )
-
+"""	
 class Path(object):
 
 	def __init__(self,commands
-	
+"""	
 	
 # file loaders
 
@@ -721,7 +721,7 @@ if __name__ == "__main__":
 	pygame.init()
 	screen = pygame.display.set_mode((640,480))
 	clock = pygame.time.Clock()
-	renderer = make_renderer(RENDERER_PYGAME)
+	renderer = make_renderer(RENDERER_PYGAME, FLAG_IGNORE_FILL)
 	font = pygame.font.Font(None,32)
 	a = 0.0
 	
