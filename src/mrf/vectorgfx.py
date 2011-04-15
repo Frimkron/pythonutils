@@ -28,9 +28,9 @@ Vector Graphics Module
 
 """
 
-# TODO: Change pygame renderer to implement rotation
-# TODO: Change pygame renderer to implement ignore flags
-
+# TODO: Change renderer to convert given vectors to a more suitable format
+# TODO: Add "convert" method to renderer interface to allow vectors to be stored in this format
+# TODO: Incorporate renderer parameter into loader, allowing smoother convertion.
 
 import xml.dom.minidom as mdom
 import xml.dom as dom
