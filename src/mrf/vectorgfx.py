@@ -28,9 +28,12 @@ Vector Graphics Module
 
 """
 
+# TODO: Handle stroke-opacity attribute
+# TODO: Convert ignore flags to be renderer capabilities, with all of them as default
 # TODO: Change renderer to convert given vectors to a more suitable format
 # TODO: Add "convert" method to renderer interface to allow vectors to be stored in this format
 # TODO: Incorporate renderer parameter into loader, allowing smoother convertion.
+# TODO: Implement path parsing
 
 import xml.dom.minidom as mdom
 import xml.dom as dom
@@ -41,10 +44,17 @@ import mrf.mathutil as mu
 RENDERER_PYGAME = "pygame"
 RENDERER_OPENGL = "opengl"
 
-FLAG_IGNORE_STROKE = (1<<0)
-FLAG_IGNORE_FILL = (1<<1)
-FLAG_IGNORE_SCALE = (1<<2)
-FLAG_IGNORE_ROTATION = (1<<3)
+
+CAP_STROKE = (1<<0)
+CAP_FILL = (1<<1)
+CAP_SCALE = (1<<2)
+CAP_ROTATION = (1<<3)
+CAP_STROKE_ALPHA = (1<<4)
+CAP_FILL_ALPHA = (1<<5)
+CAP_MULTI_STROKE_COL = (1<<6)
+CAP_MULTI_STROKE_WIDTH = (1<<7)
+CAP_MULTI_FILL_COL = (1<<8)
+CAP_ALL = (1<<32)-1
 
 
 # Command objects:
@@ -136,11 +146,13 @@ class Ellipse(object):
 	def __repr__(self):
 		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % (
 			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )
+
+# TODO implement path
 """	
 class Path(object):
 
 	def __init__(self,commands
-"""	
+"""
 	
 # file loaders
 
@@ -211,7 +223,8 @@ class SvgReader(object):
 		height = self._attribute("height", None, svg, None, float, True)
 		
 		strokecolour = self._attribute("stroke", [0,0,0], svg, style, self._parse_svg_colour)
-		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		strokealpha = self._attribute("stroke-opacity", 1.0, svg, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, svg, style, float)
 		
@@ -233,14 +246,6 @@ class SvgReader(object):
 		if v.size[0] is None: v.size = (maxx-minx, v.size[1])
 		if v.size[1] is None: v.size = (v.size[0], maxy-miny)
 		
-		centre = ( v.size[0]/2.0, v.size[1]/2.0 )
-		
-		# convert all draw commands to use centre-relative coordinates
-		for component in v.components:
-			hname = "_centre_"+type(component).__name__
-			if hasattr(self,hname):
-				getattr(self,hname)(centre, component)
-			
 		return v
 
 	def _parse_svg_colour(self, colourstring):
@@ -305,7 +310,8 @@ class SvgReader(object):
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
 		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
-		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
 
@@ -324,7 +330,8 @@ class SvgReader(object):
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
 		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
-		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		strokealpha = self._attribute("stroke-opacit", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
 
@@ -345,7 +352,8 @@ class SvgReader(object):
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 	
 		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)	
-		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
 		
@@ -366,7 +374,8 @@ class SvgReader(object):
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 		
 		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
-		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
 
@@ -390,6 +399,7 @@ class SvgReader(object):
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
 		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)		
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
@@ -450,39 +460,6 @@ class SvgReader(object):
 				
 		return val
 
-	def _translate(self, point, offset):
-		return ( point[0]+offset[0], point[1]+offset[1] )
-		
-	def _negate(self, point):
-		return ( -point[0], -point[1] )
-
-	def _centre_Line(self, centre, line):
-		disp = self._negate(centre)
-		line.start = self._translate(line.start,disp)
-		line.end = self._translate(line.end,disp)
-
-	def _centre_Polyline(self, centre, polyline):
-		disp = self._negate(centre)
-		for i,p in enumerate(polyline.points):
-			polyline.points[i] = self._translate(p,disp)
-
-	def _centre_Polygon(self, centre, polygon):
-		disp = self._negate(centre)
-		for i,p in enumerate(polygon.points):
-			polygon.points[i] = self._translate(p,disp)
-			
-	def _centre_Rectangle(self, centre, rect):
-		disp = self._negate(centre)
-		rect.topleft = self._translate(rect.topleft,disp)
-		
-	def _centre_Circle(self, centre, circle):
-		disp = self._negate(centre)
-		circle.centre = self._translate(circle.centre,disp)
-		
-	def _centre_Ellipse(self, centre, ellipse):
-		disp = self._negate(centre)
-		ellipse.centre = self._translate(ellipse.centre,disp)
-
 
 # Renderers
 
@@ -493,6 +470,10 @@ class SvgReader(object):
 	
 		stroke_colour and fill_colour can be passed in to override the stroke and fill colours
 		specified in the vector image itself.
+		
+	def convert(self, img) -> newimg
+	
+		converts a vector image to a more efficient format for rendering. 	
 """
 
 class PygameRenderer(object):
