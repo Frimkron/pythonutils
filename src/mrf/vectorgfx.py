@@ -54,7 +54,7 @@ CAP_ALL = (1<<32)-1
 
 class Vector(object):
 	
-	def __init__(self, size, components, strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
+	def __init__(self, size, components, strokecolour=None, strokewidth=1.0, fillcolour=None):
 		self.size = size
 		self.components = components
 		self.strokecolour = strokecolour
@@ -62,48 +62,48 @@ class Vector(object):
 		self.fillcolour = fillcolour
 		
 	def __repr__(self):
-		return "Vector(size=%s,components=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % (
-			self.size, self.components, self.strokecolour, self.strokewidth, self.fillcolour )
+		return "Vector(size=%s,components=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.size, self.components, self.strokecolour, self.strokewidth, self.fillcolour )))
 
 class Line(object):
 	
-	def __init__(self, start, end, strokecolour=(0,0,0,1), strokewidth=1.0):
+	def __init__(self, start, end, strokecolour=None, strokewidth=1.0):
 		self.start = start
 		self.end = end
 		self.strokecolour = strokecolour
 		self.strokewidth = strokewidth
 		
 	def __repr__(self):
-		return "Line(start=%s,end=%s,strokecolour=%s,strokewidth=%s)" % (
-			self.start, self.end, self.strokecolour, self.strokewidth )
+		return "Line(start=%s,end=%s,strokecolour=%s,strokewidth=%s)" % tuple(map(repr,(
+			self.start, self.end, self.strokecolour, self.strokewidth )))
 
 class Polyline(object):
 	
-	def __init__(self, points, strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
+	def __init__(self, points, strokecolour=None, strokewidth=1.0, fillcolour=None):
 		self.points = points
 		self.strokecolour = strokecolour
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		
 	def __repr__(self):
-		return "Polyline(points=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % (
-			self.points, self.strokecolour, self.strokewidth, self.fillcolour )
+		return "Polyline(points=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.points, self.strokecolour, self.strokewidth, self.fillcolour )))
 
 class Polygon(object):
 
-	def __init__(self, points, strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
+	def __init__(self, points, strokecolour=None, strokewidth=1.0, fillcolour=None):
 		self.points = points
 		self.strokecolour = strokecolour
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		
 	def __repr__(self):
-		return "Polygon(points=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % (
-			self.points, self.strokecolour, self.strokewidth, self.fillcolour )
+		return "Polygon(points=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.points, self.strokecolour, self.strokewidth, self.fillcolour )))
 		
 class Rectangle(object):
 
-	def __init__(self,topleft,size,strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
+	def __init__(self,topleft,size,strokecolour=None, strokewidth=1.0, fillcolour=None):
 		self.topleft = topleft
 		self.size = size
 		self.strokecolour = strokecolour
@@ -111,12 +111,12 @@ class Rectangle(object):
 		self.fillcolour = fillcolour
 		
 	def __repr__(self):
-		return "Rectangle(topleft=%s,size=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % (
-			self.topleft, self.size, self.strokecolour, self.strokewidth, self.fillcolour )
+		return "Rectangle(topleft=%s,size=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.topleft, self.size, self.strokecolour, self.strokewidth, self.fillcolour )))
 		
 class Circle(object):
 
-	def __init__(self,centre,radius,strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
+	def __init__(self,centre,radius,strokecolour=None, strokewidth=1.0, fillcolour=None):
 		self.centre = centre
 		self.radius = radius
 		self.strokecolour = strokecolour
@@ -124,12 +124,12 @@ class Circle(object):
 		self.fillcolour = fillcolour
 
 	def __repr__(self):
-		return "Circle(centre=%s,radius=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % (
-			self.centre, self.radius, self.strokecolour, self.strokewidth, self.fillcolour )
+		return "Circle(centre=%s,radius=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.centre, self.radius, self.strokecolour, self.strokewidth, self.fillcolour )))
 
 class Ellipse(object):
 	
-	def __init__(self,centre,radii,strokecolour=(0,0,0,1), strokewidth=1.0, fillcolour=None):
+	def __init__(self,centre,radii,strokecolour=None, strokewidth=1.0, fillcolour=None):
 		self.centre = centre
 		self.radii = radii
 		self.strokecolour = strokecolour
@@ -137,8 +137,8 @@ class Ellipse(object):
 		self.fillcolour = fillcolour
 
 	def __repr__(self):
-		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % (
-			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )
+		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )))
 
 # TODO implement path
 """	
@@ -215,7 +215,7 @@ class SvgReader(object):
 		width = self._attribute("width", None, svg, None, float, True)
 		height = self._attribute("height", None, svg, None, float, True)
 		
-		strokecolour = self._attribute("stroke", [0,0,0], svg, style, self._parse_svg_colour)
+		strokecolour = self._attribute("stroke", None, svg, style, self._parse_svg_colour)
 		strokealpha = self._attribute("stroke-opacity", 1.0, svg, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
@@ -302,7 +302,7 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
@@ -322,8 +322,8 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacit", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
@@ -344,7 +344,7 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 	
-		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)	
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)	
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
@@ -366,7 +366,7 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 		
-		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
@@ -391,7 +391,7 @@ class SvgReader(object):
 		
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)		
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)		
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
 		
@@ -415,7 +415,7 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 		
-		strokecolour = self._attribute("stroke", [0,0,0], element, style, self._parse_svg_colour)
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
@@ -481,15 +481,20 @@ class PygamePolygon(object):
 		self.closed = closed
 		self.point_matrix = point_matrix
 		
+class PygameMatrixWrapper(object):
+	"Wraps a matrix to behave as a point sequence"
+	
+	matrix = None
+	
+	def __init__(self,matrix):
+		self.matrix = matrix
 		
-def point_matrix_itr(matrix):
-	"Generator for extracting integer point tuples from polygon matrix"
-	# | x x x x |
-	# | y y y y |
-	# | 1 1 1 1 |
-	for j in range(matrix.cols):
-		yield (int(matrix[0][j]), int(matrix[1][j]))		
-
+	def __len__(self):
+		return self.matrix.cols
+		
+	def __getitem__(self,index):
+		return ( int(self.matrix[0][index]), int(self.matrix[1][index]) )
+		
 
 class PygameRenderer(object):
 	"""	
@@ -509,8 +514,8 @@ class PygameRenderer(object):
 	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,fill_colour=None):
 		
 		# fetch polygon list from cache
-		if not img in cache:
-			cache[img] = self._convert(img)
+		if not img in self.cache:
+			self.cache[img] = self._convert(img)
 				
 		# prepare transformation matrix
 		tm = mu.Matrix([ #translation
@@ -528,19 +533,19 @@ class PygameRenderer(object):
 		])
 				
 		# draw polygons
-		for poly in cache[img]:
+		for poly in self.cache[img]:
 
 			# transform points, get iterator		
-			points = point_matrix_itr(tm * poly.point_matrix)
+			points = PygameMatrixWrapper(tm * poly.point_matrix)
 		
 			# fill
 			if poly.fill_colour is not None:
-				fill = poly.fill_colour if fill_colour is None else fill_colour
+				fill = poly.fill_colour if fill_colour is None else self._colour(fill_colour)
 				pygame.draw.polygon(target, fill, points)
 				
 			# stroke
 			if poly.stroke_colour is not None and poly.stroke_width > 0:
-				stroke = poly.stroke_colour if stroke_colour is None else stroke_colour
+				stroke = poly.stroke_colour if stroke_colour is None else self._colour(stroke_colour)
 				width = int(poly.stroke_width * scale)
 				pygame.draw.lines(target, stroke, poly.closed, points, width)
 	
@@ -549,12 +554,12 @@ class PygameRenderer(object):
 		clist = []
 		
 		# establish centre point
-		centre = ( img.width/2.0, img.height/2.0 )
+		centre = ( img.size[0]/2.0, img.size[1]/2.0 )
 		
 		# convert image background rectangle
-		clist.append(self._convert_Rectangle(Rectangle(pos,img.size,img.strokecolour,
-				img.strokewidth,img.fillcolour),centre)
-				
+		clist.append(self._convert_Rectangle(Rectangle((0,0),img.size,img.strokecolour,
+				img.strokewidth,img.fillcolour),centre))
+		
 		# convert image components
 		for c in img.components:
 			hname = "_convert_"+type(c).__name__
@@ -710,7 +715,7 @@ if __name__ == "__main__":
 	pygame.init()
 	screen = pygame.display.set_mode((640,480))
 	clock = pygame.time.Clock()
-	renderer = make_renderer(RENDERER_PYGAME, FLAG_IGNORE_FILL)
+	renderer = make_renderer(RENDERER_PYGAME)
 	font = pygame.font.Font(None,32)
 	a = 0.0
 	
