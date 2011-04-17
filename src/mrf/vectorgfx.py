@@ -28,11 +28,6 @@ Vector Graphics Module
 
 """
 
-# TODO: Handle stroke-opacity attribute
-# TODO: Convert ignore flags to be renderer capabilities, with all of them as default
-# TODO: Change renderer to convert given vectors to a more suitable format
-# TODO: Add "convert" method to renderer interface to allow vectors to be stored in this format
-# TODO: Incorporate renderer parameter into loader, allowing smoother convertion.
 # TODO: Implement path parsing
 
 import xml.dom.minidom as mdom
@@ -44,7 +39,6 @@ import mrf.mathutil as mu
 RENDERER_PYGAME = "pygame"
 RENDERER_OPENGL = "opengl"
 
-
 CAP_STROKE = (1<<0)
 CAP_FILL = (1<<1)
 CAP_SCALE = (1<<2)
@@ -55,7 +49,6 @@ CAP_MULTI_STROKE_COL = (1<<6)
 CAP_MULTI_STROKE_WIDTH = (1<<7)
 CAP_MULTI_FILL_COL = (1<<8)
 CAP_ALL = (1<<32)-1
-
 
 # Command objects:
 
@@ -470,119 +463,152 @@ class SvgReader(object):
 	
 		stroke_colour and fill_colour can be passed in to override the stroke and fill colours
 		specified in the vector image itself.
-		
-	def convert(self, img) -> newimg
-	
-		converts a vector image to a more efficient format for rendering. 	
+				
 """
 
+class PygamePolygon(object):
+	
+	stroke_width = 0
+	stroke_colour = None
+	fill_colour = None
+	point_matrix = None
+	closed = False
+	
+	def __init__(self,stroke_width,stroke_colour,fill_colour,closed,point_matrix):
+		self.stroke_width = stroke_width
+		self.stroke_colour = stroke_colour
+		self.fill_colour = fill_colour
+		self.closed = closed
+		self.point_matrix = point_matrix
+		
+		
+def point_matrix_itr(matrix):
+	"Generator for extracting integer point tuples from polygon matrix"
+	# | x x x x |
+	# | y y y y |
+	# | 1 1 1 1 |
+	for j in range(matrix.cols):
+		yield (int(matrix[0][j]), int(matrix[1][j]))		
+
+
 class PygameRenderer(object):
-			
-	def __init__(self,flags):
-		# This renderer implementation handles flags on the fly
-		self.flags = flags
-			
-			
+	"""	
+	Vector renderer using Pygame's polygon drawing to render onto a surface object.
+	Unimplemented capabilities:
+		CAP_FILL_ALPHA, CAP_STROKE_ALPHA
+	"""
+
+	cache = {}
+
+	def __init__(self):
+		# import pygame
+		import pygame.draw
+		# clear cache
+		self.cache = {}
+						
 	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,fill_colour=None):
 		
-		if self.flags & FLAG_IGNORE_SCALE != 0: scale = 1.0
-		if self.flags & FLAG_IGNORE_ROTATION != 0: rotation = 0.0
-		
-		# paint canvas rectangle
-		if not img.strokecolour is None or not img.fillcolour is None:
-			self._do_Rectangle(target,
-				Rectangle(pos,img.size,img.strokecolour,img.strokewidth,img.fillcolour),
-				pos, scale, rotation, stroke_colour, fill_colour)
+		# fetch polygon list from cache
+		if not img in cache:
+			cache[img] = self._convert(img)
 				
-		# paint components
+		# prepare transformation matrix
+		tm = mu.Matrix([ #translation
+			[	1.0,	0,		pos[0]	],
+			[	0,		1.0,	pos[1]	],
+			[	0,		0,		1.0		]
+		]) * mu.Matrix([ #rotation
+			[	math.cos(rotation),	-math.sin(rotation),	0	],
+			[	math.sin(rotation),	math.cos(rotation),		0	],
+			[	0,					0,						1.0	]
+		]) * mu.Matrix([ #scale
+			[	scale,	0,		0	],
+			[	0,		scale,	0	],
+			[	0,		0,		1.0	]
+		])
+				
+		# draw polygons
+		for poly in cache[img]:
+
+			# transform points, get iterator		
+			points = point_matrix_itr(tm * poly.point_matrix)
+		
+			# fill
+			if poly.fill_colour is not None:
+				fill = poly.fill_colour if fill_colour is None else fill_colour
+				pygame.draw.polygon(target, fill, points)
+				
+			# stroke
+			if poly.stroke_colour is not None and poly.stroke_width > 0:
+				stroke = poly.stroke_colour if stroke_colour is None else stroke_colour
+				width = int(poly.stroke_width * scale)
+				pygame.draw.lines(target, stroke, poly.closed, points, width)
+	
+	def _convert(self, img):
+		"Convert a vector image to a more efficient list of polygon commands"
+		clist = []
+		
+		# establish centre point
+		centre = ( img.width/2.0, img.height/2.0 )
+		
+		# convert image background rectangle
+		clist.append(self._convert_Rectangle(Rectangle(pos,img.size,img.strokecolour,
+				img.strokewidth,img.fillcolour),centre)
+				
+		# convert image components
 		for c in img.components:
-			getattr(self,"_do_"+type(c).__name__)(target,c,pos,scale,rotation,stroke_colour,fill_colour)
+			hname = "_convert_"+type(c).__name__
+			if hasattr(self,hname):
+				clist.append(getattr(self,hname)(c,centre))
+			else:
+				raise CapabilityError("Cannot render %s image component" % type(c).__name__)
 			
+		return clist
 			
-	def _do_Line(self,target,line,pos,scale,rotation,stroke_colour,fill_colour):
-	
-		# drawing unnecessary?
-		if( line.strokecolour is None or line.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0 ):
-			return
-	
-		# override colours
-		scolour = line.strokecolour
-		if not scolour is None and not stroke_colour is None: 
-			scolour = stroke_colour
-	
-		self._polygon(target,[line.start,line.end],pos,scale,rotation,scolour,
-			line.strokewidth,None,False)			
+	def _convert_Line(self,line,centre):
+		
+		stroke_colour = self._colour(line.strokecolour)
+		stroke_width = line.strokewidth
+		matrix = self._matrix(self._centre([line.start,line.end],centre))
+		
+		return PygamePolygon(stroke_width,stroke_colour,None,False,matrix)
 			
+	def _convert_Polyline(self,polyline,centre):
+		
+		stroke_colour = self._colour(polyline.strokecolour)
+		stroke_width = polyline.strokewidth
+		matrix = self._matrix(self._centre(polyline.points,centre))
+		
+		return PygamePolygon(stroke_width,stroke_colour,None,False,matrix)			
 			
-	def _do_Polyline(self,target,polyline,pos,scale,rotation,stroke_colour,fill_colour):
+	def _convert_Polygon(self,polygon,centre):
+
+		stroke_colour = self._colour(polygon.strokecolour)
+		stroke_width = polygon.strokewidth
+		fill_colour = self._colour(polygon.fillcolour)
+		matrix = self._matrix(self._centre(polygon.points,centre))
+		
+		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)
+					
+	def _convert_Rectangle(self,rectangle,centre):
 	
-		# drawing unnecessary?
-		if( polyline.strokecolour is None or polyline.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0 ):
-			return
-			
-		# override colours
-		scolour = polyline.strokecolour
-		if not scolour is None and not stroke_colour is None:
-			scolour = stroke_colour
-			
-		self._polygon(target,polyline.points,pos,scale,rotation,scolour,
-			polyline.strokewidth,None,False)	
-			
-			
-	def _do_Polygon(self,target,polygon,pos,scale,rotation,stroke_colour,fill_colour):
-	
-		# drawing unnecessary?
-		if( (polygon.strokecolour is None or polygon.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
-				and (polygon.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
-			return 
-	
-		# override colours
-		scolour = polygon.strokecolour
-		if not scolour is None and not stroke_colour is None:
-			scolour = stroke_colour
-		fcolour = polygon.fillcolour
-		if not fcolour is None and not fill_colour is None:
-			fcolour = fill_colour
-	
-		self._polygon(target,polygon.points,pos,scale,rotation,scolour,
-			polygon.strokewidth,fcolour,True)
-						
-			
-	def _do_Rectangle(self,target,rectangle,pos,scale,rotation,stroke_colour,fill_colour):
-	
-		# drawing necessary?
-		if( (rectangle.strokecolour is None or rectangle.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
-				and (rectangle.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
-			return		
-	
-		# override colours
-		scolour = rectangle.strokecolour
-		if not scolour is None and not stroke_colour is None:
-			scolour = stroke_colour
-		fcolour = rectangle.fillcolour
-		if not fcolour is None and not fill_colour is None:
-			fcolour = fill_colour
-	
+		stroke_colour = self._colour(rectangle.strokecolour)
+		stroke_width = rectangle.strokewidth
+		fill_colour = self._colour(rectangle.fillcolour)
+		
 		t = rectangle.topleft
 		s = rectangle.size
-		self._polygon(target, [ (t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1]) ],
-			pos, scale, rotation, scolour, rectangle.strokewidth, fcolour, True)
-	
+		matrix = self._matrix(self._centre([
+			(t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1])
+		],centre))
+		
+		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)	
 			
-	def _do_Circle(self,target,circle,pos,scale,rotation,stroke_colour,fill_colour):
-	
-		# drawing necessary?
-		if( (circle.strokecolour is None or circle.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
-				and (circle.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
-			return
+	def _convert_Circle(self,circle,centre):
 
-		# override colours
-		scolour = circle.strokecolour
-		if not scolour is None and not stroke_colour is None:
-			scolour = stroke_colour
-		fcolour = circle.fillcolour
-		if not fcolour is None and not fill_colour is None:
-			fcolour = fill_colour
+		stroke_colour = self._colour(circle.strokecolour)
+		stroke_width = circle.strokewidth
+		fill_colour = self._colour(circle.fillcolour)
 	
 		# create a 32-sided polygon
 		points = []
@@ -591,25 +617,16 @@ class PygameRenderer(object):
 				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/32*i),
 				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/32*i)
 			))
+		matrix = self._matrix(self._centre(points,centre))
 		
-		self._polygon(target, points, pos, scale, rotation, scolour, circle.strokewidth, fcolour, True)	
+		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)	
 	
+	def _convert_Ellipse(self,ellipse,centre):
 	
-	def _do_Ellipse(self,target,ellipse,pos,scale,rotation,stroke_colour,fill_colour):
+		stroke_colour = self._colour(ellipse.strokecolour)
+		stroke_width = ellipse.strokewidth
+		fill_colour = self._colour(ellipse.fillcolour)
 	
-		# drawing necessary?
-		if( (ellipse.strokecolour is None or ellipse.strokewidth <= 0.0 or self.flags & FLAG_IGNORE_STROKE != 0)
-				and (ellipse.fillcolour is None or self.flags & FLAG_IGNORE_FILL != 0) ):
-			return
-	
-		# override colours
-		scolour = ellipse.strokecolour
-		if not scolour is None and not stroke_colour is None:
-			scolour = stroke_colour
-		fcolour = ellipse.fillcolour
-		if not fcolour is None and not fill_colour is None:
-			fcolour = fill_colour
-			
 		# create a 32-sided polygon
 		points = []
 		for i in range(32):
@@ -617,68 +634,59 @@ class PygameRenderer(object):
 				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/32*i),
 				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/32*i)
 			))	
+		matrix = self._matrix(self._centre(points,centre))
 			
-		self._polygon(target, points, pos, scale, rotation, scolour, ellipse.strokewidth, fcolour, True)	
-			
+		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)
 	
-	def _polygon(self,target,points,pos,scale,rotation,stroke_colour,stroke_width,fill_colour,closed):
-	
-		# transform
-		points = map(lambda p: (int(p[0]),int(p[1])), self._transform(points,pos,scale,rotation))
-	
-		# draw fill
-		if not fill_colour is None and self.flags & FLAG_IGNORE_FILL == 0:
-			fcolour = self._colour(fill_colour)
-			pygame.draw.polygon(target, fcolour, points, 0)
-			
-		# draw stroke
-		if not stroke_colour is None and stroke_width > 0.0 and self.flags & FLAG_IGNORE_STROKE == 0:
-			scolour = self._colour(stroke_colour)
-			swidth = int(stroke_width * scale)
-			pygame.draw.lines(target, scolour, closed, points, swidth)
-			
-			
-	def _transform(self,pointlist,pos,scale,rotation):
-			
-		# prepare point matrix using homogenous coords
-		pm = mu.Matrix([ [p[0] for p in pointlist], [p[1] for p in pointlist], [1]*len(pointlist) ])
-		
-		# prepare transformation matrix
-		tm = mu.Matrix([ #translation
-			[	1,		0,		pos[0]	],
-			[	0,		1,		pos[1]	],
-			[	0,		0,		1		]
-		]) * mu.Matrix([ #rotation
-			[	math.cos(rotation),	-math.sin(rotation),	0	],
-			[	math.sin(rotation),	math.cos(rotation),		0	],
-			[	0,					0,						1	]
-		]) * mu.Matrix([ #scale
-			[	scale,	0,		0	],
-			[	0,		scale,	0	],
-			[	0,		0,		1	]
+	def _matrix(self,pointlist):
+		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
+		return mu.Matrix([
+			[ p[0] for p in pointlist ],
+			[ p[1] for p in pointlist ],
+			[1] * len(pointlist)
 		])
 			
-		# perform transformation		
-		rm = tm * pm
-		
-		# convert back to point list
-		return zip(rm[0],rm[1])		
-			
+	def _centre(self,points,centre):
+		"convert from top-left origin to given origin"
+		return [[v-centre[i] for i,v in enumerate(p)] for p in points]
 			
 	def _colour(self,val):
-		return [int(x*255) for x in val]
+		"convert from (1.0,1.0,1.0) format colour to (255,255,255)"
+		return [int(x*255) for x in val] if val is not None else None
+
+
+class CapabilityError(Exception):
+	"Raised if unsupported capability is requested of renderer"
+	pass
 
 
 def load(filepath):
+	"""	
+	Load a vector graphic from the given file path.
+	Supports: .svg
+	"""
 	if filepath.endswith(".svg"):
 		return SvgReader().load(filepath)
 	else:
 		raise ValueError("Cannot open %s" % filepath)
 
 
-def make_renderer(type, flags=0):
+def make_renderer(type, capabilities=None):
+	"""	
+	Instantiate a renderer object for rendering vector graphics.
+	Parameters:
+		type			The renderer implementation to use. See RENDERER_X constants
+		capabilities	Explicit set of capabilites desired from the renderer.
+						See CAP_X constants. In some cases the renderer can make
+						optimisations if certain capabilites are not required.
+						Use None for all available capabilites for the given type.
+	"""
 	if type == RENDERER_PYGAME:
-		return PygameRenderer(flags)		
+		if capabilities is not None and (
+				capabilities & CAP_FILL_ALPHA != 0
+				or capabilities & CAP_STROKE_ALPHA != 0 ):
+			raise CapabilityError("CAP_FILL_ALPHA and CAP_STROKE_ALPHA not supported by RENDERER_PYGAME")
+		return PygameRenderer()		
 	else:
 		raise ValueError("Unknown renderer type %s" % type)
 
