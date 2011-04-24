@@ -50,6 +50,13 @@ CAP_MULTI_STROKE_WIDTH = (1<<7)
 CAP_MULTI_FILL_COL = (1<<8)
 CAP_ALL = (1<<32)-1
 
+PCOM_MOVETO = 1
+PCOM_LINETO = 2
+PCOM_HLINETO = 3
+PCOM_VLINETO = 4
+PCOM_CLOSE = 5
+
+
 # Command objects:
 
 class Vector(object):
@@ -140,12 +147,28 @@ class Ellipse(object):
 		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )))
 
-# TODO implement path
-"""	
 class Path(object):
 
-	def __init__(self,commands
-"""
+	def __init__(self,segments,strokecolour=None,strokewidth=1.0,fillcolour=None):
+		self.segments = segments
+		self.strokecolour = strokecolour
+		self.strokewidth = strokewidth
+		self.fillcolour = fillcolour
+		
+	def __repr__(self):
+		return "Path(segments=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
+			self.segments, self.strokecolour, self.strokewidth, self.fillcolour )))
+
+class PathSegment(object):
+
+	def __init__(self,type,points):
+		self.type = type
+		self.points = points
+		
+	def __repr__(self):
+		return "PathSegment(type=%s, points=%s)" % tuple(map(repr,(
+			self.type, self.points )))
+	
 	
 # file loaders
 
@@ -416,7 +439,8 @@ class SvgReader(object):
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 		
 		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		if not strokecolour is None: strokecolour = strokecolour+[1.0]
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
 		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
 		
@@ -434,6 +458,31 @@ class SvgReader(object):
 			Ellipse((cx,cy),(radx,rady),strokecolour,strokewidth,fillcolour),
 			( cx-radx, cx+radx, cy-rady, cy+rady )
 		)]
+
+	def _handle_svg_path(self, element):
+	
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
+		
+		segments,limits = self._attribute("d", ([],(0,0,0,0)), element, None, self._parse_svg_path)
+		
+		return [(
+			Path(segments,strokecolour,strokewidth,fillcolour), 
+			limits,
+		)]
+
+	def _parse_svg_path(self,pathstring):
+		
+		cstrings = re.findall("(\s*[A-Za-z]\s*)(\s*[0-9](?:\s+,?\s*|,\s*[0-9])*)*",pathstring)
 
 	def _attribute(self, name, default, element=None, styles=None, converter=str, ignore_error=False):
 	
