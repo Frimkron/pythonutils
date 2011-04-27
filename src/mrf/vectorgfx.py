@@ -54,7 +54,12 @@ PCOM_MOVETO = 1
 PCOM_LINETO = 2
 PCOM_HLINETO = 3
 PCOM_VLINETO = 4
-PCOM_CLOSE = 5
+PCOM_ARCTO = 5
+PCOM_QUADTO = 6
+PCOM_SHORTQUADTO = 7
+PCOM_CUBICTO = 8
+PCOM_SHORTCUBICTO = 9
+PCOM_CLOSE = 10
 
 
 # Command objects:
@@ -161,13 +166,14 @@ class Path(object):
 
 class PathSegment(object):
 
-	def __init__(self,type,points):
+	def __init__(self,type,values,relative):
 		self.type = type
-		self.points = points
+		self.relative = relative
+		self.values = values
 		
 	def __repr__(self):
-		return "PathSegment(type=%s, points=%s)" % tuple(map(repr,(
-			self.type, self.points )))
+		return "PathSegment(type=%s, values=%s, relative=%s)" % tuple(map(repr,(
+			self.type, self.values, self.relative )))
 	
 	
 # file loaders
@@ -298,8 +304,11 @@ class SvgReader(object):
 			d[name] = val
 		return d
 
+	def _parse_svg_numbers(self,numstring):
+		return map(float,re.split("(?:\s+,?\s*|,\s*)",pointstring))
+
 	def _parse_svg_points(self,pointstring):
-		nums = map(float,re.split("(?:\s+,?\s*|,\s*)",pointstring))
+		nums = self._parse_svg_numbers(pointstring)
 		return zip(nums[::2],nums[1::2])
 
 	def _handle_svg_child_nodes(self,element):
@@ -482,7 +491,70 @@ class SvgReader(object):
 
 	def _parse_svg_path(self,pathstring):
 		
-		cstrings = re.findall("(\s*[A-Za-z]\s*)(\s*[0-9](?:\s+,?\s*|,\s*[0-9])*)*",pathstring)
+		segs = []
+		limits = (None,None,None,None)
+				
+		for cstr,vstr in re.findall("([A-Za-z])([0-9., 	]*)",pathstring):
+		
+			values = self._parse_svg_numbers(pstr)
+			relative = cstr.islower()
+			
+			if cstr.lower() == 'm':
+				type = PCOM_MOVETO
+				limits = self._adjust_limits(limits,values[::2],values[1::2])
+							
+			elif cstr.lower() == 'l':
+				type = PCOM_LINETO
+				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				
+			elif cstr.lower() == 'h':
+				type = PCOM_HLINETO
+				limits = self._adjust_limits(limits,values,[])
+				
+			elif cstr.lower() == 'v':
+				type = PCOM_VLINETO
+				limits = self._adjust_limits(limits,[],values)
+				
+			elif cstr.lower() == 'c':
+				type = PCOM_CUBICTO
+				# We'll include the control points in the limits 
+				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				
+			elif cstr.lower() == 's':
+				type = PCOM_SHORTCUBICTO
+				# We'll include the (explicit)control points in the limits
+				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				
+			elif cstr.lower() == 'q':
+				type = PCOM_QUADTO
+				# We'll include the control point in the limits
+				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				
+			elif cstr.lower() == 't':
+				type = PCOM_SHORTQUADTO
+				# Won't include the implicit control point
+				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				
+			elif cstr.lower() == 'a':
+				type = PCOM_ARCTO
+				# Just include the endpoints in limits
+				limits = self._adjust_limits(limits,[5::7],[6::7])
+				
+			elif cstr.lower() == 'z':
+				type = PCOM_CLOSE
+				# no parameters, so no limit change
+				
+			segs.append(PathSegment(type,values,relative))				
+											
+		return segs, limits
+
+	def _adjust_limits(self, limits, xlist, ylist):
+		return (
+			min(xlist + ([limits[0]] if limits[0] is not None else [])),
+			max(xlist + ([limits[1]] if limits[1] is not None else [])),
+			min(ylist + ([limits[2]] if limits[2] is not None else [])),
+			max(ylist + ([limits[3]] if limits[3] is not None else []))
+		)
 
 	def _attribute(self, name, default, element=None, styles=None, converter=str, ignore_error=False):
 	
@@ -691,6 +763,79 @@ class PygameRenderer(object):
 		matrix = self._matrix(self._centre(points,centre))
 			
 		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)
+	
+	def _convert_Path(self,path,centre):
+		
+		stroke_colour = self._colour(path.strokecolour)
+		stroke_width = path.strokewidth
+		fill_colour = self._colour(path.fillcolour)
+	
+		# TODO: implement sub-paths properly
+		
+		points = []
+		p = [0,0]
+		
+		for seg in path.segments:
+		
+			if seg.type == PCOM_MOVETO:
+				for x,y in zip(values[::2],values[1::2]):
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p)					
+				
+			elif seg.type == PCOM_LINETO:
+				for x,y in zip(values[::2],values[1::2]):
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p)
+						
+			elif seg.type == PCOM_HLINETO:
+				for x in values:
+					if seg.relative:
+						p[0] += x
+					else:
+						p[0] = x
+					points.append(p)
+					
+			elif seg.type == PCOM_VLINETO:
+				for y in values:
+					if seg.relative:
+						p[1] += y
+					else:
+						p[1] = y
+					points.append(p)
+					
+			elif seg.type == PCOM_CUBICTO:
+				# TODO: implement cubic bezier
+				for x,y in zip(values[4::6],values[5::6])
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p)
+					
+			elif seg.type == PCOM_SHORTCUBICTO:
+				# TODO implement shorthand cubic bezier
+				for x,y in zip(values[2::4],values[3::4])
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p)
+					
+			elif seg.type == PCOM_
 	
 	def _matrix(self,pointlist):
 		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
