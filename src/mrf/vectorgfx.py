@@ -241,14 +241,14 @@ class SvgReader(object):
 		
 		style = self._attribute("style", {}, svg, None, self._parse_svg_styles)
 
-		width = self._attribute("width", None, svg, None, float, True)
-		height = self._attribute("height", None, svg, None, float, True)
+		width = self._attribute("width", None, svg, None, self._parse_svg_size, True)
+		height = self._attribute("height", None, svg, None, self._parse_svg_size, True)
 		
 		strokecolour = self._attribute("stroke", None, svg, style, self._parse_svg_colour)
 		strokealpha = self._attribute("stroke-opacity", 1.0, svg, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, svg, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, svg, style, self._parse_svg_size, True)
 		
 		fillcolour = self._attribute("fill", None, svg, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", 1.0, svg, style, float)
@@ -276,19 +276,19 @@ class SvgReader(object):
 		if colourstring == "none":
 			return None
 			
-		m = re.match("#([0-9a-fA-F]{3})",colourstring)
+		m = re.match("^#([0-9a-fA-F]{3})$",colourstring)
 		if not m is None:
 			return [ int(x,16)/15.0 for x in m.group(1) ]
 		
-		m = re.match("#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})",colourstring)
+		m = re.match("^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",colourstring)
 		if not m is None:
 			return [ int(x,16)/255.0 for x in m.groups() ]
 			
-		m = re.match("rgb\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*\)", colourstring)
+		m = re.match("^rgb\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*\)$", colourstring)
 		if not m is None:
 			return [ int(x)/255.0 for x in m.groups() ]
 			
-		m = re.match("rgb\(\s*([0-9]+)%\s*,\s*([0-9]+)%\s*,\s*([0-9]+)%\s*\)", colourstring)
+		m = re.match("^rgb\(\s*([0-9]+)%\s*,\s*([0-9]+)%\s*,\s*([0-9]+)%\s*\)$", colourstring)
 		if not m is None:
 			return [ int(x)/100.0 for x in m.groups() ]
 			
@@ -296,6 +296,13 @@ class SvgReader(object):
 			return [ x/255.0 for x in SvgReader.COLOUR_KEYWORDS[colourstring] ]
 					
 		return None
+
+	def _parse_svg_size(self, sizestr):
+		m = re.match("(-?[0-9]+(?:\.[0-9]+)?)(?:px)?",sizestr.strip())
+		if m is not None:
+			return float(m.group(1))
+		else:
+			raise ValueError()
 
 	def _parse_svg_styles(self, stylestring):
 		d = {}
@@ -305,7 +312,7 @@ class SvgReader(object):
 		return d
 
 	def _parse_svg_numbers(self,numstring):
-		return map(float,re.split("(?:\s+,?\s*|,\s*)",pointstring))
+		return map(float,filter(lambda x: len(x.strip())>0 ,re.split("(?:\s+,?\s*|,\s*)",numstring)))
 
 	def _parse_svg_points(self,pointstring):
 		nums = self._parse_svg_numbers(pointstring)
@@ -338,7 +345,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 
 		sx = self._attribute("x1", 0.0, element, None, float)
 		sy = self._attribute("y1", 0.0, element, None, float)
@@ -358,7 +365,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 
 		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
@@ -380,7 +387,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 		
 		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)		
 		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)		
@@ -402,7 +409,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 
 		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)		
@@ -427,7 +434,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 
 		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
@@ -451,7 +458,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 		
 		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
@@ -476,7 +483,7 @@ class SvgReader(object):
 		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, float)
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
 		
 		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
@@ -494,9 +501,9 @@ class SvgReader(object):
 		segs = []
 		limits = (None,None,None,None)
 				
-		for cstr,vstr in re.findall("([A-Za-z])([0-9., 	]*)",pathstring):
+		for cstr,vstr in re.findall("([A-Za-z])([0-9., 	-]*)",pathstring):
 		
-			values = self._parse_svg_numbers(pstr)
+			values = self._parse_svg_numbers(vstr)
 			relative = cstr.islower()
 			
 			if cstr.lower() == 'm':
@@ -538,7 +545,7 @@ class SvgReader(object):
 			elif cstr.lower() == 'a':
 				type = PCOM_ARCTO
 				# Just include the endpoints in limits
-				limits = self._adjust_limits(limits,[5::7],[6::7])
+				limits = self._adjust_limits(limits,values[5::7],values[6::7])
 				
 			elif cstr.lower() == 'z':
 				type = PCOM_CLOSE
@@ -770,79 +777,119 @@ class PygameRenderer(object):
 		stroke_width = path.strokewidth
 		fill_colour = self._colour(path.fillcolour)
 	
-		# TODO: implement sub-paths properly
+		# TODO: implement sub-paths properly i.e. donut shapes
 		
 		points = []
+		closed = False
 		p = [0,0]
 		
 		for seg in path.segments:
 		
 			if seg.type == PCOM_MOVETO:
-				for x,y in zip(values[::2],values[1::2]):
-					if seg.relative:
+				for x,y in zip(seg.values[::2],seg.values[1::2]):
+					if seg.relative and len(points)>0:
 						p[0] += x
-						p[1] += y
+						p[1] += y					
 					else:
 						p[0] = x
 						p[1] = y
-					points.append(p)					
+					points.append(p[:])					
 				
 			elif seg.type == PCOM_LINETO:
-				for x,y in zip(values[::2],values[1::2]):
+				for x,y in zip(seg.values[::2],seg.values[1::2]):
 					if seg.relative:
 						p[0] += x
 						p[1] += y
 					else:
 						p[0] = x
 						p[1] = y
-					points.append(p)
+					points.append(p[:])
 						
 			elif seg.type == PCOM_HLINETO:
-				for x in values:
+				for x in seg.values:
 					if seg.relative:
 						p[0] += x
 					else:
 						p[0] = x
-					points.append(p)
+					points.append(p[:])
 					
 			elif seg.type == PCOM_VLINETO:
-				for y in values:
+				for y in seg.values:
 					if seg.relative:
 						p[1] += y
 					else:
 						p[1] = y
-					points.append(p)
+					points.append(p[:])
 					
 			elif seg.type == PCOM_CUBICTO:
 				# TODO: implement cubic bezier
-				for x,y in zip(values[4::6],values[5::6])
+				for x,y in zip(seg.values[4::6],seg.values[5::6]):
 					if seg.relative:
 						p[0] += x
 						p[1] += y
 					else:
 						p[0] = x
 						p[1] = y
-					points.append(p)
+					points.append(p[:])
 					
 			elif seg.type == PCOM_SHORTCUBICTO:
 				# TODO implement shorthand cubic bezier
-				for x,y in zip(values[2::4],values[3::4])
+				for x,y in zip(seg.values[2::4],seg.values[3::4]):
 					if seg.relative:
 						p[0] += x
 						p[1] += y
 					else:
 						p[0] = x
 						p[1] = y
-					points.append(p)
+					points.append(p[:])
 					
-			elif seg.type == PCOM_
+			elif seg.type == PCOM_QUADTO:
+				# TODO implement quadratic bezier
+				for x,y in zip(seg.values[2::4],seg.values[3::4]):
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p[:])
+			
+			elif seg.type == PCOM_SHORTQUADTO:
+				# TODO implemnet shorthand quadratic bezier 
+				for x,y in zip(seg.values[::2],seg.values[1::2]):
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p[:])
+					
+			elif seg.type == PCOM_ARCTO:
+				# TODO implement elliptical arc
+				for x,y in zip(seg.values[5::7],seg.values[6::7]):
+					if seg.relative:
+						p[0] += x
+						p[1] += y
+					else:
+						p[0] = x
+						p[1] = y
+					points.append(p[:])
+					
+			elif seg.type == PCOM_CLOSE:
+				closed = True
 	
+		matrix = self._matrix(self._centre(points,centre))
+		print matrix
+
+		return PygamePolygon(stroke_width,stroke_colour,fill_colour,closed,matrix)
+			
 	def _matrix(self,pointlist):
 		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
 		return mu.Matrix([
 			[ p[0] for p in pointlist ],
 			[ p[1] for p in pointlist ],
-			[1] * len(pointlist)
+			[1.0] * len(pointlist)
 		])
 			
 	def _centre(self,points,centre):
