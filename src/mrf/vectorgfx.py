@@ -28,12 +28,15 @@ Vector Graphics Module
 
 """
 
-# TODO: Implement path parsing
-
 import xml.dom.minidom as mdom
 import xml.dom as dom
 import re
 import mrf.mathutil as mu
+
+# TODO: Update path segment code for new structure: _convert_Path
+# TODO: Implement transforms
+# TODO: Need difference between "none" and "not specified" for colours/widths to allow inheritence
+# TODO: Can groups define inherited stroke/fill colours? YES - implement.
 
 
 RENDERER_PYGAME = "pygame"
@@ -49,17 +52,6 @@ CAP_MULTI_STROKE_COL = (1<<6)
 CAP_MULTI_STROKE_WIDTH = (1<<7)
 CAP_MULTI_FILL_COL = (1<<8)
 CAP_ALL = (1<<32)-1
-
-PCOM_MOVETO = 1
-PCOM_LINETO = 2
-PCOM_HLINETO = 3
-PCOM_VLINETO = 4
-PCOM_ARCTO = 5
-PCOM_QUADTO = 6
-PCOM_SHORTQUADTO = 7
-PCOM_CUBICTO = 8
-PCOM_SHORTCUBICTO = 9
-PCOM_CLOSE = 10
 
 
 # Command objects:
@@ -77,6 +69,81 @@ class Vector(object):
 		return "Vector(size=%s,components=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.size, self.components, self.strokecolour, self.strokewidth, self.fillcolour )))
 
+
+class Group(object):
+
+	def __init__(self,components,strokecolour=None,strokewidth=1.0,fillcolour=None,transforms=[]):
+		self.components = components
+		self.strokecolour = strokecolour
+		self.strokewidth = strokewidth
+		self.fillcolour = fillcolour
+		self.transforms = transforms
+		
+	def __repr__(self):
+		return "Transform(components=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s,transforms=%s)" % tuple(map(repr,(
+			self.components, self.strokecolour, self.strokewidth, self.fillcolour, self.transforms )))
+		
+		
+class TranslateTransform(object):
+
+	def __init__(self,trans):
+		self.trans = trans
+		
+	def __repr__(self):
+		return "TranslateTransform(trans=%s)" % tuple(map(repr,(
+			self.trans, )))
+
+
+class ScaleTransform(object):
+
+	def __init__(self,scale):
+		self.scale = scale
+		
+	def __repr__(self):
+		return "ScaleTransform(scale=%s)" % tuple(map(repr,(
+			self.scale, )))
+			
+			
+class RotateTransform(object):
+	
+	def __init__(self,angle):
+		self.angle = angle
+		
+	def __repr__(self):
+		return "RotateTransform(angle=%s)" % tuple(map(repr,(
+			self.angle, )))
+
+
+class XSkewTransform(object):
+	
+	def __init__(self,amount):
+		self.amount = amount
+		
+	def __repr__(self):
+		return "XSkewTransform(amount=%s)" % tuple(map(repr,(
+			self.amount, )))
+			
+
+class YSkewTransform(object):
+
+	def __init__(self,amount):
+		self.amount = amount
+		
+	def __repr__(self):
+		return "YSkewTransform(amount=%s)" % tuple(map(repr,(
+			self.amount, )))
+
+
+class MatrixTransform(object):
+
+	def __init__(self,cols):
+		self.cols = cols
+		
+	def __repr__(self):
+		return "MatrixTransform(cols=%s)" % tuple(map(repr,(
+			self.cols, )))
+			
+
 class Line(object):
 	
 	def __init__(self, start, end, strokecolour=None, strokewidth=1.0):
@@ -88,6 +155,7 @@ class Line(object):
 	def __repr__(self):
 		return "Line(start=%s,end=%s,strokecolour=%s,strokewidth=%s)" % tuple(map(repr,(
 			self.start, self.end, self.strokecolour, self.strokewidth )))
+
 
 class Polyline(object):
 	
@@ -101,6 +169,7 @@ class Polyline(object):
 		return "Polyline(points=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.points, self.strokecolour, self.strokewidth, self.fillcolour )))
 
+
 class Polygon(object):
 
 	def __init__(self, points, strokecolour=None, strokewidth=1.0, fillcolour=None):
@@ -112,6 +181,7 @@ class Polygon(object):
 	def __repr__(self):
 		return "Polygon(points=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.points, self.strokecolour, self.strokewidth, self.fillcolour )))
+
 		
 class Rectangle(object):
 
@@ -125,6 +195,7 @@ class Rectangle(object):
 	def __repr__(self):
 		return "Rectangle(topleft=%s,size=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.topleft, self.size, self.strokecolour, self.strokewidth, self.fillcolour )))
+
 		
 class Circle(object):
 
@@ -139,6 +210,7 @@ class Circle(object):
 		return "Circle(centre=%s,radius=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.centre, self.radius, self.strokecolour, self.strokewidth, self.fillcolour )))
 
+
 class Ellipse(object):
 	
 	def __init__(self,centre,radii,strokecolour=None, strokewidth=1.0, fillcolour=None):
@@ -152,6 +224,7 @@ class Ellipse(object):
 		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.centre, self.radii, self.strokecolour, self.strokewidth, self.fillcolour )))
 
+
 class Path(object):
 
 	def __init__(self,segments,strokecolour=None,strokewidth=1.0,fillcolour=None):
@@ -164,17 +237,129 @@ class Path(object):
 		return "Path(segments=%s,strokecolour=%s,strokewidth=%s,fillcolour=%s)" % tuple(map(repr,(
 			self.segments, self.strokecolour, self.strokewidth, self.fillcolour )))
 
-class PathSegment(object):
 
-	def __init__(self,type,values,relative):
-		self.type = type
+class MoveSegment(object):
+
+	def __init__(self,relative,points):
 		self.relative = relative
-		self.values = values
+		self.points = points
 		
 	def __repr__(self):
-		return "PathSegment(type=%s, values=%s, relative=%s)" % tuple(map(repr,(
-			self.type, self.values, self.relative )))
+		return "MoveSegment(relative=%s,points=%s)" % tuple(map(repr,(
+			self.relative, self.points )))
+
+
+class LineSegment(object):
+
+	def __init__(self,relative,points):
+		self.relative = relative
+		self.points = points
+
+	def __repr__(self):	
+		return "LineSegment(relative=%s,points=%s)" % tuple(map(repr,(
+			self.relative, self.points )))
+			
+			
+class HLineSegment(object):
+
+	def __init__(self,relative,coords):
+		self.relative = relative
+		self.coords = coords
+		
+	def __repr__(self):
+		return "HLineSegment(relative=%s,coords=%s)" % tuple(map(repr,(
+			self.relative, self.coords )))
+			
+			
+class VLineSegment(object):
 	
+	def __init__(self,relative,coords):
+		self.relative = relative
+		self.coords = coords
+
+	def __repr__(self):
+		return "VLineSegment(relative=%s,coords=%s)" % tuple(map(repr,(
+			self.relative, self.coords )))
+
+
+class Arc(object):
+
+	def __init__(self,topoint,ellsize,ellrot,long,clockwise):
+		self.topoint = topoint
+		self.ellsize = ellsize
+		self.ellrot = ellrot
+		self.long = long
+		self.clockwise = clockwise
+		
+	def __repr__(self):
+		return "Arc(topoint=%s,ellsize=%s,ellrot=%s,long=%s,clockwise=%s)" % tuple(map(repr,(
+			self.topoint,self.ellsize,self.ellrot,self.long,self.clockwise )))
+
+
+class ArcSegment(object):
+	
+	def __init__(self,relative,arcs):
+		self.relative = relative
+		self.arcs = arcs
+		
+	def __repr__(self):
+		return "ArcSegment(relative=%s,arcs=%s)" % tuple(map(repr,(
+			self.relative, self.arcs )))
+
+
+class Quadratic(object):
+
+	def __init__(self,topoint,ctlpoint):
+		self.topoint = topoint
+		self.ctlpoint = ctlpoint
+		
+	def __repr__(self):
+		return "Quadratic(topoint=%s,ctlpoint=%s)" % tuple(map(repr,(
+			self.topoint, self.ctlpoint )))
+		
+
+class QuadraticSegment(object):
+
+	def __init__(self,relative,curves):
+		self.relative = relative
+		self.curves = curves
+		
+	def __repr__(self):
+		return "QuadraticSegment(relative=%s,curves=%s)" % tuple(map(repr,(
+			self.relative, self.curves )))
+	
+	
+class Cubic(object):
+	
+	def __init__(self,topoint,ctlpoint1,ctlpoint2):
+		self.topoint = topoint
+		self.ctlpoint1 = ctlpoint1
+		self.ctlpoint2 = ctlpoint2
+		
+	def __repr__(self):
+		return "Cubic(topoint=%s,ctlpoint1=%s,ctlpoint2=%s)" % tuple(map(repr,(
+			self.topoint, self.ctlpoint1, self.ctlpoint2 )))
+	
+	
+class CubicSegment(object):
+
+	def __init__(self,relatie,curves):
+		self.relative = relative
+		self.curves = curves	
+	
+	def __repr__(self):
+		return "CubicSegment(relative=%s,curves=%s)" % tuple(map(repr,(
+			self.relative, self.curves )))
+	
+
+class CloseSegment(object):
+	
+	def __init__(self):
+		pass
+		
+	def __repr__(self):
+		return "CloseSegment()"
+		
 	
 # file loaders
 
@@ -496,6 +681,9 @@ class SvgReader(object):
 			limits,
 		)]
 
+	def _chomp(self,list,size):
+		return list[:size],list[size:]
+
 	def _parse_svg_path(self,pathstring):
 		
 		segs = []
@@ -507,52 +695,82 @@ class SvgReader(object):
 			relative = cstr.islower()
 			
 			if cstr.lower() == 'm':
-				type = PCOM_MOVETO
-				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				points = []
+				while len(values) > 0:
+					p,values = self._chomp(values,2)
+					points.append(p)
+				segs.append(MoveSegment(relative,points))
+				limits = self._adjust_limits(limits,points[::2],points[1::2])
 							
 			elif cstr.lower() == 'l':
-				type = PCOM_LINETO
-				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				points = []
+				while len(values) > 0:
+					p,values = self._chomp(values,2)
+					points.append(p)
+				segs.append(LineSegment(relative,points))
+				limits = self._adjust_limits(limits,points[::2],points[1::2])
 				
 			elif cstr.lower() == 'h':
-				type = PCOM_HLINETO
+				segs.append(HLineSegment(relative,values))
 				limits = self._adjust_limits(limits,values,[])
 				
 			elif cstr.lower() == 'v':
-				type = PCOM_VLINETO
+				segs.append(VLineSegment(relative,values))
 				limits = self._adjust_limits(limits,[],values)
 				
 			elif cstr.lower() == 'c':
-				type = PCOM_CUBICTO
+				curves = []
+				while len(values) > 0:
+					(c1x,c1y,c2x,c2y,x,y),values = self._chomp(values,6)
+					curves.append(Cubic((x,y),(c1x,c1y),(c2x,c2y)))
+				segs.append(CubicSegment(relative,curves))
 				# We'll include the control points in the limits 
-				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				limits = self._adjust_limits(limits,[c.topoint[0] for c in curves],[c.topoint[1] for c in curves])
+				limits = self._adjust_limits(limits,[c.ctlpoint1[0] for c in curves],[c.ctlpoint1[1] for c in curves])
+				limits = self._adjust_limits(limits,[c.ctlpoint2[0] for c in curves],[c.ctlpoint2[1] for c in curves])
 				
 			elif cstr.lower() == 's':
-				type = PCOM_SHORTCUBICTO
-				# We'll include the (explicit)control points in the limits
-				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				curves = []
+				while len(values) > 0:
+					(c2x,c2y,x,y),values = self._chomp(values,4)
+					curves.append(Cubic((x,y),None,(c2x,c2y)))
+				segs.append(CubicSegment(relative,curves))				
+				# We'll include the (explicit) control points in the limits
+				limits = self._adjust_limits(limits,[c.topoint[0] for c in curves],[c.topoint[1] for c in curves])
+				limits = self._adjust_limits(limits,[c.ctlpoint2[0] for c in curves],[c.ctlpoint2[1] for c in curves])
 				
 			elif cstr.lower() == 'q':
-				type = PCOM_QUADTO
+				curves = []
+				while len(values) > 0:
+					(cx,cy,x,y),values = self._chomp(values,4)
+					curves.append(Quadratic((x,y),(cx,cy)))
+				segs.append(QuadraticSegment(relative,curves))
 				# We'll include the control point in the limits
-				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				limits = self._adjust_limits(limits,[c.topoint[0] for c in curves],[c.topoint[1] for c in curves])
+				limits = self._adjust_limits(limits,[c.ctlpoint[0] for c in curves],[c.ctlpoint[1] for c in curves])
 				
 			elif cstr.lower() == 't':
-				type = PCOM_SHORTQUADTO
+				curves = []
+				while len(values) > 0:
+					(x,y),values = self._chomp(values,2)
+					curves.append(Quadratic((x,y),None))
+				segs.append(QuadraticSegment(relative,curves))
 				# Won't include the implicit control point
-				limits = self._adjust_limits(limits,values[::2],values[1::2])
+				limits = self._adjust_limits(limits,[c.topoint[0] for c in curves],[c.topoint[1] for c in curves])
 				
 			elif cstr.lower() == 'a':
-				type = PCOM_ARCTO
+				arcs = []
+				while len(values) > 0:
+					(rx,ry,rot,long,cw,x,y),values = self._chomp(values,7)
+					arcs.append(Arc((x,y),(rx,ry),rot,bool(long),bool(cw)))
+				segs.append(ArcSegment(relative,arcs))
 				# Just include the endpoints in limits
-				limits = self._adjust_limits(limits,values[5::7],values[6::7])
+				limits = self._adjust_limits(limits,[a.topoint[0] for a in arcs],[a.topoint[1] for a in arcs])
 				
 			elif cstr.lower() == 'z':
-				type = PCOM_CLOSE
+				segs.append(CloseSegment())
 				# no parameters, so no limit change
-				
-			segs.append(PathSegment(type,values,relative))				
-											
+															
 		return segs, limits
 
 	def _adjust_limits(self, limits, xlist, ylist):
@@ -777,7 +995,7 @@ class PygameRenderer(object):
 		stroke_width = path.strokewidth
 		fill_colour = self._colour(path.fillcolour)
 	
-		# TODO: implement sub-paths properly i.e. donut shapes
+		# TODO: implement sub-paths properly i.e. donut shapes (wtf?)
 		
 		points = []
 		closed = False
