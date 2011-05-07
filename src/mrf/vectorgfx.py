@@ -57,6 +57,9 @@ CAP_ALL = (1<<32)-1
 
 # Command objects:
 
+class Inherited(object): pass
+
+
 class Vector(object):
 	
 	def __init__(self, size, components, strokecolour=None, strokewidth=1.0, fillcolour=None):
@@ -524,14 +527,14 @@ class SvgReader(object):
 		
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 			
 		transforms = self._attribute("transform", [], element, style, self._parse_svg_transforms)
@@ -554,11 +557,11 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inhertied, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 
 		sx = self._attribute("x1", 0.0, element, None, float)
 		sy = self._attribute("y1", 0.0, element, None, float)
@@ -574,14 +577,14 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
 		points = self._attribute("points", [], element, None, self._parse_svg_points)
@@ -596,14 +599,14 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 	
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)	
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)	
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 		
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)		
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)		
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)		
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)		
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
 		points = self._attribute("points", [], element, None, self._parse_svg_points)
@@ -618,14 +621,14 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 		
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)		
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)		
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
 		x = self._attribute("x", 0.0, element, None, float)
@@ -643,14 +646,14 @@ class SvgReader(object):
 		
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)		
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)		
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[1.0]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
 		cx = self._attribute("cx", 0.0, element, None, float)
@@ -667,14 +670,14 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 		
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 		
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
 		cx = self._attribute("cx", 0.0, element, None, float)
@@ -692,14 +695,14 @@ class SvgReader(object):
 	
 		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
 
-		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
-		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		strokecolour = self._attribute("stroke", Inherited, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", Inherited, element, style, float)
 		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
 		
-		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 		
-		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
-		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
 		
 		segments,limits = self._attribute("d", ([],(0,0,0,0)), element, None, self._parse_svg_path)
@@ -802,6 +805,7 @@ class SvgReader(object):
 		return segs, limits
 
 	def _parse_svg_transforms(self, tstr):
+		# TODO: implement
 		tcommands = re.findall("\s*([a-zA-Z]+)\(((?:[0-9]+(?:\.[0-9]+)?)*)\)\s*",tstr)
 		return []		
 
