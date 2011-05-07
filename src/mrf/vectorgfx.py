@@ -33,7 +33,8 @@ import xml.dom as dom
 import re
 import mrf.mathutil as mu
 
-# TODO: Update path segment code for new structure: _convert_Path
+# TODO: Update path segment code for new structure: _convert_Path - TEST
+# TODO: Ensure groups are parsed and handled in conversion
 # TODO: Implement transforms
 # TODO: Need difference between "none" and "not specified" for colours/widths to allow inheritence
 # TODO: Can groups define inherited stroke/fill colours? YES - implement.
@@ -116,22 +117,22 @@ class RotateTransform(object):
 
 class XSkewTransform(object):
 	
-	def __init__(self,amount):
-		self.amount = amount
+	def __init__(self,angle):
+		self.angle = angle
 		
 	def __repr__(self):
-		return "XSkewTransform(amount=%s)" % tuple(map(repr,(
-			self.amount, )))
+		return "XSkewTransform(angle=%s)" % tuple(map(repr,(
+			self.angle, )))
 			
 
 class YSkewTransform(object):
 
-	def __init__(self,amount):
-		self.amount = amount
+	def __init__(self,angle):
+		self.angle = angle
 		
 	def __repr__(self):
-		return "YSkewTransform(amount=%s)" % tuple(map(repr,(
-			self.amount, )))
+		return "YSkewTransform(angle=%s)" % tuple(map(repr,(
+			self.angle, )))
 
 
 class MatrixTransform(object):
@@ -520,7 +521,34 @@ class SvgReader(object):
 			return []
 		
 	def _handle_svg_g(self,element):
-		return self._handle_svg_child_nodes(element)
+		
+		style = self._attribute("style", {}, element, None, self._parse_svg_styles)
+
+		strokecolour = self._attribute("stroke", None, element, style, self._parse_svg_colour)
+		strokealpha = self._attribute("stroke-opacity", 1.0, element, style, float)
+		if not strokecolour is None: strokecolour = strokecolour+[strokealpha]
+		
+		strokewidth = self._attribute("stroke-width", 1.0, element, style, self._parse_svg_size, True)
+
+		fillcolour = self._attribute("fill", None, element, style, self._parse_svg_colour)
+		fillalpha = self._attribute("fill-opacity", 1.0, element, style, float)
+		if not fillcolour is None: fillcolour = fillcolour+[fillalpha]
+			
+		transforms = self._attribute("transform", [], element, style, self._parse_svg_transforms)
+			
+		minx,maxx,miny,maxy = (0,0,0,0)
+		components = []
+		for component,(ix,ax,iy,ay) in self._handle_svg_child_nodes(element):
+			components.append(component)
+			if ix < minx: minx = ix
+			if ax > maxx: maxx = ax
+			if iy < miny: miny = iy
+			if ay > maxy: maxy = ay
+			
+		return [(
+			Group(components,strokecolour,strokewidth,fillcolour,transforms),
+			(minx,maxx,miny,maxy)
+		)]
 		
 	def _handle_svg_line(self,element):
 	
@@ -773,6 +801,10 @@ class SvgReader(object):
 															
 		return segs, limits
 
+	def _parse_svg_transforms(self, tstr):
+		tcommands = re.findall("\s*([a-zA-Z]+)\(((?:[0-9]+(?:\.[0-9]+)?)*)\)\s*",tstr)
+		return []		
+
 	def _adjust_limits(self, limits, xlist, ylist):
 		return (
 			min(xlist + ([limits[0]] if limits[0] is not None else [])),
@@ -809,6 +841,11 @@ class SvgReader(object):
 	
 		stroke_colour and fill_colour can be passed in to override the stroke and fill colours
 		specified in the vector image itself.
+		
+	def cache(self, img)
+	
+		the render function caches images, but this can be used to pre-cache them 
+		before the first invokation of render
 				
 """
 
@@ -840,6 +877,14 @@ class PygameMatrixWrapper(object):
 		
 	def __getitem__(self,index):
 		return ( int(self.matrix[0][index]), int(self.matrix[1][index]) )
+	
+	
+class PathContext(object):
+	"Object used to store status of pen while converting a path"
+	def __init__(self):
+		self.p = [0,0]
+		self.closed = False
+		self.points = []
 		
 
 class PygameRenderer(object):
@@ -856,12 +901,15 @@ class PygameRenderer(object):
 		import pygame.draw
 		# clear cache
 		self.cache = {}
+
+	def cache(self,img):
+		self.cache[img] = self._convert(img)
 						
 	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,fill_colour=None):
 		
 		# fetch polygon list from cache
 		if not img in self.cache:
-			self.cache[img] = self._convert(img)
+			self.cache(img)
 				
 		# prepare transformation matrix
 		tm = mu.Matrix([ #translation
@@ -997,110 +1045,91 @@ class PygameRenderer(object):
 	
 		# TODO: implement sub-paths properly i.e. donut shapes (wtf?)
 		
-		points = []
-		closed = False
-		p = [0,0]
+		context = PathContext()
 		
 		for seg in path.segments:
-		
-			if seg.type == PCOM_MOVETO:
-				for x,y in zip(seg.values[::2],seg.values[1::2]):
-					if seg.relative and len(points)>0:
-						p[0] += x
-						p[1] += y					
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])					
-				
-			elif seg.type == PCOM_LINETO:
-				for x,y in zip(seg.values[::2],seg.values[1::2]):
-					if seg.relative:
-						p[0] += x
-						p[1] += y
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])
-						
-			elif seg.type == PCOM_HLINETO:
-				for x in seg.values:
-					if seg.relative:
-						p[0] += x
-					else:
-						p[0] = x
-					points.append(p[:])
+			hname = "_convert_"+type(seg).__name__
+			getattr(self,hname)(seg, context)
 					
-			elif seg.type == PCOM_VLINETO:
-				for y in seg.values:
-					if seg.relative:
-						p[1] += y
-					else:
-						p[1] = y
-					points.append(p[:])
-					
-			elif seg.type == PCOM_CUBICTO:
-				# TODO: implement cubic bezier
-				for x,y in zip(seg.values[4::6],seg.values[5::6]):
-					if seg.relative:
-						p[0] += x
-						p[1] += y
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])
-					
-			elif seg.type == PCOM_SHORTCUBICTO:
-				# TODO implement shorthand cubic bezier
-				for x,y in zip(seg.values[2::4],seg.values[3::4]):
-					if seg.relative:
-						p[0] += x
-						p[1] += y
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])
-					
-			elif seg.type == PCOM_QUADTO:
-				# TODO implement quadratic bezier
-				for x,y in zip(seg.values[2::4],seg.values[3::4]):
-					if seg.relative:
-						p[0] += x
-						p[1] += y
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])
-			
-			elif seg.type == PCOM_SHORTQUADTO:
-				# TODO implemnet shorthand quadratic bezier 
-				for x,y in zip(seg.values[::2],seg.values[1::2]):
-					if seg.relative:
-						p[0] += x
-						p[1] += y
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])
-					
-			elif seg.type == PCOM_ARCTO:
-				# TODO implement elliptical arc
-				for x,y in zip(seg.values[5::7],seg.values[6::7]):
-					if seg.relative:
-						p[0] += x
-						p[1] += y
-					else:
-						p[0] = x
-						p[1] = y
-					points.append(p[:])
-					
-			elif seg.type == PCOM_CLOSE:
-				closed = True
-	
-		matrix = self._matrix(self._centre(points,centre))
-		print matrix
+		matrix = self._matrix(self._centre(context.points,centre))
 
-		return PygamePolygon(stroke_width,stroke_colour,fill_colour,closed,matrix)
+		return PygamePolygon(stroke_width,stroke_colour,fill_colour,
+			context.closed,matrix)
+			
+	def _convert_MoveSegment(self,seg,context):
+		for x,y in seg.points:
+			if seg.relative and len(context.points)>0:
+				context.p[0] += x
+				context.p[1] += y					
+			else:
+				context.p[0] = x
+				context.p[1] = y
+			context.points.append(context.p[:])					
+			
+	def _convert_LineSegment(self,seg,context):
+		for x,y in seg.points:
+			if seg.relative:
+				context.p[0] += x
+				context.p[1] += y
+			else:
+				context.p[0] = x
+				context.p[1] = y
+			context.points.append(context.p[:])
+	
+	def _convert_HLineSegment(self,seg,context):
+		for x in seg.coords:
+			if seg.relative:
+				context.p[0] += x
+			else:
+				context.p[0] = x
+			context.points.append(context.p[:])
+		
+	def _convert_VLineSegment(self,seg,context):
+		for y in seg.coords:
+			if seg.relative:
+				context.p[1] += y
+			else:
+				context.p[1] = y
+			context.points.append(context.p[:])
+			
+	def _convert_CubicSegment(self,seg,context):
+		# TODO: implement cubic bezier
+		for c in seg.curves:
+			x,y = c.topoint
+			if seg.relative:
+				context.p[0] += x
+				context.p[1] += y
+			else:
+				context.p[0] = x
+				context.p[1] = y
+			context.points.append(context.p[:])
+			
+	def _convert_QuadraticSegment(self,seg,context):
+		# TODO: implement quadratic bezier
+		for c in seg.curves:
+			x,y = c.topoint
+			if seg.relative:
+				context.p[0] += x
+				context.p[1] += y
+			else:
+				context.p[0] = x
+				context.p[1] = y
+			context.points.append(context.p[:])
+			
+	def _convert_ArcSegment(self,seg,context):
+		# TODO implement elliptical arc
+		for a in seg.arcs:
+			x,y = a.topoint
+			if seg.relative:
+				context.p[0] += x
+				context.p[1] += y
+			else:
+				context.p[0] = x
+				context.p[1] = y
+			context.points.append(context.p[:])
+			
+	def _convert_CloseSegment(self,seg,context):
+		context.closed = True
 			
 	def _matrix(self,pointlist):
 		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
