@@ -34,6 +34,7 @@ import re
 import mrf.mathutil as mu
 
 # TODO: Update path segment code for new structure: _convert_Path
+# TODO: Incorporate groups into structure
 # TODO: Implement transforms
 # TODO: Need difference between "none" and "not specified" for colours/widths to allow inheritence
 # TODO: Can groups define inherited stroke/fill colours? YES - implement.
