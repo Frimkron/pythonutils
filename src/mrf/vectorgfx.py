@@ -908,14 +908,22 @@ class PygameRenderer(object):
 				img.strokewidth,img.fillcolour),centre))
 		
 		# convert image components
-		for c in img.components:
-			hname = "_convert_"+type(c).__name__
-			if hasattr(self,hname):
-				clist.append(getattr(self,hname)(c,centre))
-			else:
-				raise CapabilityError("Cannot render %s image component" % type(c).__name__)
+		clist.extend(self._convert_components(img.components))
 			
 		return clist
+
+	def _convert_components(self, components):
+		clist = []
+		for c in components:
+			hname = "_convert_"+type(c).__name__
+			if hasattr(self,hname):
+				clist.extend(getattr(self,hname)(c,centre))
+			else:
+				raise CapabilityError("Cannot render %s image component" % type(c).__name__)
+		return clist
+
+	def _convert_Group(self,group,centre):
+		pass
 			
 	def _convert_Line(self,line,centre):
 		
@@ -923,7 +931,7 @@ class PygameRenderer(object):
 		stroke_width = line.strokewidth
 		matrix = self._matrix(self._centre([line.start,line.end],centre))
 		
-		return PygamePolygon(stroke_width,stroke_colour,None,False,matrix)
+		return [ PygamePolygon(stroke_width,stroke_colour,None,False,matrix) ]
 			
 	def _convert_Polyline(self,polyline,centre):
 		
@@ -931,7 +939,7 @@ class PygameRenderer(object):
 		stroke_width = polyline.strokewidth
 		matrix = self._matrix(self._centre(polyline.points,centre))
 		
-		return PygamePolygon(stroke_width,stroke_colour,None,False,matrix)			
+		return [ PygamePolygon(stroke_width,stroke_colour,None,False,matrix) ]
 			
 	def _convert_Polygon(self,polygon,centre):
 
@@ -940,7 +948,7 @@ class PygameRenderer(object):
 		fill_colour = self._colour(polygon.fillcolour)
 		matrix = self._matrix(self._centre(polygon.points,centre))
 		
-		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)
+		return [ PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix) ]
 					
 	def _convert_Rectangle(self,rectangle,centre):
 	
@@ -954,7 +962,7 @@ class PygameRenderer(object):
 			(t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1])
 		],centre))
 		
-		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)	
+		return [ PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix) ]
 			
 	def _convert_Circle(self,circle,centre):
 
@@ -971,7 +979,7 @@ class PygameRenderer(object):
 			))
 		matrix = self._matrix(self._centre(points,centre))
 		
-		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)	
+		return [ PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix) ]
 	
 	def _convert_Ellipse(self,ellipse,centre):
 	
@@ -988,7 +996,7 @@ class PygameRenderer(object):
 			))	
 		matrix = self._matrix(self._centre(points,centre))
 			
-		return PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix)
+		return [ PygamePolygon(stroke_width,stroke_colour,fill_colour,True,matrix) ]
 	
 	def _convert_Path(self,path,centre):
 		
@@ -1101,7 +1109,7 @@ class PygameRenderer(object):
 		matrix = self._matrix(self._centre(points,centre))
 		print matrix
 
-		return PygamePolygon(stroke_width,stroke_colour,fill_colour,closed,matrix)
+		return [ PygamePolygon(stroke_width,stroke_colour,fill_colour,closed,matrix) ]
 			
 	def _matrix(self,pointlist):
 		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
