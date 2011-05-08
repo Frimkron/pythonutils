@@ -33,16 +33,6 @@ import xml.dom as dom
 import re
 import mrf.mathutil as mu
 
-# TODO: Update path segment code for new structure: _convert_Path - TEST
-# TODO: Ensure groups are parsed and handled in conversion - TEST
-# TODO: Implement transforms - TEST
-# TODO: Need difference between "none" and "not specified" for colours/widths to allow inheritence - TEST
-# TODO: Can groups define inherited stroke/fill colours? YES - implement. - TEST
-# TODO: Implement transform parsing - TEST
-# TODO: Separate colour and alpha in command objects to allow separate inheritance - TEST
-# TODO: Adjust colour conversion for new alpha in structure - TEST
-
-
 
 RENDERER_PYGAME = "pygame"
 RENDERER_OPENGL = "opengl"
@@ -162,56 +152,61 @@ class MatrixTransform(object):
 
 class Line(object):
 	
-	def __init__(self, start, end, strokecolour=None, strokealpha=1.0, strokewidth=1.0):
+	def __init__(self, start, end, strokecolour=None, strokealpha=1.0, 
+			strokewidth=1.0, transforms=[]):
 		self.start = start
 		self.end = end
 		self.strokecolour = strokecolour
 		self.strokealpha = strokealpha
 		self.strokewidth = strokewidth
+		self.transforms = transforms
 		
 	def __repr__(self):
-		return "Line(start=%s,end=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s)" % tuple(map(repr,(
-			self.start, self.end, self.strokecolour, self.strokealpha, self.strokewidth )))
+		return "Line(start=%s,end=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,transforms=%s)" % tuple(map(repr,(
+			self.start, self.end, self.strokecolour, self.strokealpha, 
+			self.strokewidth, self.transforms )))
 
 
 class Polyline(object):
 	
 	def __init__(self, points, strokecolour=None, strokealpha=1.0, 
-			strokewidth=1.0, fillcolour=None, fillalpha=1.0):
+			strokewidth=1.0, fillcolour=None, fillalpha=1.0, transforms=[]):
 		self.points = points
 		self.strokecolour = strokecolour
 		self.strokealpha = strokealpha
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		self.fillalpha = fillalpha
+		self.transforms = transforms
 		
 	def __repr__(self):
-		return "Polyline(points=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s)" % tuple(map(repr,(
+		return "Polyline(points=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s,transforms=%s)" % tuple(map(repr,(
 			self.points, self.strokecolour, self.strokealpha, 
-			self.strokewidth, self.fillcolour, self.fillalpha )))
+			self.strokewidth, self.fillcolour, self.fillalpha, self.transforms )))
 
 
 class Polygon(object):
 
 	def __init__(self, points, strokecolour=None, strokealpha=1.0, 
-			strokewidth=1.0, fillcolour=None, fillalpha=1.0):
+			strokewidth=1.0, fillcolour=None, fillalpha=1.0, transforms=[]):
 		self.points = points
 		self.strokecolour = strokecolour
 		self.strokealpha = strokealpha
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		self.fillalpha = fillalpha
+		self.transforms = transforms
 		
 	def __repr__(self):
-		return "Polygon(points=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s)" % tuple(map(repr,(
+		return "Polygon(points=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s,transforms=%s)" % tuple(map(repr,(
 			self.points, self.strokecolour, self.strokealpha, 
-			self.strokewidth, self.fillcolour, self.fillalpha )))
+			self.strokewidth, self.fillcolour, self.fillalpha, self.transforms )))
 
 		
 class Rectangle(object):
 
 	def __init__(self,topleft,size,strokecolour=None, strokealpha=1.0, 
-			strokewidth=1.0, fillcolour=None, fillalpha=1.0):
+			strokewidth=1.0, fillcolour=None, fillalpha=1.0, transforms=[]):
 		self.topleft = topleft
 		self.size = size
 		self.strokecolour = strokecolour
@@ -219,17 +214,18 @@ class Rectangle(object):
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		self.fillalpha = fillalpha
+		self.transforms = transforms
 		
 	def __repr__(self):
-		return "Rectangle(topleft=%s,size=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s)" % tuple(map(repr,(
+		return "Rectangle(topleft=%s,size=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s,transforms=%s)" % tuple(map(repr,(
 			self.topleft, self.size, self.strokecolour, self.strokealpha,
-			self.strokewidth, self.fillcolour, self.fillalpha )))
+			self.strokewidth, self.fillcolour, self.fillalpha, self.transforms )))
 
 		
 class Circle(object):
 
 	def __init__(self,centre,radius,strokecolour=None, strokealpha=1.0, 
-			strokewidth=1.0, fillcolour=None, fillalpha=1.0):
+			strokewidth=1.0, fillcolour=None, fillalpha=1.0, transforms=[]):
 		self.centre = centre
 		self.radius = radius
 		self.strokecolour = strokecolour
@@ -237,17 +233,18 @@ class Circle(object):
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		self.fillalpha = fillalpha
+		self.transforms = transforms
 
 	def __repr__(self):
-		return "Circle(centre=%s,radius=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s)" % tuple(map(repr,(
+		return "Circle(centre=%s,radius=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s,transforms=%s)" % tuple(map(repr,(
 			self.centre, self.radius, self.strokecolour, self.strokealpha,
-			self.strokewidth, self.fillcolour, self.fillalpha )))
+			self.strokewidth, self.fillcolour, self.fillalpha, self.transforms )))
 
 
 class Ellipse(object):
 	
 	def __init__(self,centre,radii,strokecolour=None, strokealpha=1.0,
-			strokewidth=1.0, fillcolour=None, fillalpha=1.0):
+			strokewidth=1.0, fillcolour=None, fillalpha=1.0, transforms=[]):
 		self.centre = centre
 		self.radii = radii
 		self.strokecolour = strokecolour
@@ -255,28 +252,30 @@ class Ellipse(object):
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		self.fillalpha = fillalpha
+		self.transforms = transforms
 
 	def __repr__(self):
-		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s)" % tuple(map(repr,(
+		return "Ellipse(centre=%s,radii=%s,strokcolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s,transforms=%s)" % tuple(map(repr,(
 			self.centre, self.radii, self.strokecolour, self.strokealpha,
-			self.strokewidth, self.fillcolour, self.fillalpha )))
+			self.strokewidth, self.fillcolour, self.fillalpha, self.transforms )))
 
 
 class Path(object):
 
 	def __init__(self,segments,strokecolour=None,strokealpha=1.0,
-			strokewidth=1.0,fillcolour=None,fillalpha=1.0):
+			strokewidth=1.0,fillcolour=None,fillalpha=1.0,transforms=[]):
 		self.segments = segments
 		self.strokecolour = strokecolour
 		self.strokealpha = strokealpha
 		self.strokewidth = strokewidth
 		self.fillcolour = fillcolour
 		self.fillalpha = fillalpha
+		self.transforms = transforms
 		
 	def __repr__(self):
-		return "Path(segments=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s)" % tuple(map(repr,(
+		return "Path(segments=%s,strokecolour=%s,strokealpha=%s,strokewidth=%s,fillcolour=%s,fillalpha=%s,transforms=%s)" % tuple(map(repr,(
 			self.segments, self.strokecolour, self.strokealpha, 
-			self.strokewidth, self.fillcolour, self.fillalpha)))
+			self.strokewidth, self.fillcolour, self.fillalpha, self.transforms )))
 
 
 class MoveSegment(object):
@@ -570,7 +569,7 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 			
-		transforms = self._attribute("transform", [], element, style, self._parse_svg_transforms)
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
 			
 		minx,maxx,miny,maxy = (0,0,0,0)
 		components = []
@@ -595,13 +594,15 @@ class SvgReader(object):
 		
 		strokewidth = self._attribute("stroke-width", Inherited, element, style, self._parse_svg_size, True)
 
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+
 		sx = self._attribute("x1", 0.0, element, None, float)
 		sy = self._attribute("y1", 0.0, element, None, float)
 		ex = self._attribute("x2", 0.0, element, None, float)
 		ey = self._attribute("y2", 0.0, element, None, float)
 		
 		return [( 
-			Line( (sx,sy), (ex,ey), strokecolour, strokealpha, strokewidth),
+			Line( (sx,sy), (ex,ey), strokecolour, strokealpha, strokewidth, transforms),
 			( min(sx,ex), max(sx,ex), min(sy,ey), max(sy,ey) )
 		)]
 	
@@ -617,10 +618,12 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+		
 		points = self._attribute("points", [], element, None, self._parse_svg_points)
 		
 		return [(
-			Polyline(points, strokecolour, strokealpha, strokewidth, fillcolour, fillalpha) ,
+			Polyline(points, strokecolour, strokealpha, strokewidth, fillcolour, fillalpha, transforms),
 			( min([p[0] for p in points]), max([p[0] for p in points]), 
 				min([p[1] for p in points]), max([p[1] for p in points]) )
 		)]
@@ -637,10 +640,12 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)		
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)		
 		
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+		
 		points = self._attribute("points", [], element, None, self._parse_svg_points)
 		
 		return [(
-			Polygon(points, strokecolour, strokealpha, strokewidth, fillcolour, fillalpha),
+			Polygon(points, strokecolour, strokealpha, strokewidth, fillcolour, fillalpha, transforms),
 			( min([p[0] for p in points]), max([p[0] for p in points]),
 				min([p[1] for p in points]), max([p[1] for p in points]) )
 		)]
@@ -657,6 +662,8 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)		
 		
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+		
 		x = self._attribute("x", 0.0, element, None, float)
 		y = self._attribute("y", 0.0, element, None, float)
 
@@ -664,7 +671,8 @@ class SvgReader(object):
 		height = self._attribute("height", 1.0, element, None, float)
 		
 		return [(
-			 Rectangle((x,y),(width,height),strokecolour,strokealpha,strokewidth,fillcolour,fillalpha),
+			 Rectangle((x,y),(width,height),strokecolour,strokealpha,strokewidth,fillcolour,
+			 	fillalpha,transforms),
 			 ( x, x+width, y, y+height )
 		)]
 	
@@ -680,13 +688,15 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+		
 		cx = self._attribute("cx", 0.0, element, None, float)
 		cy = self._attribute("cy", 0.0, element, None, float)
 		
 		radius = self._attribute("r", 1.0, element, None, float)
 		
 		return [(
-			Circle((cx,cy),radius,strokecolour,strokealpha,strokewidth,fillcolour,fillalpha),
+			Circle((cx,cy),radius,strokecolour,strokealpha,strokewidth,fillcolour,fillalpha,transforms),
 			( cx-radius, cx+radius, cy-radius, cy+radius ) 
 		)]
 	
@@ -702,6 +712,8 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+		
 		cx = self._attribute("cx", 0.0, element, None, float)
 		cy = self._attribute("cy", 0.0, element, None, float)
 		
@@ -709,7 +721,8 @@ class SvgReader(object):
 		rady = self._attribute("ry", 1.0, element, None, float)
 		
 		return [( 
-			Ellipse((cx,cy),(radx,rady),strokecolour,strokealpha,strokewidth,fillcolour,fillalpha),
+			Ellipse((cx,cy),(radx,rady),strokecolour,strokealpha,strokewidth,fillcolour,
+				fillalpha,transforms),
 			( cx-radx, cx+radx, cy-rady, cy+rady )
 		)]
 
@@ -725,10 +738,12 @@ class SvgReader(object):
 		fillcolour = self._attribute("fill", Inherited, element, style, self._parse_svg_colour)
 		fillalpha = self._attribute("fill-opacity", Inherited, element, style, float)
 		
+		transforms = self._attribute("transform", [], element, None, self._parse_svg_transforms)
+		
 		segments,limits = self._attribute("d", ([],(0,0,0,0)), element, None, self._parse_svg_path)
 		
 		return [(
-			Path(segments,strokecolour,strokealpha,strokewidth,fillcolour,fillalpha), 
+			Path(segments,strokecolour,strokealpha,strokewidth,fillcolour,fillalpha,transforms), 
 			limits,
 		)]
 
@@ -1067,7 +1082,7 @@ class PygameRenderer(object):
 		fill_colour = context.fill_colour if group.fillcolour==Inherited else group.fillcolour
 		fill_alpha = context.fill_alpha if group.fillalpha==Inherited else group.fillalpha
 					
-		transforms = context.transforms + group.transforms
+		transforms = group.transforms + context.transforms
 		
 		# establish new inherited properties
 		context = InheritContext(stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms)
@@ -1080,10 +1095,12 @@ class PygameRenderer(object):
 		stroke_alpha = context.stroke_alpha if line.strokealpha==Inherited else line.strokealpha		
 			
 		stroke_width = context.stroke_width if line.strokewidth==Inherited else line.strokewidth
-			
-		matrix = self._transform(self._matrix(self._centre([line.start,line.end],centre)),context.transforms)
-		
+
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
+			
+		transforms = line.transforms + context.transforms
+			
+		matrix = self._centre(self._transform(self._matrix([line.start,line.end]),transforms),centre)		
 		
 		return [ PygamePolygon(stroke_width,stroke,None,False,matrix) ]
 			
@@ -1100,7 +1117,9 @@ class PygameRenderer(object):
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
 		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
 		
-		matrix = self._transform(self._matrix(self._centre(polyline.points,centre)),context.transforms)
+		transforms = polyline.transforms + context.transforms
+		
+		matrix = self._centre(self._transform(self._matrix(polyline.points),transforms),centre)
 		
 		return [ PygamePolygon(stroke_width,stroke,fill,False,matrix) ]
 			
@@ -1117,7 +1136,9 @@ class PygameRenderer(object):
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
 		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
 			
-		matrix = self._transform(self._matrix(self._centre(polygon.points,centre)),context.transforms)
+		transforms = polygon.transforms + context.transforms
+			
+		matrix = self._centre(self._transform(self._matrix(polygon.points,centre),transforms),centre)
 		
 		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
 					
@@ -1134,11 +1155,13 @@ class PygameRenderer(object):
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
 		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
 			
+		transforms = rectangle.transforms + context.transforms
+			
 		t = rectangle.topleft
 		s = rectangle.size
-		matrix = self._transform(self._matrix(self._centre([
+		matrix = self._centre(self._transform(self._matrix([
 			(t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1])
-		],centre)),context.transforms)
+		]),transforms),centre)
 		
 		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
 			
@@ -1155,6 +1178,8 @@ class PygameRenderer(object):
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
 		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None			
 	
+		transforms = circle.transforms + context.transforms
+	
 		# create a 32-sided polygon
 		points = []
 		for i in range(32):
@@ -1162,7 +1187,7 @@ class PygameRenderer(object):
 				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/32*i),
 				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/32*i)
 			))
-		matrix = self._transform(self._matrix(self._centre(points,centre)),context.transforms)
+		matrix = self._centre(self._transform(self._matrix(points),transforms),centre)
 		
 		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
 	
@@ -1179,6 +1204,8 @@ class PygameRenderer(object):
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
 		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
 	
+		transforms = ellipse.transforms + context.transforms
+	
 		# create a 32-sided polygon
 		points = []
 		for i in range(32):
@@ -1186,7 +1213,7 @@ class PygameRenderer(object):
 				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/32*i),
 				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/32*i)
 			))	
-		matrix = self._transforms(self._matrix(self._centre(points,centre)),context.transforms)
+		matrix = self._centre(self._transforms(self._matrix(points),transforms),centre)
 			
 		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
 	
@@ -1203,6 +1230,8 @@ class PygameRenderer(object):
 		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
 		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
 			
+		transforms = path.transforms + context.transforms
+			
 		# TODO: implement sub-paths properly i.e. donut shapes (wtf?)
 		
 		pcontext = PathContext()
@@ -1211,7 +1240,7 @@ class PygameRenderer(object):
 			hname = "_convert_"+type(seg).__name__
 			getattr(self,hname)(seg, pcontext)
 					
-		matrix = self._transform(self._matrix(self._centre(pcontext.points,centre)),context.transforms)
+		matrix = self._centre(self._transform(self._matrix(pcontext.points),transforms),centre)
 
 		return [ PygamePolygon(stroke_width,stroke,fill,pcontext.closed,matrix) ]
 			
@@ -1347,9 +1376,13 @@ class PygameRenderer(object):
 			[	0.0,					0.0,					1.0						]
 		]) * pointmatrix
 		
-	def _centre(self,points,centre):
+	def _centre(self,matrix,centre):
 		"convert from top-left origin to given origin"
-		return [[v-centre[i] for i,v in enumerate(p)] for p in points]
+		return mu.Matrix([
+			[	1.0,	0.0,	-centre[0]	],
+			[	0.0,	1.0,	-centre[1]	],
+			[	0.0,	0.0,	1.0			]	
+		]) * matrix
 			
 	def _colour(self,val):
 		"convert from (1.0,1.0,1.0) format colour to (255,255,255)"
@@ -1405,34 +1438,30 @@ if __name__ == "__main__":
 	import mrf.trees as trees
 	
 	v = load(sys.argv[1])
-	"""print v.size
-	for c in v.components:
-		print "\t"+str(c)"""
 		
-	def treedisplay(x):
-		return type(x).__name__
-	
-	def treebranches(x):
-		if type(x)==Vector:
-			return x.components
-		elif type(x)==Group:
-			return [x.transforms,x.components]
-		elif type(x)==list:
-			return list
-		elif type(x)==Path:
-			return x.segments
-		else:
-			return []						
-		
-	print trees.draw_tree(v,branchstrategy=treebranches,displaystrategy=treedisplay)
-	
 	pygame.init()
 	screen = pygame.display.set_mode((640,480))
 	clock = pygame.time.Clock()
 	renderer = make_renderer(RENDERER_PYGAME)
 	font = pygame.font.Font(None,32)
 	a = 0.0
+
+	def branches(x):
+		if type(x) == list:
+			return x
+		else:
+			b = []
+			for a in ("components","transforms","segments"):
+				if hasattr(x,a):
+					b.append(getattr(x,a))
+			return b
+
+	print trees.draw_tree(v,displaystrategy=lambda x: type(x).__name__,branchstrategy=branches)
 	
+	renderer.cache(v)
+	for p in renderer._cache[v]:
+		print p.point_matrix
+		
 	while True:
 	
 		for event in pygame.event.get():
