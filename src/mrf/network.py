@@ -75,6 +75,15 @@ class NetworkThread(threading.Thread):
 			stopping = False
 		)
 
+	def run(self):
+		"""	
+		Overidden from Thread
+		"""
+		while True:
+			with self.stopping_lock:
+				if self.stopping:
+					break
+
 	def stop(self):
 		"""	
 		May be used to stop this network thread. Blocks until the thread has stopped
@@ -83,7 +92,8 @@ class NetworkThread(threading.Thread):
 		"""
 		with self.stopping_lock:
 			self.stopping = True
-		self.join()
+		if self.is_alive():
+			self.join()
 	
 	def handle_network_error(self, error_info):
 		"""	
@@ -284,26 +294,43 @@ class Server(Node, NetworkThread):
 		self.next_id += 1
 		return id
 
-	def run(self):
+	def start(self):
 		"""	
-		Overridden from Thread - runs the server, listening on the specified port for 
-		new clients connecting. For each new client a client handler of the specified 
-		type is created in a new thread.
+		Starts the server. Overidden from NetworkThread
 		"""
-			
 		try:
+			# open listen socket
 			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			self.listen_socket.setblocking(False)
 			self.listen_socket.bind((socket.gethostname(),self.port))
 			self.listen_socket.listen(1)
 		
+			# initialise variables
 			self.next_id = 0
 			with self.handlers_lock:
 				self.handlers = {}
 			with self.node_groups_lock:
 				self.node_groups = TagLookup()
-				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
+				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)					
 		
+			# begin running in thread
+			NetworkThread.start(self)
+		
+		except:		
+			# close socket
+			if not self.listen_socket is None:
+				self.listen_socket.close()	
+				
+			raise
+				
+
+	def run(self):
+		"""	
+		Overridden from NetworkThread - runs the server, listening on the specified port for 
+		new clients connecting. For each new client a client handler of the specified 
+		type is created in a new thread.
+		"""
+		try:
 			while True:				
 				# exit loop if shutting down
 				with self.stopping_lock:
@@ -352,17 +379,6 @@ class Server(Node, NetworkThread):
 	
 	def handle_EvtClientDeparted(self, event):
 		pass
-	
-	def stop(self):
-		"""	
-		Shuts down the server, closing all client connections and terminating 
-		the thread.
-		"""
-		with self.stopping_lock:
-			self.stopping = True
-					
-		# wait for thread to end
-		self.join()
 		
 	def stop_handlers(self):
 		"""	
@@ -618,12 +634,18 @@ class ClientHandler(SocketListener):
 	def get_connected_to(self):
 		return self.id
 
+	def start(self):
+		"""	
+		Starts the client handler. Overidden from SocketListener
+		"""
+		self.server.client_arrived(self.id)
+		SocketListener.start(self)
+
 	def run(self):
 		"""	
 		Overidden from SocketListener. Invoked when thread is started.	
 		"""
-		self.server.client_arrived(self.id)	
-		try:	
+		try:				
 			self.listen_on_socket()
 		finally:
 			self.server.client_departed(self.id)
@@ -664,10 +686,9 @@ class Client(SocketListener, Node):
 			socket = None
 		)
 
-	def run(self):
+	def start(self):
 		"""	
-		Overidden from SocketListener. Connects on socket then listens for
-		messages. Invoked when thread is started.
+		Starts the client. Overidden from SocketListener
 		"""
 		try:
 			with self.socket_lock:
@@ -679,6 +700,23 @@ class Client(SocketListener, Node):
 				self.socket.setblocking(False)
 				
 			self.after_connect()
+			
+			# start running in thread
+			SocketListener.start(self)
+			
+		except:
+			# check socket is closed, in case there was an error connecting
+			with self.socket_lock:
+				if not self.socket is None:
+					self.socket.close()						
+			raise
+
+	def run(self):
+		"""	
+		Overidden from SocketListener. Listens for
+		messages on socket. Invoked when thread is started.
+		"""
+		try:				
 			self.listen_on_socket()
 		
 		except socket.error as e:
@@ -846,7 +884,8 @@ class JsonEncoder(object):
 	def _encode_val(self, val):
 		"""	
 		Use special encoding of dictionary keys because json format only allows string
-		keys in objects. And encoding of strings because json only uses unicode.
+		keys in objects. And encoding of strings because json converts string/unicode to
+		whatever it sees fit.
 		"""
 		if isinstance(val, basestring):
 			return self._val_to_unicode(val)
@@ -859,7 +898,7 @@ class JsonEncoder(object):
 			return val
 		
 	def _decode_val(self, val):
-		if isinstance(val, unicode):
+		if isinstance(val, basestring):
 			return self._val_from_unicode(val)
 		elif isinstance(val, dict):
 			newd = {}
@@ -1002,6 +1041,7 @@ class MsgChat(Message):
 
 class GameFullError(Exception): pass
 
+class GameClosedError(Exception): pass
 
 class NameTakenError(Exception): pass
 
@@ -1093,6 +1133,10 @@ class GameClientHandler(ClientHandler, StateMachineBase):
 				self.machine.server.send(MsgRejectConnect([self.machine.id], [], 
 					Server.SERVER, "The game is full"))
 				
+			except GameClosedError:
+				self.machine.server.send(MsgRejectConnect([self.machine.id], [],
+					Server.SERVER, "The game is closed"))
+				
 			except NameTakenError:
 				self.machine.server.send(MsgRejectConnect([self.machine.id], [],
 					Server.SERVER, "Your player name is already taken"))
@@ -1132,6 +1176,7 @@ class GameServer(GameNode, Server):
 		GameNode.__init__(self)
 		Server.__init__(self, client_factory, port)
 		self.max_players = max_players
+		self.closed = False
 
 	def send(self, message):
 		"""	
@@ -1251,6 +1296,14 @@ class GameServer(GameNode, Server):
 				# raise exception
 				raise GameFullError()
 			
+			elif self.closed:
+			
+				# add event as application hook
+				self.event_queue.put(EvtPlayerRejected(id,"The game is closed"))
+				
+				# raise exception
+				raise GameClosedError()
+			
 			elif info["name"] in self.get_player_names():
 				
 				# add event as application hook
@@ -1279,6 +1332,12 @@ class GameServer(GameNode, Server):
 		"""
 		with self.handlers_lock:		
 			return dict([(id,self.handlers[id].get_player_info()) for id in self.get_players()])
+		
+	def is_closed(self):
+		return self.closed
+
+	def set_closed(self, val):
+		self.closed = val
 		
 	def stop(self):
 		"""	
@@ -1898,7 +1957,28 @@ if __name__ == "__main__":
 				self.assertEquals(1, len(server_handler.messages))
 				self.assertEquals(EvtPlayerAccepted, server_handler.messages[-1].__class__)
 			
-				# add second player with taken name
+				# close game, attempt to add player
+				server.set_closed(True)
+				clientB0_handler = EventHandler()
+				clientB0 = GameClient({"name":"testerA1"},"localhost", 4447, encoder)
+				clientB0.start()
+				time.sleep(0.1)
+				
+				for i in range(3):
+					server.process_events(server_handler)
+					clientA.process_events(clientA_handler)
+					clientB0.process_events(clientB0_handler)
+					time.sleep(0.1)
+					
+				# player should have been rejected because game is closed
+				self.assertEquals(1, server.get_num_players())
+				self.assertEquals(1, len(clientB0_handler.messages))
+				self.assertEquals(MsgRejectConnect,clientB0_handler.messages[-1].__class__)
+				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
+			
+				# reopen game, add second player with taken name
+				server.set_closed(False)
 				clientB1_handler = EventHandler()
 				clientB1 = GameClient({"name":"testerA"},"localhost", 4447,  encoder)
 				clientB1.start()
@@ -1907,6 +1987,7 @@ if __name__ == "__main__":
 				for i in range(3):
 					server.process_events(server_handler)
 					clientA.process_events(clientA_handler)
+					clientB0.process_events(clientB0_handler)
 					clientB1.process_events(clientB1_handler)
 					time.sleep(0.1)
 			
@@ -1914,7 +1995,7 @@ if __name__ == "__main__":
 				self.assertEquals(1, server.get_num_players())
 				self.assertEquals(1, len(clientB1_handler.messages))
 				self.assertEquals(MsgRejectConnect,clientB1_handler.messages[-1].__class__)
-				self.assertEquals(2, len(server_handler.messages))
+				self.assertEquals(3, len(server_handler.messages))
 				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
 			
 				# add second player with unique name
@@ -1926,20 +2007,22 @@ if __name__ == "__main__":
 				for i in range(3):
 					server.process_events(server_handler)
 					clientA.process_events(clientA_handler)
+					clientB0.process_events(clientB0_handler)
+					clientB1.process_events(clientB1_handler)
 					clientB2.process_events(clientB2_handler)
 					time.sleep(0.1)
 			
 				self.assertEquals(2, server.get_num_players())
-				self.assertEquals(3, len(server_handler.messages))
+				self.assertEquals(4, len(server_handler.messages))
 				self.assertEquals(EvtPlayerAccepted, server_handler.messages[-1].__class__)
 				self.assertEquals(2, len(clientA_handler.messages))
 				self.assertEquals(MsgPlayerConnect, clientA_handler.messages[-1].__class__)
-				self.assertEquals(2, clientA_handler.messages[-1].player_id)
+				self.assertEquals(clientB2.client_id, clientA_handler.messages[-1].player_id)
 				self.assertEquals("testerB", clientA_handler.messages[-1].player_info["name"])
 				self.assertEquals(1, len(clientB2_handler.messages))
 				self.assertEquals(MsgAcceptConnect, clientB2_handler.messages[-1].__class__)
 				self.assertTrue(clientB2_handler.messages[-1].players_info.has_key(0))
-				self.assertEquals("testerA", clientB2_handler.messages[-1].players_info[0]["name"])
+				self.assertEquals("testerA", clientB2_handler.messages[-1].players_info[clientA.client_id]["name"])
 			
 				# add third player
 				clientC_handler = EventHandler()
@@ -1962,12 +2045,14 @@ if __name__ == "__main__":
 				# third player should have been rejected because max is 2
 				self.assertEquals(1, len(clientC_handler.messages))
 				self.assertEquals(MsgRejectConnect,clientC_handler.messages[-1].__class__)
-				self.assertEquals(4, len(server_handler.messages))
+				self.assertEquals(5, len(server_handler.messages))
 				self.assertEquals(EvtPlayerRejected, server_handler.messages[-1].__class__)
 			
 			finally:
 				if clientA:
 					clientA.stop()
+				if clientB0:
+					clientB0.stop()
 				if clientB1:
 					clientB1.stop()
 				if clientB2:

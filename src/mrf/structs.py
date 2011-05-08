@@ -34,6 +34,8 @@ Contains data structures:
 """
 
 import copy
+import tarfile
+import os.path
 
 class TicketQueue(object):
 	"""	
@@ -174,10 +176,66 @@ class TagLookup(object):
 		return self.has_item(key)
 
 
+class ResourceBundle(object):
 
+	class FilesystemStrategy(object):
+		
+		def open(self):
+			pass
+		
+		def close(self):
+			pass
+		
+		def get(self, name):
+			return open(os.path.join(*name.split("/")),"r")
+		
+	class ArchiveStrategy(object):
+		
+		def __init__(self, filename):
+			self.filename = filename
+		
+		def open(self):
+			self.file = tarfile.open(self.filename,"r")
+			
+		def close(self):
+			if self.file:
+				self.file.close()
+		
+		def get(self, name):
+			return self.file.extractfile(name)
 
+	def __init__(self, filename, debug_mode=False):
+		self.filename = filename
+		self.is_open = False
+		self.debug_mode = debug_mode
+		if self.debug_mode:
+			self.strategy = ResourceBundle.FilesystemStrategy()
+		else:
+			self.strategy = ResourceBundle.ArchiveStrategy(self.filename) 
+		
+	def open(self):
+		if not self.is_open:
+			self.strategy.open()
+			self.is_open = True		
+	
+	def close(self):
+		if self.is_open:
+			self.strategy.close()
+			self.is_open = False
+			
+	def __enter__(self):
+		self.open()
+		return self
 
-
+	def __exit__(self, exc_type, exc_value, traceback):
+		self.close()
+		
+	def get(self, name):
+		return self.strategy.get(name)
+	
+	def __getitem__(self, name):
+		return self.get(name)
+	
 
 # -- Testing -----------------------------
 

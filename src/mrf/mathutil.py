@@ -657,7 +657,7 @@ def smooth_step(x):
 	return x*x * (3 - 2*x)
 	
 def smooth_steps(steps):
-	for i in range(steps):
+	for i in range(int(steps)):
 		x = float(i)/steps
 		yield smooth_step(x)
 	
