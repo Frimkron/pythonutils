@@ -1402,11 +1402,29 @@ if __name__ == "__main__":
 	import pygame.time
 	import pygame.event
 	import pygame.font
+	import mrf.trees as trees
 	
 	v = load(sys.argv[1])
-	print v.size
+	"""print v.size
 	for c in v.components:
-		print "\t"+str(c)
+		print "\t"+str(c)"""
+		
+	def treedisplay(x):
+		return type(x).__name__
+	
+	def treebranches(x):
+		if type(x)==Vector:
+			return x.components
+		elif type(x)==Group:
+			return [x.transforms,x.components]
+		elif type(x)==list:
+			return list
+		elif type(x)==Path:
+			return x.segments
+		else:
+			return []						
+		
+	print trees.draw_tree(v,branchstrategy=treebranches,displaystrategy=treedisplay)
 	
 	pygame.init()
 	screen = pygame.display.set_mode((640,480))
