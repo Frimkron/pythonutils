@@ -1138,7 +1138,7 @@ class PygameRenderer(object):
 			
 		transforms = polygon.transforms + context.transforms
 			
-		matrix = self._centre(self._transform(self._matrix(polygon.points,centre),transforms),centre)
+		matrix = self._centre(self._transform(self._matrix(polygon.points),transforms),centre)
 		
 		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
 					
@@ -1170,7 +1170,7 @@ class PygameRenderer(object):
 		stroke_colour = context.stroke_colour if circle.strokecolour==Inherited else circle.strokecolour
 		stroke_alpha = context.stroke_alpha if circle.strokealpha==Inherited else circle.strokealpha
 		
-		stroke_width = context.stroke_width if circle.strokewidth==Inherited else cicle.strokewidth
+		stroke_width = context.stroke_width if circle.strokewidth==Inherited else circle.strokewidth
 
 		fill_colour = context.stroke_colour	if circle.fillcolour==Inherited else circle.fillcolour
 		fill_alpha = context.stroke_alpha if circle.fillalpha==Inherited else circle.fillalpha
@@ -1213,7 +1213,7 @@ class PygameRenderer(object):
 				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/32*i),
 				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/32*i)
 			))	
-		matrix = self._centre(self._transforms(self._matrix(points),transforms),centre)
+		matrix = self._centre(self._transform(self._matrix(points),transforms),centre)
 			
 		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
 	
