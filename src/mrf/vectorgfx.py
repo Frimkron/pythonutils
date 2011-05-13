@@ -953,6 +953,7 @@ class PygamePolygon(object):
 		self.fill_colour = fill_colour
 		self.closed = closed
 		self.point_matrix = point_matrix
+
 		
 class PygameMatrixWrapper(object):
 	"Wraps a matrix to behave as a point sequence"
@@ -976,6 +977,7 @@ class PathContext(object):
 		self.closed = False
 		self.points = []
 
+
 class InheritContext(object):
 	"Object used to store properties inherited from parent components when converting"
 	def __init__(self,stroke_colour=None,stroke_alpha=1.0,stroke_width=1.0,
@@ -986,6 +988,7 @@ class InheritContext(object):
 		self.fill_colour = fill_colour
 		self.fill_alpha = fill_alpha
 		self.transforms = [] if transforms is None else transforms
+
 
 class PygameRenderer(object):
 	"""	
@@ -1389,6 +1392,69 @@ class PygameRenderer(object):
 		return [int(x*255) for x in val] if val is not None else None
 
 
+class OpenGLRenderer(object):
+
+	def __init__(self,capabilities):
+		# import opengl
+		import OpenGL.GL as GL
+		self._cache = {}
+
+	def render(self, target, img, pos, scale=1.0, rotation=0.0, stroke_colour=None, fill_colour=None):
+		"""	
+		Renders the given vector image. It is assumed that an OpenGL context has been established.
+		
+		Parameters:
+			target			Not used
+			img				The vector image
+			pos				2-tuple containing the x and y to draw at
+			scale			Float indicating the scale factor
+			rotation		Rotation to draw at, in radians
+			stroke_colour	The colour to draw the image in
+			fill_colour		Not used
+		"""
+		
+		if not img in self._cache:
+			self.cache(img)
+		
+		if stroke_colour is None:
+			stroke_colour = (0,0,0)
+		
+		# retrieve the drawlist	
+		drawlist = self._cache[img]
+		
+		# push new matrix (faster than loadIdentity)
+		GL.glPushMatrix()
+		
+		# build transform stack
+		GL.glTranslatef(pos[0], pos[1], 0.0)
+		GL.glRotatef(math.degrees(rotation), 0.0, 0.0, 1.0)
+		GL.glScalef(scale, scale, 1.0)
+		
+		# set stroke colour
+		GL.glColor4f(stroke_colour[0], stroke_colour[1], stroke_colour[2], 1.0)
+		
+		# draw the drawlist
+		GL.glCallList(drawlist)		
+		
+		# pop matrix
+		GL.glPopMatrix()
+		
+	def cache(self, img):
+		self._cache[img] = self._convert(img)
+		
+	def _convert(self, img):
+		drawlist = GL.glGenLists(1)
+		GL.glNewList(drawlist, GL.GL_COMPILE)
+		GL.glBegin(GL.GL_LINE_LOOP)
+		
+		
+				
+		GL.glEnd()
+		GL.glEndList()
+		
+		return drawlist
+		
+
 class CapabilityError(Exception):
 	"Raised if unsupported capability is requested of renderer"
 	pass
@@ -1416,11 +1482,20 @@ def make_renderer(type, capabilities=None):
 						Use None for all available capabilites for the given type.
 	"""
 	if type == RENDERER_PYGAME:
-		if capabilities is not None and (
-				capabilities & CAP_FILL_ALPHA != 0
-				or capabilities & CAP_STROKE_ALPHA != 0 ):
+		if( capabilities is not None 
+				and any([capabilities & c != 0 for c in (CAP_FILL_ALPHA,CAP_STROKE_ALPHA)]) ):
 			raise CapabilityError("CAP_FILL_ALPHA and CAP_STROKE_ALPHA not supported by RENDERER_PYGAME")
 		return PygameRenderer()		
+		
+	elif type == RENDERER_OPENGL:
+	
+		if( capabilities is not None
+				and any([capabilities & c != 0 for c in (CAP_FILL,CAP_FILL_ALPHA,CAP_MULTI_STROKE_COL,
+					CAP_MULTI_STROKE_WIDTH,CAP_MULTI_FILL_COL) ]) ):
+			raise CapabilityError("CAP_FILL, CAP_FILL_ALPHA, CAP_MULTI_STROKE_COL, "
+				+"CAP_MULTI_STROKE_WIDTH, CAP_MULTI_FILL_COL not supported by RENDERER_OPENGL")
+		return OpenGLRenderer(capabilities)
+	
 	else:
 		raise ValueError("Unknown renderer type %s" % type)
 
@@ -1436,13 +1511,27 @@ if __name__ == "__main__":
 	import pygame.event
 	import pygame.font
 	import mrf.trees as trees
+	import OpenGL.GL as GL
 	
 	v = load(sys.argv[1])
 		
 	pygame.init()
-	screen = pygame.display.set_mode((640,480))
+	#screen = pygame.display.set_mode((640,480))
+	screen = pygame.display.set_mode((640,480),
+		pygame.locals.OPENGL|pygame.locals.HWSURFACE|pygame.locals.DOUBLEBUF)
+	GL.glClearColor(0,0.5,0.5,1.0)
+	GL.glViewport(0,0,640,480)
+	GL.glMatrixMode(GL.GL_PROJECTION)
+	#GL.glLoadIdentity()
+	GL.glOrtho(0,640,480,0,-1,1)
+	GL.glMatrixMode(GL.GL_MODELVIEW)
+	GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
+	GL.glEnable(GL.GL_LINE_SMOOTH)
+	GL.glLoadIdentity()
+	
 	clock = pygame.time.Clock()
-	renderer = make_renderer(RENDERER_PYGAME)
+	#renderer = make_renderer(RENDERER_PYGAME)
+	renderer = make_renderer(RENDERER_OPENGL)
 	font = pygame.font.Font(None,32)
 	a = 0.0
 
@@ -1458,9 +1547,9 @@ if __name__ == "__main__":
 
 	print trees.draw_tree(v,displaystrategy=lambda x: type(x).__name__,branchstrategy=branches)
 	
-	renderer.cache(v)
-	for p in renderer._cache[v]:
-		print p.point_matrix
+	#renderer.cache(v)
+	#for p in renderer._cache[v]:
+	#	print p.point_matrix
 		
 	while True:
 	
@@ -1470,7 +1559,8 @@ if __name__ == "__main__":
 			elif event.type == pygame.locals.KEYDOWN and event.key == pygame.locals.K_ESCAPE:
 				sys.exit()
 	
-		screen.fill((0,128,128))
+		#screen.fill((0,128,128))
+		GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 		
 		renderer.render(screen, v, (160,120), 0.25, 0.0)
 		renderer.render(screen, v, (480,120), 0.5, 0.2, stroke_colour=(1,0,0,1))
@@ -1482,7 +1572,7 @@ if __name__ == "__main__":
 		renderer.render(screen, v, (320,240), scale, a)
 		
 		fpstext = font.render("fps: %d" % clock.get_fps(), True, (255,255,255))
-		screen.blit(fpstext,(10,10))
+		#screen.blit(fpstext,(10,10))
 		
 		pygame.display.flip()
 		clock.tick(60)
