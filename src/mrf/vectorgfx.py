@@ -1073,7 +1073,10 @@ class PointMatrixPolygonConverter(object):
 		
 		# convert segments to point list
 		for seg in path.segments:
-			self.cdispatcher.dispatch(seg,pcontext)
+			try:
+				self.cdispatcher.dispatch(seg,pcontext)
+			except DispatchLookupError:
+				raise CapabilityError("Cannot render %s path segment" % type(seg).__name__)
 		
 		pmp = self._make_pmp(icontext,path.strokecolour,path.strokealpha,path.strokewidth,
 			path.fillcolour,path.fillalpha,pcontext.closed,path.transforms,pcontext.points,centre)	
@@ -1165,45 +1168,48 @@ class PointMatrixPolygonConverter(object):
 	def _transform(self,pointmatrix,transforms):
 		"Transform point matrix according to list of transform commands"	
 		for t in transforms:
-			pointmatrix = self.tdispatcher.dispatch(pointmatrix,t)
+			try:
+				pointmatrix = self.tdispatcher.dispatch(t,pointmatrix)
+			except DispatchLookupError:
+				raise CapabilityError("%s transform not implemented" % type(t).__name__)
 		return pointmatrix
 	
-	def _transform_TranslateTransform(self,pointmatrix,translation):
+	def _transform_TranslateTransform(self,translation,pointmatrix):
 		return mu.Matrix([
 			[	1.0,	0.0,	translation.trans[0]	],
 			[	0.0,	1.0,	translation.trans[1]	],
 			[	0.0,	0.0,	1.0						]
 		]) * pointmatrix
 		
-	def _transform_RotateTransform(self,pointmatrix,rotation):
+	def _transform_RotateTransform(self,rotation,pointmatrix):
 		return mu.Matrix([
 			[	math.cos(rotation.angle),	-math.sin(rotation.angle),	0.0	],
 			[	math.sin(rotation.angle),	math.cos(rotation.angle),	0.0	],
 			[	0.0,						0.0,						1.0	]
 		]) * pointmatrix
 		
-	def _transform_ScaleTransform(self,pointmatrix,scale):
+	def _transform_ScaleTransform(self,scale,pointmatrix):
 		return mu.Matrix([
 			[	scale.scale[0],	0.0,			0.0	],
 			[	0.0,			scale.scale[1],	0.0	],
 			[	0.0,			0.0,			1.0	]
 		]) * pointmatrix
 		
-	def _transform_XSkewTransform(self,pointmatrix,skew):
+	def _transform_XSkewTransform(self,skew,pointmatrix):
 		return mu.Matrix([
 			[	1.0,	math.tan(skew.angle),	0.0	],
 			[	0.0,	1.0,					0.0	],
 			[	0.0,	0.0,					1.0	]
 		]) * pointmatrix
 		
-	def _transform_YSkewTransform(self,pointmatrix,skew):
+	def _transform_YSkewTransform(self,skew,pointmatrix):
 		return mu.Matrix([
 			[	1.0,					0.0,	0.0	],
 			[	math.tan(skew.angle),	1.0,	0.0	],
 			[	0.0,					0.0,	1.0	]
 		]) * pointmatrix
 		
-	def _transform_MatrixTransform(self,pointmatrix,transform):
+	def _transform_MatrixTransform(self,transform,pointmatrix):
 		return mu.Matrix([
 			[	transform.cols[0][0],	transform.cols[1][0],	transform.cols[2][0]	],
 			[	transform.cols[0][1],	transform.cols[1][1],	transform.cols[2][1]	],
@@ -1395,16 +1401,23 @@ class OpenGLRenderer(object):
 		self._cache[img] = self._convert(img)
 		
 	def _convert(self, img):
-
-		# TODO: create pmp list
-	
+		
 		drawlist = GL.glGenLists(1)
 		GL.glNewList(drawlist, GL.GL_COMPILE)
-		GL.glBegin(GL.GL_LINE_LOOP)
 		
-		# TODO: iterate over pmp list, converting to draw commands
+		for pmp in PointMatrixPolygon.convert(img):
+			if pmp.stroke_colour is not None and pmp.stroke_width > 0:
+		
+				GL.glColor4f(*pmp.stroke_colour)
+				GL.glLineWidth(pmp.stroke_width)
+				GL.glBegin(GL.GL_LINE_LOOP if pmp.closed else GL.GL_LINE_STRIP)
+			
+				for x,y in [(pmp.point_matrix[0][c],pmp.point_matrix[1][c]) 
+							for c in xrange(pmp.point_matrix.cols)]:
+					GL.glVertex2f(x,y)
+			
+				GL.glEnd()			
 				
-		GL.glEnd()
 		GL.glEndList()
 		
 		return drawlist
@@ -1471,21 +1484,21 @@ if __name__ == "__main__":
 	v = load(sys.argv[1])
 		
 	pygame.init()
-	screen = pygame.display.set_mode((640,480))
-	#screen = pygame.display.set_mode((640,480),
-	#	pygame.locals.OPENGL|pygame.locals.HWSURFACE|pygame.locals.DOUBLEBUF)
-	#GL.glClearColor(0,0.5,0.5,1.0)
-	#GL.glViewport(0,0,640,480)
-	#GL.glMatrixMode(GL.GL_PROJECTION)
-	#GL.glOrtho(0,640,480,0,-1,1)
-	#GL.glMatrixMode(GL.GL_MODELVIEW)
-	#GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
-	#GL.glEnable(GL.GL_LINE_SMOOTH)
-	#GL.glLoadIdentity()
+	#screen = pygame.display.set_mode((640,480))
+	screen = pygame.display.set_mode((640,480),
+		pygame.locals.OPENGL|pygame.locals.HWSURFACE|pygame.locals.DOUBLEBUF)
+	GL.glClearColor(0,0.5,0.5,1.0)
+	GL.glViewport(0,0,640,480)
+	GL.glMatrixMode(GL.GL_PROJECTION)
+	GL.glOrtho(0,640,480,0,-1,1)
+	GL.glMatrixMode(GL.GL_MODELVIEW)
+	GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
+	GL.glEnable(GL.GL_LINE_SMOOTH)
+	GL.glLoadIdentity()
 	
 	clock = pygame.time.Clock()
-	renderer = make_renderer(RENDERER_PYGAME)
-	#renderer = make_renderer(RENDERER_OPENGL)
+	#renderer = make_renderer(RENDERER_PYGAME)
+	renderer = make_renderer(RENDERER_OPENGL)
 	font = pygame.font.Font(None,32)
 	a = 0.0
 
@@ -1501,9 +1514,9 @@ if __name__ == "__main__":
 
 	print trees.draw_tree(v,displaystrategy=lambda x: type(x).__name__,branchstrategy=branches)
 	
-	renderer.cache(v)
-	for p in renderer._cache[v]:
-		print p.point_matrix
+	#renderer.cache(v)
+	#for p in renderer._cache[v]:
+	#	print p.point_matrix
 		
 	while True:
 	
@@ -1513,8 +1526,8 @@ if __name__ == "__main__":
 			elif event.type == pygame.locals.KEYDOWN and event.key == pygame.locals.K_ESCAPE:
 				sys.exit()
 	
-		screen.fill((0,128,128))
-		#GL.glClear(GL.GL_COLOR_BUFFER_BIT)
+		#screen.fill((0,128,128))
+		GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 		
 		renderer.render(screen, v, (160,120), 0.25, 0.0)
 		renderer.render(screen, v, (480,120), 0.5, 0.2, stroke_colour=(1,0,0,1))
@@ -1526,7 +1539,7 @@ if __name__ == "__main__":
 		renderer.render(screen, v, (320,240), scale, a)
 		
 		fpstext = font.render("fps: %d" % clock.get_fps(), True, (255,255,255))
-		screen.blit(fpstext,(10,10))
+		#screen.blit(fpstext,(10,10))
 		
 		pygame.display.flip()
 		clock.tick(60)
