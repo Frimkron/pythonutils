@@ -32,6 +32,7 @@ import xml.dom.minidom as mdom
 import xml.dom as dom
 import re
 import mrf.mathutil as mu
+from mrf.structs import Dispatcher
 
 
 RENDERER_PYGAME = "pygame"
@@ -939,21 +940,70 @@ class SvgReader(object):
 				
 """
 
-class PygamePolygon(object):
+class PointListConverter(object):
+
+	def from_line(self, line):
+		return [line.start, line.end]
+		
+	def from_polyline(self, polyline):
+		return polyline.points
+		
+	def from_polygon(self, polygon):
 	
+		
+class PointListPolygon(object):
+
 	stroke_width = 0
 	stroke_colour = None
 	fill_colour = None
-	point_matrix = None
+	point_list = None
 	closed = False
 	
-	def __init__(self,stroke_width,stroke_colour,fill_colour,closed,point_matrix):
+	def __init__(self,stroke_width,stroke_colour,fill_colour,closed,point_list):
 		self.stroke_width = stroke_width
 		self.stroke_colour = stroke_colour
 		self.fill_colour = fill_colour
 		self.closed = closed
-		self.point_matrix = point_matrix
+		self.point_list = point_list	
+		
+	@staticmethod
+	def from_vector(vector):
+		dispatcher = Dispatcher(Dispatcher,"_convert_%s")
+		# TODO
+		
+	@staticmethod
+	def _convert_Line(line):
+		return PointListPolygon(line.strokewidth,line.strokecolour,None,False,[line.start,line.end])
+		
+	@staticmethod
+	def _convert_Polyline(polyline):
+		return PointListPolygon(polyline.strokewidth,polyline.strokecolour,polyline.fillcolour,
+			False, polyline.points)
+			
+	@staticmethod
+	def _convert_Polygon(polygon):
+		return PointListPolygon(polygon.strokewidth,polygon.strokecolour,polygon.fillcolour,
+			True, polygon.points)
+			
+	@staticmethod
+	def _convert_Rectangle(rect):
+		t = rect.topleft
+		s = rect.size
+		return PointListPolygon(rect.strokewidth,rect.strokecolour,rect.fillcolour,True,
+			[ (t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1]) ] )
 
+
+class PygamePolygon(PointListPolygon):
+		
+	point_matrix = None
+	
+	def __init__(self,plpoly):
+		self.stroke_width = plpoly.stroke_width
+		self.stroke_colour = plpoly.stroke_colour
+		self.fill_colour = plpoly.fill_colour
+		self.closed = closed
+		self.point_matrix = None #TODO
+		
 		
 class PygameMatrixWrapper(object):
 	"Wraps a matrix to behave as a point sequence"
