@@ -235,6 +235,82 @@ class ResourceBundle(object):
 	
 	def __getitem__(self, name):
 		return self.get(name)
+
+
+class DispatchLookupError(Exception):
+	pass
+
+class Dispatcher(object):
+
+	# sequence of names from command object
+	# method from handler object
+
+	@staticmethod
+	def by_type(handler,pattern="_handle_%s"):
+	
+		def command(val):
+			return [pattern % t.__name__ for t in type(val).__mro__]
+			
+		lookup = Dispatcher._make_lookup_by_string(handler)
+			
+		return Dispatcher(handler,command,lookup)
+		
+	@staticmethod
+	def by_str(handler,pattern="_handle_%s"):
+		
+		def command(val):
+			return [ pattern % str(val) ]
+			
+		lookup = Dispatcher._make_lookup_by_string(handler)
+		
+		return Dispatcher(handler,command,lookup)
+		
+	@staticmethod	
+	def _make_lookup_by_string(handler):
+		# is it a dictionary?
+		try:
+			try:
+				handler["foo"]
+			except KeyError:
+				pass
+		except TypeError:
+			# make attribute lookup function
+			def lookup(val):
+				try:
+					return getattr(handler,val)
+				except AttributeError as e:
+					raise DispatchLookupError(e)
+			return lookup
+		else:
+			# make dictionary lookup function
+			def lookup(val):
+				try:
+					return handler[val]
+				except KeyError as e:
+					raise DispatchLookupError(e)
+			return lookup
+		
+	def __init__(self,handler,commstrat,lookupstrat):
+		self.commstrat = commstrat
+		self.lookupstrat = lookupstrat
+		
+	def dispatch(self,comm,*args,**kargs):
+		for n in self.commstrat(comm):
+			try:
+				f = self.lookupstrat(n)
+			except DispatchLookupError:
+				continue
+			return f(comm, *args,**kargs)
+		raise DispatchLookupError("Couldn't find function to dispatch to")
+		
+
+def type_dispatch(obj,args,kargs,handler,prefix="_handle_"):
+	for t in type(obj).__mro__:
+		try:
+			f = getattr(handler,prefix+t.__name__)
+		except AttributeError:
+			continue
+		return f(*args,**kargs)
 	
 
 # -- Testing -----------------------------
@@ -345,6 +421,149 @@ if __name__ == "__main__":
 			self.assertEquals(set(),t["dar"])
 			self.assertEquals(True, "foo" in t)
 			self.assertEquals(False, "hoo" in t)
+
+	class TestDispatcher(unittest.TestCase):
+	
+		def testByType(self):
+		
+			calls = []
+		
+			class Handler(object):
+				def _handle_Foo(self, foo):
+					calls.append("foo")
+				def _handle_Bar(self, bar):
+					calls.append("bar")
+					
+			class Foo(object):
+				pass
+			class Bar(object):
+				pass
+				
+			d = Dispatcher.by_type(Handler())
+			self.assertEquals(0,len(calls))
+			
+			d.dispatch(Foo())
+			self.assertEquals(1,len(calls))
+			self.assertEquals("foo",calls[0])
+			
+			d.dispatch(Bar())
+			self.assertEquals(2,len(calls))
+			self.assertEquals("bar",calls[1])
+			
+		def testByTypeReturn(self):
+		
+			class Handler(object):
+				def _handle_Foo(self,foo):
+					return "yawn"
+			class Foo(object):
+				pass
+				
+			d = Dispatcher.by_type(Handler())
+			r = d.dispatch(Foo())
+			self.assertEquals("yawn", r)
+			
+		def testByTypeSuperType(self):
+		
+			calls = []
+			
+			class Handler(object):
+				def _handle_Foo(self,foo):
+					calls.append("foo")
+				def _handle_Bar(self,bar):
+					calls.append("bar")
+					
+			class Foo(object):
+				pass
+			class Bar(Foo):
+				pass
+			class Weh(Foo):
+				pass
+				
+			d = Dispatcher.by_type(Handler())
+			self.assertEquals(0, len(calls))
+			
+			d.dispatch(Bar())
+			self.assertEquals(1, len(calls))
+			self.assertEquals("bar", calls[0])
+			
+			d.dispatch(Weh())
+			self.assertEquals(2, len(calls))
+			self.assertEquals("foo", calls[1])
+			
+		def testByTypeArgs(self):
+		
+			args = []
+			class Handler(object):
+				def _handle_Foo(self,foo,blah,yadda=1,meh=2):
+					args.extend([foo,blah,yadda,meh])
+			class Foo(object):
+				pass
+				
+			d = Dispatcher.by_type(Handler())
+			f = Foo()
+			d.dispatch(f,"lol",meh=42)
+			self.assertEquals([f,"lol",1,42],args)
+			
+		def testByTypePattern(self):
+		
+			calls = []
+			class Handler(object):
+				def do_Foo(self, foo):
+					calls.append(True)
+			class Foo(object):
+				pass
+				
+			d = Dispatcher.by_type(Handler(),"do_%s")
+			d.dispatch(Foo())
+			self.assertEquals(1, len(calls))
+			self.assertEquals(True, calls[0])
+			
+		def testByTypeDict(self):
+		
+			calls = []		
+			handler = {
+				"_handle_Foo": lambda foo: calls.append("foo"),
+				"_handle_Bar": lambda bar: calls.append("bar")
+			}
+			class Foo(object): pass
+			class Bar(object): pass
+			
+			d = Dispatcher.by_type(handler)
+			self.assertEquals(0, len(calls))
+			
+			d.dispatch(Foo())
+			self.assertEquals(1, len(calls))
+			self.assertEquals("foo", calls[0])
+			
+			d.dispatch(Bar())
+			self.assertEquals(2, len(calls))
+			self.assertEquals("bar", calls[1])
+			
+		def testByStr(self):
+			
+			calls = []
+			class Handler(object):
+				def _handle_phoo(self,val):
+					calls.append("ph")
+				def _handle_bagh(self,val):
+					calls.append("ba")
+			class Foo(object):
+				def __str__(self):
+					return "phoo"
+			class Bar(object):
+				def __str__(self):
+					return "bagh"
+					
+			d = Dispatcher.by_str(Handler())
+			self.assertEquals(0, len(calls))
+			
+			d.dispatch(Foo())
+			self.assertEquals(1, len(calls))
+			self.assertEquals("ph", calls[0])
+			
+			d.dispatch(Bar())
+			self.assertEquals(2, len(calls))
+			self.assertEquals("ba", calls[1])
 
 	unittest.main()
 	
