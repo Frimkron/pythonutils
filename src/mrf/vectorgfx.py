@@ -32,7 +32,7 @@ import xml.dom.minidom as mdom
 import xml.dom as dom
 import re
 import mrf.mathutil as mu
-from mrf.structs import Dispatcher
+from mrf.structs import Dispatcher, DispatchLookupError
 
 
 RENDERER_PYGAME = "pygame"
@@ -939,72 +939,331 @@ class SvgReader(object):
 		before the first invokation of render
 				
 """
-
-class PointListConverter(object):
-
-	def from_line(self, line):
-		return [line.start, line.end]
 		
-	def from_polyline(self, polyline):
-		return polyline.points
-		
-	def from_polygon(self, polygon):
+class PointMatrixPolygonConverter(object):
+	"""Converts a Vector object into a sequence of PointMatrixPolygon objects.
+		Coordinates are converted to be relative to the vector's centre."""
+
+	def __init__(self):
+		self.cdispatcher = Dispatcher.by_type(self,"_convert_%s")
+		self.tdispatcher = Dispatcher.by_type(self,"_transform_%s")
 	
+	def convert(self, vector):
+		clist = []
 		
-class PointListPolygon(object):
+		# establish centre point
+		centre = ( vector.size[0]/2.0, vector.size[1]/2.0 )
+		
+		# default inherited properties
+		icontext = InheritContext((0,0,0,1), 1.0, None, [])
+		
+		# convert image background rectangle
+		clist.extend(self._convert_Rectangle(
+			Rectangle((0,0),vector.size,vector.strokecolour,vector.strokealpha,
+				vector.strokewidth,vector.fillcolour,vector.fillalpha),
+			centre,icontext))
+		
+		# convert image components
+		clist.extend(self._convert_components(vector.components,centre,icontext))
+			
+		return clist
+	
+	def _inherit_properties(self,icontext,stroke_colour,stroke_alpha,stroke_width,
+			fill_colour,fill_alpha,transforms):
+		
+		if stroke_colour==Inherited: stroke_colour = icontext.stroke_colour
+		if stroke_alpha==Inherited: stroke_alpha = icontext.stroke_alpha
+		if stroke_width==Inherited: stroke_width = icontext.stroke_width
+		if fill_colour==Inherited: fill_colour = icontext.fill_colour
+		if fill_alpha==Inherited: fill_alpha = icontext.fill_alpha
+		
+		transforms = transforms + icontext.transforms
+		
+		return ( stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms )
+		
+	def _make_pmp(self,icontext,stroke_colour,stroke_alpha,stroke_width,
+			fill_colour,fill_alpha,closed,transforms,points,centre):
+			
+		# inhertit properties from context
+		stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms = self._inherit_properties(
+			icontext,stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms)
+		
+		# assemble colours
+		stroke = list(stroke_colour)+[stroke_alpha] if stroke_colour is not None else None
+		fill = list(fill_colour)+[fill_alpha] if fill_colour is not None else None
+					
+		# build and transform matrix and make it centre-relative
+		matrix = self._centre(self._transform(self._matrix(points),transforms),centre)
+
+		# return object
+		return PointMatrixPolygon(stroke_width,stroke,fill,closed,matrix)
+	
+	def _convert_components(self, components, centre, icontext):
+		clist = []
+		for c in components:
+			try:
+				clist.extend(self.cdispatcher.dispatch(c,centre,icontext))
+			except DispatchLookupError:
+				raise CapabilityError("Cannot render %s image component" % type(c).__name__)
+		return clist		
+	
+	def _convert_Group(self,group,centre,icontext):
+		
+		# inherit properties from context
+		stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms = self._inherit_properties(
+			icontext,group.strokecolour,group.strokealpha,group.strokewidth,group.fillcolour,group.fillalpha,
+			group.transforms)
+		
+		# establish new inherited properties
+		newicontext = InheritContext(stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms)
+		
+		# convert group's contents using new context
+		return self._convert_components(group.components,centre,newicontext)
+		
+	def _convert_Line(self,line, centre,icontext):
+		pmp = self._make_pmp(icontext,line.strokecolour,line.strokealpha,line.strokewidth,None,1.0,False,
+			line.transforms,[line.start,line.end],centre)
+		return [ pmp ]
+		
+	def _convert_Polyline(self,polyline, centre, icontext):
+		pmp = self._make_pmp(icontext,polyline.strokecolour,polyline.strokealpha,polyline.strokewidth,
+			polyline.fillcolour,polyline.fillalpha,False,polyline.transforms,polyline.points,centre)
+		return [ pmp ]
+					
+	def _convert_Polygon(self,polygon, centre, icontext): 
+		pmp = self._make_pmp(icontext,polygon.strokecolour,polygon.strokealpha,polygon.strokewidth,
+			polygon.fillcolour,polygon.fillalpha,True,polygon.transforms,polygon.points,centre)
+		return [ pmp ]	
+			
+	def _convert_Rectangle(self,rect, centre,icontext):
+		t = rect.topleft
+		s = rect.size
+		pmp = self._make_pmp(icontext,rect.strokecolour,rect.strokealpha,rect.strokewidth,
+			rect.fillcolour,rect.fillalpha,True,rect.transforms,
+			[ (t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1]) ], centre)
+		return [ pmp ]
+	
+	def _convert_Circle(self,circle,centre,icontext):	
+		# create a 32-sided polygon
+		points = []
+		for i in range(32):
+			points.append((
+				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/32*i),
+				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/32*i)
+			))
+		pmp = self._make_pmp(icontext,circle.strokecolour,circle.strokealpha,circle.strokewidth,
+			circle.fillcolour,circle.fillalpha,True,circle.transforms,points,centre)
+		return [ pmp ]
+	
+	def _convert_Ellipse(self,ellipse,centre,icontext):
+		# create a 32-sided polygon
+		points = []
+		for i in range(32):
+			points.append((
+				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/32*i),
+				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/32*i)
+			))	
+		pmp = self._make_pmp(icontext,ellipse.strokecolour,ellipse.strokealpha,ellipse.strokewidth,
+			ellipse.fillcolour,ellipse.fillalpha,True,ellipse.transforms,points,centre)			
+		return [ pmp ]
+	
+	def _convert_Path(self,path,centre,icontext):		
+		# TODO: implement sub-paths properly i.e. donut shapes (wtf?)		
+		pcontext = PathContext()
+		
+		# convert segments to point list
+		for seg in path.segments:
+			self.cdispatcher.dispatch(seg,pcontext)
+		
+		pmp = self._make_pmp(icontext,path.strokecolour,path.strokealpha,path.strokewidth,
+			path.fillcolour,path.fillalpha,pcontext.closed,path.transforms,pcontext.points,centre)	
+		return [ pmp ]
+	
+	def _convert_MoveSegment(self,seg,pcontext):
+		for x,y in seg.points:
+			if seg.relative and len(pcontext.points)>0:
+				pcontext.p[0] += x
+				pcontext.p[1] += y					
+			else:
+				pcontext.p[0] = x
+				pcontext.p[1] = y
+			pcontext.points.append(pcontext.p[:])					
+			
+	def _convert_LineSegment(self,seg,pcontext):
+		for x,y in seg.points:
+			if seg.relative:
+				pcontext.p[0] += x
+				pcontext.p[1] += y
+			else:
+				pcontext.p[0] = x
+				pcontext.p[1] = y
+			pcontext.points.append(pcontext.p[:])
+	
+	def _convert_HLineSegment(self,seg,pcontext):
+		for x in seg.coords:
+			if seg.relative:
+				pcontext.p[0] += x
+			else:
+				pcontext.p[0] = x
+			pcontext.points.append(pcontext.p[:])
+		
+	def _convert_VLineSegment(self,seg,pcontext):
+		for y in seg.coords:
+			if seg.relative:
+				pcontext.p[1] += y
+			else:
+				pcontext.p[1] = y
+			pcontext.points.append(pcontext.p[:])
+			
+	def _convert_CubicSegment(self,seg,pcontext):
+		# TODO: implement cubic bezier
+		for c in seg.curves:
+			x,y = c.topoint
+			if seg.relative:
+				pcontext.p[0] += x
+				pcontext.p[1] += y
+			else:
+				pcontext.p[0] = x
+				pcontext.p[1] = y
+			pcontext.points.append(pcontext.p[:])
+			
+	def _convert_QuadraticSegment(self,seg,pcontext):
+		# TODO: implement quadratic bezier
+		for c in seg.curves:
+			x,y = c.topoint
+			if seg.relative:
+				pcontext.p[0] += x
+				pcontext.p[1] += y
+			else:
+				pcontext.p[0] = x
+				pcontext.p[1] = y
+			pcontext.points.append(pcontext.p[:])
+			
+	def _convert_ArcSegment(self,seg,pcontext):
+		# TODO implement elliptical arc
+		for a in seg.arcs:
+			x,y = a.topoint
+			if seg.relative:
+				pcontext.p[0] += x
+				pcontext.p[1] += y
+			else:
+				pcontext.p[0] = x
+				pcontext.p[1] = y
+			pcontext.points.append(pcontext.p[:])
+			
+	def _convert_CloseSegment(self,seg,pcontext):
+		pcontext.closed = True
+	
+	def _matrix(self,pointlist):
+		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
+		return mu.Matrix([
+			[ p[0] for p in pointlist ],
+			[ p[1] for p in pointlist ],
+			[1.0] * len(pointlist)
+		])
+			
+	def _transform(self,pointmatrix,transforms):
+		"Transform point matrix according to list of transform commands"	
+		for t in transforms:
+			pointmatrix = self.tdispatcher.dispatch(pointmatrix,t)
+		return pointmatrix
+	
+	def _transform_TranslateTransform(self,pointmatrix,translation):
+		return mu.Matrix([
+			[	1.0,	0.0,	translation.trans[0]	],
+			[	0.0,	1.0,	translation.trans[1]	],
+			[	0.0,	0.0,	1.0						]
+		]) * pointmatrix
+		
+	def _transform_RotateTransform(self,pointmatrix,rotation):
+		return mu.Matrix([
+			[	math.cos(rotation.angle),	-math.sin(rotation.angle),	0.0	],
+			[	math.sin(rotation.angle),	math.cos(rotation.angle),	0.0	],
+			[	0.0,						0.0,						1.0	]
+		]) * pointmatrix
+		
+	def _transform_ScaleTransform(self,pointmatrix,scale):
+		return mu.Matrix([
+			[	scale.scale[0],	0.0,			0.0	],
+			[	0.0,			scale.scale[1],	0.0	],
+			[	0.0,			0.0,			1.0	]
+		]) * pointmatrix
+		
+	def _transform_XSkewTransform(self,pointmatrix,skew):
+		return mu.Matrix([
+			[	1.0,	math.tan(skew.angle),	0.0	],
+			[	0.0,	1.0,					0.0	],
+			[	0.0,	0.0,					1.0	]
+		]) * pointmatrix
+		
+	def _transform_YSkewTransform(self,pointmatrix,skew):
+		return mu.Matrix([
+			[	1.0,					0.0,	0.0	],
+			[	math.tan(skew.angle),	1.0,	0.0	],
+			[	0.0,					0.0,	1.0	]
+		]) * pointmatrix
+		
+	def _transform_MatrixTransform(self,pointmatrix,transform):
+		return mu.Matrix([
+			[	transform.cols[0][0],	transform.cols[1][0],	transform.cols[2][0]	],
+			[	transform.cols[0][1],	transform.cols[1][1],	transform.cols[2][1]	],
+			[	0.0,					0.0,					1.0						]
+		]) * pointmatrix
+	
+	def _centre(self,matrix,centre):
+		"convert from top-left origin to given origin"
+		return mu.Matrix([
+			[	1.0,	0.0,	-centre[0]	],
+			[	0.0,	1.0,	-centre[1]	],
+			[	0.0,	0.0,	1.0			]	
+		]) * matrix				
+		
+		
+class PointMatrixPolygon(object):
+	"Representation of transformed polygon using 4-tuple colours and point matrix"
+
+	CONVERTER = PointMatrixPolygonConverter()
 
 	stroke_width = 0
 	stroke_colour = None
 	fill_colour = None
-	point_list = None
+	point_matrix = None
 	closed = False
 	
-	def __init__(self,stroke_width,stroke_colour,fill_colour,closed,point_list):
+	def __init__(self,stroke_width,stroke_colour,fill_colour,closed,point_matrix):
 		self.stroke_width = stroke_width
 		self.stroke_colour = stroke_colour
 		self.fill_colour = fill_colour
 		self.closed = closed
-		self.point_list = point_list	
-		
+		self.point_matrix = point_matrix
+
 	@staticmethod
-	def from_vector(vector):
-		dispatcher = Dispatcher(Dispatcher,"_convert_%s")
-		# TODO
-		
-	@staticmethod
-	def _convert_Line(line):
-		return PointListPolygon(line.strokewidth,line.strokecolour,None,False,[line.start,line.end])
-		
-	@staticmethod
-	def _convert_Polyline(polyline):
-		return PointListPolygon(polyline.strokewidth,polyline.strokecolour,polyline.fillcolour,
-			False, polyline.points)
-			
-	@staticmethod
-	def _convert_Polygon(polygon):
-		return PointListPolygon(polygon.strokewidth,polygon.strokecolour,polygon.fillcolour,
-			True, polygon.points)
-			
-	@staticmethod
-	def _convert_Rectangle(rect):
-		t = rect.topleft
-		s = rect.size
-		return PointListPolygon(rect.strokewidth,rect.strokecolour,rect.fillcolour,True,
-			[ (t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1]) ] )
+	def convert(img):
+		"Converts Vector object into list of PointMatrixPolygon commands"
+		return PointMatrixPolygon.CONVERTER.convert(img)
 
 
-class PygamePolygon(PointListPolygon):
+class PathContext(object):
+	"""Object used to store status of pen while converting a Path to a PointMatrixPolygon"""
+	def __init__(self):
+		self.p = [0,0]
+		self.closed = False
+		self.points = []
+
+
+class InheritContext(object):
+	"""Object used to store properties inherited from parent components when converting
+		Vector to PointMatrixPolygon"""
+	def __init__(self,stroke_colour=None,stroke_alpha=1.0,stroke_width=1.0,
+			fill_colour=None,fill_alpha=1.0,transforms=None):
+		self.stroke_colour = stroke_colour
+		self.stroke_alpha = stroke_alpha
+		self.stroke_width = stroke_width
+		self.fill_colour = fill_colour
+		self.fill_alpha = fill_alpha
+		self.transforms = [] if transforms is None else transforms	
 		
-	point_matrix = None
-	
-	def __init__(self,plpoly):
-		self.stroke_width = plpoly.stroke_width
-		self.stroke_colour = plpoly.stroke_colour
-		self.fill_colour = plpoly.fill_colour
-		self.closed = closed
-		self.point_matrix = None #TODO
-		
-		
+						
 class PygameMatrixWrapper(object):
 	"Wraps a matrix to behave as a point sequence"
 	
@@ -1020,26 +1279,6 @@ class PygameMatrixWrapper(object):
 		return ( int(self.matrix[0][index]), int(self.matrix[1][index]) )
 	
 	
-class PathContext(object):
-	"Object used to store status of pen while converting a path"
-	def __init__(self):
-		self.p = [0,0]
-		self.closed = False
-		self.points = []
-
-
-class InheritContext(object):
-	"Object used to store properties inherited from parent components when converting"
-	def __init__(self,stroke_colour=None,stroke_alpha=1.0,stroke_width=1.0,
-			fill_colour=None,fill_alpha=1.0,transforms=None):
-		self.stroke_colour = stroke_colour
-		self.stroke_alpha = stroke_alpha
-		self.stroke_width = stroke_width
-		self.fill_colour = fill_colour
-		self.fill_alpha = fill_alpha
-		self.transforms = [] if transforms is None else transforms
-
-
 class PygameRenderer(object):
 	"""	
 	Vector renderer using Pygame's polygon drawing to render onto a surface object.
@@ -1087,356 +1326,19 @@ class PygameRenderer(object):
 		
 			# fill
 			if poly.fill_colour is not None:
-				fill = poly.fill_colour if fill_colour is None else self._colour(fill_colour)
+				fill = self._colour(poly.fill_colour if fill_colour is None else fill_colour)
 				pygame.draw.polygon(target, fill, points)
 				
 			# stroke
 			if poly.stroke_colour is not None and poly.stroke_width > 0:
-				stroke = poly.stroke_colour if stroke_colour is None else self._colour(stroke_colour)
+				stroke = self._colour(poly.stroke_colour if stroke_colour is None else stroke_colour)
 				width = int(poly.stroke_width * scale)
 				pygame.draw.lines(target, stroke, poly.closed, points, width)
 	
 	def _convert(self, img):
 		"Convert a vector image to a more efficient list of polygon commands"
-		clist = []
-		
-		# establish centre point
-		centre = ( img.size[0]/2.0, img.size[1]/2.0 )
-		
-		# default inherited properties
-		context = InheritContext((0,0,0,1), 1.0, None, [])
-		
-		# convert image background rectangle
-		clist.extend(self._convert_Rectangle(Rectangle((0,0),img.size,img.strokecolour,img.strokealpha,
-				img.strokewidth,img.fillcolour,img.fillalpha),centre,context))
-		
-		# convert image components
-		clist.extend(self._convert_components(img.components,centre,context))
-			
-		return clist
-
-	def _convert_components(self, components, centre, context):
-		clist = []
-		for c in components:
-			hname = "_convert_"+type(c).__name__
-			if hasattr(self,hname):
-				clist.extend(getattr(self,hname)(c,centre,context))
-			else:
-				raise CapabilityError("Cannot render %s image component" % type(c).__name__)
-		return clist
-
-	def _convert_Group(self,group,centre,context):
-		
-		stroke_colour = context.stroke_colour if group.strokecolour==Inherited else group.strokecolour
-		stroke_alpha = context.stroke_alpha if group.strokealpha==Inherited else group.strokealpha
-		
-		stroke_width = context.stroke_width if group.strokewidth==Inherited else group.strokewidth
-		
-		fill_colour = context.fill_colour if group.fillcolour==Inherited else group.fillcolour
-		fill_alpha = context.fill_alpha if group.fillalpha==Inherited else group.fillalpha
-					
-		transforms = group.transforms + context.transforms
-		
-		# establish new inherited properties
-		context = InheritContext(stroke_colour,stroke_alpha,stroke_width,fill_colour,fill_alpha,transforms)
-		
-		return self._convert_components(group.components,centre,context)
-			
-	def _convert_Line(self,line,centre,context):
-		
-		stroke_colour = context.stroke_colour if line.strokecolour==Inherited else line.strokecolour
-		stroke_alpha = context.stroke_alpha if line.strokealpha==Inherited else line.strokealpha		
-			
-		stroke_width = context.stroke_width if line.strokewidth==Inherited else line.strokewidth
-
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-			
-		transforms = line.transforms + context.transforms
-			
-		matrix = self._centre(self._transform(self._matrix([line.start,line.end]),transforms),centre)		
-		
-		return [ PygamePolygon(stroke_width,stroke,None,False,matrix) ]
-			
-	def _convert_Polyline(self,polyline,centre,context):
-		
-		stroke_colour = context.stroke_colour if polyline.strokecolour==Inherited else polyline.strokecolour
-		stroke_alpha = context.stroke_alpha if polyline.strokealpha==Inherited else polyline.strokealpha
-
-		stroke_width = context.stroke_width if polyline.strokewidth==Inherited else polyline.strokewidth
-
-		fill_colour = context.fill_colour if polyline.fillcolour==Inherited else polyline.fillcolour
-		fill_alpha = context.fill_alpha if polyline.fillalpha==Inherited else polyline.fillalpha
-		
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
-		
-		transforms = polyline.transforms + context.transforms
-		
-		matrix = self._centre(self._transform(self._matrix(polyline.points),transforms),centre)
-		
-		return [ PygamePolygon(stroke_width,stroke,fill,False,matrix) ]
-			
-	def _convert_Polygon(self,polygon,centre,context):
-
-		stroke_colour = context.stroke_colour if polygon.strokecolour==Inherited else polygon.strokecolour
-		stroke_alpha = context.stroke_alpha if polygon.strokealpha==Inherited else polygon.strokealpha
-
-		stroke_width = context.stroke_width if polygon.strokewidth==Inherited else polygon.strokewidth
-
-		fill_colour = context.fill_colour if polygon.fillcolour==Inherited else polygon.fillcolour
-		fill_alpha = context.fill_alpha if polygon.fillalpha==Inherited else polygon.fillalpha
-
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
-			
-		transforms = polygon.transforms + context.transforms
-			
-		matrix = self._centre(self._transform(self._matrix(polygon.points),transforms),centre)
-		
-		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
-					
-	def _convert_Rectangle(self,rectangle,centre,context):
+		return PointMatrixPolygon.convert(img)
 	
-		stroke_colour = context.stroke_colour if rectangle.strokecolour==Inherited else rectangle.strokecolour
-		stroke_alpha = context.stroke_alpha if rectangle.strokealpha==Inherited else rectangle.strokealpha
-		
-		stroke_width = context.stroke_width if rectangle.strokewidth==Inherited else rectangle.strokewidth
-
-		fill_colour = context.fill_colour if rectangle.fillcolour==Inherited else rectangle.fillcolour
-		fill_alpha = context.fill_alpha if rectangle.fillalpha==Inherited else rectangle.fillalpha	
-
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
-			
-		transforms = rectangle.transforms + context.transforms
-			
-		t = rectangle.topleft
-		s = rectangle.size
-		matrix = self._centre(self._transform(self._matrix([
-			(t[0],t[1]), (t[0]+s[0],t[1]), (t[0]+s[0],t[1]+s[1]), (t[0],t[1]+s[1])
-		]),transforms),centre)
-		
-		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
-			
-	def _convert_Circle(self,circle,centre,context):
-	
-		stroke_colour = context.stroke_colour if circle.strokecolour==Inherited else circle.strokecolour
-		stroke_alpha = context.stroke_alpha if circle.strokealpha==Inherited else circle.strokealpha
-		
-		stroke_width = context.stroke_width if circle.strokewidth==Inherited else circle.strokewidth
-
-		fill_colour = context.stroke_colour	if circle.fillcolour==Inherited else circle.fillcolour
-		fill_alpha = context.stroke_alpha if circle.fillalpha==Inherited else circle.fillalpha
-
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None			
-	
-		transforms = circle.transforms + context.transforms
-	
-		# create a 32-sided polygon
-		points = []
-		for i in range(32):
-			points.append((
-				circle.centre[0] + circle.radius * math.cos(2.0*math.pi/32*i),
-				circle.centre[1] + circle.radius * math.sin(2.0*math.pi/32*i)
-			))
-		matrix = self._centre(self._transform(self._matrix(points),transforms),centre)
-		
-		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
-	
-	def _convert_Ellipse(self,ellipse,centre,context):
-	
-		stroke_colour = context.stroke_colour if ellipse.strokecolour==Inherited else ellipse.strokecolour
-		stroke_alpha = context.stroke_alpha if ellipse.strokealpha==Inherited else ellipse.strokealpha
-
-		stroke_width = context.stroke_width if ellipse.strokewidth==Inherited else ellipse.strokewidth
-
-		fill_colour = context.fill_colour if ellipse.fillcolour==Inherited else ellipse.fillcolour
-		fill_alpha = context.fill_alpha if ellipse.fillalpha==Inherited else ellise.fillalpha	
-			
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
-	
-		transforms = ellipse.transforms + context.transforms
-	
-		# create a 32-sided polygon
-		points = []
-		for i in range(32):
-			points.append((
-				ellipse.centre[0] + ellipse.radii[0] * math.cos(2.0*math.pi/32*i),
-				ellipse.centre[1] + ellipse.radii[1] * math.sin(2.0*math.pi/32*i)
-			))	
-		matrix = self._centre(self._transform(self._matrix(points),transforms),centre)
-			
-		return [ PygamePolygon(stroke_width,stroke,fill,True,matrix) ]
-	
-	def _convert_Path(self,path,centre,context):
-		
-		stroke_colour = context.stroke_colour if path.strokecolour==Inherited else path.strokecolour
-		stroke_alpha = context.stroke_alpha if path.strokealpha==Inherited else path.strokealpha
-		
-		stroke_width = context.stroke_width if path.strokewidth==Inherited else path.strokewidth
-		
-		fill_colour = context.fill_colour if path.fillcolour==Inherited else path.fillcolour
-		fill_alpha = context.fill_alpha if path.fillalpha==Inherited else path.fillalpha
-		
-		stroke = self._colour(list(stroke_colour)+[stroke_alpha]) if stroke_colour is not None else None
-		fill = self._colour(list(fill_colour)+[fill_alpha]) if fill_colour is not None else None
-			
-		transforms = path.transforms + context.transforms
-			
-		# TODO: implement sub-paths properly i.e. donut shapes (wtf?)
-		
-		pcontext = PathContext()
-		
-		for seg in path.segments:
-			hname = "_convert_"+type(seg).__name__
-			getattr(self,hname)(seg, pcontext)
-					
-		matrix = self._centre(self._transform(self._matrix(pcontext.points),transforms),centre)
-
-		return [ PygamePolygon(stroke_width,stroke,fill,pcontext.closed,matrix) ]
-			
-	def _convert_MoveSegment(self,seg,context):
-		for x,y in seg.points:
-			if seg.relative and len(context.points)>0:
-				context.p[0] += x
-				context.p[1] += y					
-			else:
-				context.p[0] = x
-				context.p[1] = y
-			context.points.append(context.p[:])					
-			
-	def _convert_LineSegment(self,seg,context):
-		for x,y in seg.points:
-			if seg.relative:
-				context.p[0] += x
-				context.p[1] += y
-			else:
-				context.p[0] = x
-				context.p[1] = y
-			context.points.append(context.p[:])
-	
-	def _convert_HLineSegment(self,seg,context):
-		for x in seg.coords:
-			if seg.relative:
-				context.p[0] += x
-			else:
-				context.p[0] = x
-			context.points.append(context.p[:])
-		
-	def _convert_VLineSegment(self,seg,context):
-		for y in seg.coords:
-			if seg.relative:
-				context.p[1] += y
-			else:
-				context.p[1] = y
-			context.points.append(context.p[:])
-			
-	def _convert_CubicSegment(self,seg,context):
-		# TODO: implement cubic bezier
-		for c in seg.curves:
-			x,y = c.topoint
-			if seg.relative:
-				context.p[0] += x
-				context.p[1] += y
-			else:
-				context.p[0] = x
-				context.p[1] = y
-			context.points.append(context.p[:])
-			
-	def _convert_QuadraticSegment(self,seg,context):
-		# TODO: implement quadratic bezier
-		for c in seg.curves:
-			x,y = c.topoint
-			if seg.relative:
-				context.p[0] += x
-				context.p[1] += y
-			else:
-				context.p[0] = x
-				context.p[1] = y
-			context.points.append(context.p[:])
-			
-	def _convert_ArcSegment(self,seg,context):
-		# TODO implement elliptical arc
-		for a in seg.arcs:
-			x,y = a.topoint
-			if seg.relative:
-				context.p[0] += x
-				context.p[1] += y
-			else:
-				context.p[0] = x
-				context.p[1] = y
-			context.points.append(context.p[:])
-			
-	def _convert_CloseSegment(self,seg,context):
-		context.closed = True
-			
-	def _matrix(self,pointlist):
-		"Convert sequence of coordinate pairs to col-based homogenous coord matrix"
-		return mu.Matrix([
-			[ p[0] for p in pointlist ],
-			[ p[1] for p in pointlist ],
-			[1.0] * len(pointlist)
-		])
-			
-	def _transform(self,pointmatrix,transforms):
-		"Transform point matrix according to list of transform commands"	
-		for t in transforms:
-			hname = "_transform_"+type(t).__name__
-			pointmatrix = getattr(self,hname)(pointmatrix,t)
-		return pointmatrix
-		
-	def _transform_TranslateTransform(self,pointmatrix,translation):
-		return mu.Matrix([
-			[	1.0,	0.0,	translation.trans[0]	],
-			[	0.0,	1.0,	translation.trans[1]	],
-			[	0.0,	0.0,	1.0						]
-		]) * pointmatrix
-		
-	def _transform_RotateTransform(self,pointmatrix,rotation):
-		return mu.Matrix([
-			[	math.cos(rotation.angle),	-math.sin(rotation.angle),	0.0	],
-			[	math.sin(rotation.angle),	math.cos(rotation.angle),	0.0	],
-			[	0.0,						0.0,						1.0	]
-		]) * pointmatrix
-		
-	def _transform_ScaleTransform(self,pointmatrix,scale):
-		return mu.Matrix([
-			[	scale.scale[0],	0.0,			0.0	],
-			[	0.0,			scale.scale[1],	0.0	],
-			[	0.0,			0.0,			1.0	]
-		]) * pointmatrix
-		
-	def _transform_XSkewTransform(self,pointmatrix,skew):
-		return mu.Matrix([
-			[	1.0,	math.tan(skew.angle),	0.0	],
-			[	0.0,	1.0,					0.0	],
-			[	0.0,	0.0,					1.0	]
-		]) * pointmatrix
-		
-	def _transform_YSkewTransform(self,pointmatrix,skew):
-		return mu.Matrix([
-			[	1.0,					0.0,	0.0	],
-			[	math.tan(skew.angle),	1.0,	0.0	],
-			[	0.0,					0.0,	1.0	]
-		]) * pointmatrix
-		
-	def _transform_MatrixTransform(self,pointmatrix,transform):
-		return mu.Matrix([
-			[	transform.cols[0][0],	transform.cols[1][0],	transform.cols[2][0]	],
-			[	transform.cols[0][1],	transform.cols[1][1],	transform.cols[2][1]	],
-			[	0.0,					0.0,					1.0						]
-		]) * pointmatrix
-		
-	def _centre(self,matrix,centre):
-		"convert from top-left origin to given origin"
-		return mu.Matrix([
-			[	1.0,	0.0,	-centre[0]	],
-			[	0.0,	1.0,	-centre[1]	],
-			[	0.0,	0.0,	1.0			]	
-		]) * matrix
-			
 	def _colour(self,val):
 		"convert from (1.0,1.0,1.0) format colour to (255,255,255)"
 		return [int(x*255) for x in val] if val is not None else None
@@ -1493,11 +1395,14 @@ class OpenGLRenderer(object):
 		self._cache[img] = self._convert(img)
 		
 	def _convert(self, img):
+
+		# TODO: create pmp list
+	
 		drawlist = GL.glGenLists(1)
 		GL.glNewList(drawlist, GL.GL_COMPILE)
 		GL.glBegin(GL.GL_LINE_LOOP)
 		
-		
+		# TODO: iterate over pmp list, converting to draw commands
 				
 		GL.glEnd()
 		GL.glEndList()
@@ -1566,22 +1471,21 @@ if __name__ == "__main__":
 	v = load(sys.argv[1])
 		
 	pygame.init()
-	#screen = pygame.display.set_mode((640,480))
-	screen = pygame.display.set_mode((640,480),
-		pygame.locals.OPENGL|pygame.locals.HWSURFACE|pygame.locals.DOUBLEBUF)
-	GL.glClearColor(0,0.5,0.5,1.0)
-	GL.glViewport(0,0,640,480)
-	GL.glMatrixMode(GL.GL_PROJECTION)
+	screen = pygame.display.set_mode((640,480))
+	#screen = pygame.display.set_mode((640,480),
+	#	pygame.locals.OPENGL|pygame.locals.HWSURFACE|pygame.locals.DOUBLEBUF)
+	#GL.glClearColor(0,0.5,0.5,1.0)
+	#GL.glViewport(0,0,640,480)
+	#GL.glMatrixMode(GL.GL_PROJECTION)
+	#GL.glOrtho(0,640,480,0,-1,1)
+	#GL.glMatrixMode(GL.GL_MODELVIEW)
+	#GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
+	#GL.glEnable(GL.GL_LINE_SMOOTH)
 	#GL.glLoadIdentity()
-	GL.glOrtho(0,640,480,0,-1,1)
-	GL.glMatrixMode(GL.GL_MODELVIEW)
-	GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
-	GL.glEnable(GL.GL_LINE_SMOOTH)
-	GL.glLoadIdentity()
 	
 	clock = pygame.time.Clock()
-	#renderer = make_renderer(RENDERER_PYGAME)
-	renderer = make_renderer(RENDERER_OPENGL)
+	renderer = make_renderer(RENDERER_PYGAME)
+	#renderer = make_renderer(RENDERER_OPENGL)
 	font = pygame.font.Font(None,32)
 	a = 0.0
 
@@ -1597,9 +1501,9 @@ if __name__ == "__main__":
 
 	print trees.draw_tree(v,displaystrategy=lambda x: type(x).__name__,branchstrategy=branches)
 	
-	#renderer.cache(v)
-	#for p in renderer._cache[v]:
-	#	print p.point_matrix
+	renderer.cache(v)
+	for p in renderer._cache[v]:
+		print p.point_matrix
 		
 	while True:
 	
@@ -1609,8 +1513,8 @@ if __name__ == "__main__":
 			elif event.type == pygame.locals.KEYDOWN and event.key == pygame.locals.K_ESCAPE:
 				sys.exit()
 	
-		#screen.fill((0,128,128))
-		GL.glClear(GL.GL_COLOR_BUFFER_BIT)
+		screen.fill((0,128,128))
+		#GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 		
 		renderer.render(screen, v, (160,120), 0.25, 0.0)
 		renderer.render(screen, v, (480,120), 0.5, 0.2, stroke_colour=(1,0,0,1))
@@ -1622,7 +1526,7 @@ if __name__ == "__main__":
 		renderer.render(screen, v, (320,240), scale, a)
 		
 		fpstext = font.render("fps: %d" % clock.get_fps(), True, (255,255,255))
-		#screen.blit(fpstext,(10,10))
+		screen.blit(fpstext,(10,10))
 		
 		pygame.display.flip()
 		clock.tick(60)
