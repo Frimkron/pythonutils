@@ -302,15 +302,17 @@ class Dispatcher(object):
 				continue
 			return f(comm, *args,**kargs)
 		raise DispatchLookupError("Couldn't find function to dispatch to")
+	
 		
-
-def type_dispatch(obj,args,kargs,handler,prefix="_handle_"):
-	for t in type(obj).__mro__:
-		try:
-			f = getattr(handler,prefix+t.__name__)
-		except AttributeError:
-			continue
-		return f(*args,**kargs)
+class FlagInitialiser(object):
+	def __init__(self):
+		self.val = 0
+	def __iter__(self):
+		return self
+	def next(self):
+		f = 1 << self.val
+		self.val += 1
+		return f
 	
 
 # -- Testing -----------------------------
@@ -564,6 +566,16 @@ if __name__ == "__main__":
 			d.dispatch(Bar())
 			self.assertEquals(2, len(calls))
 			self.assertEquals("ba", calls[1])
+
+	class TestFlagInitialiser(unittest.TestCase):
+	
+		def testIterator(self):
+			flags = []
+			for i,f in enumerate(FlagInitialiser()):
+				if i >= 8:
+					break
+				flags.append(f)
+			self.assertEquals([1,2,4,8,16,32,64,128], flags)
 
 	unittest.main()
 	

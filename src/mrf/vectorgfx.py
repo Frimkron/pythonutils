@@ -38,17 +38,21 @@ from mrf.structs import Dispatcher, DispatchLookupError
 RENDERER_PYGAME = "pygame"
 RENDERER_OPENGL = "opengl"
 
-CAP_STROKE = (1<<0)
-CAP_FILL = (1<<1)
-CAP_SCALE = (1<<2)
-CAP_ROTATION = (1<<3)
-CAP_STROKE_ALPHA = (1<<4)
-CAP_FILL_ALPHA = (1<<5)
-CAP_MULTI_STROKE_COL = (1<<6)
-CAP_MULTI_STROKE_WIDTH = (1<<7)
-CAP_MULTI_FILL_COL = (1<<8)
+f = FlagInitialiser()
+CAP_POSITION 			= f.next()
+CAP_SCALE 				= f.next()
+CAP_ROTATION 			= f.next()
+CAP_IMG_STROKE_COLOUR 	= f.next()
+CAP_IMG_STROKE_ALPHA	= f.next()
+CAP_IMG_STROKE_WIDTH 	= f.next()
+CAP_IMG_FILL_COLOUR		= f.next()
+CAP_IMG_FILL_ALPHA		= f.next()
+CAP_OVR_STROKE_COL 		= f.next()
+CAP_OVR_STROKE_ALPHA	= f.next()
+CAP_OVR_STROKE_WID 		= f.next()
+CAP_OVR_FILL_COLOUR		= f.next()
+CAP_OVR_FILL_ALPHA		= f.next()
 CAP_ALL = (1<<32)-1
-
 
 # Command objects:
 
@@ -1352,12 +1356,18 @@ class PygameRenderer(object):
 
 class OpenGLRenderer(object):
 
-	def __init__(self,capabilities):
+	def __init__(self,img_stroke_colour,img_stroke_width,translate_transform,
+			rotate_transform,scale_transform):
 		# import opengl
 		import OpenGL.GL as GL
 		self._cache = {}
+		self.img_stroke_colour = img_stroke_colour
+		self.img_stroke_width = img_stroke_width
+		self.translate_transform = translate_transform
+		self.rotate_transform = rotate_transform
+		self.scale_transform = scale_transform
 
-	def render(self, target, img, pos, scale=1.0, rotation=0.0, stroke_colour=None, fill_colour=None):
+	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,stroke_width=None,fill_colour=None):
 		"""	
 		Renders the given vector image. It is assumed that an OpenGL context has been established.
 		
@@ -1367,7 +1377,8 @@ class OpenGLRenderer(object):
 			pos				2-tuple containing the x and y to draw at
 			scale			Float indicating the scale factor
 			rotation		Rotation to draw at, in radians
-			stroke_colour	The colour to draw the image in
+			stroke_colour	Overriding stroke colour
+			stroke_width	Overriding stroke width
 			fill_colour		Not used
 		"""
 		
@@ -1384,9 +1395,12 @@ class OpenGLRenderer(object):
 		GL.glPushMatrix()
 		
 		# build transform stack
-		GL.glTranslatef(pos[0], pos[1], 0.0)
-		GL.glRotatef(math.degrees(rotation), 0.0, 0.0, 1.0)
-		GL.glScalef(scale, scale, 1.0)
+		if self.translate_transform:
+			GL.glTranslatef(pos[0], pos[1], 0.0)
+		if self.rotate_transform:
+			GL.glRotatef(math.degrees(rotation), 0.0, 0.0, 1.0)
+		if self.scale_transform:
+			GL.glScalef(scale, scale, 1.0)
 		
 		# set stroke colour
 		GL.glColor4f(stroke_colour[0], stroke_colour[1], stroke_colour[2], 1.0)
@@ -1398,9 +1412,9 @@ class OpenGLRenderer(object):
 		GL.glPopMatrix()
 		
 	def cache(self, img):
-		self._cache[img] = self._convert(img)
+		self._cache[img] = self._convert(img,self.img_stroke_colour,self.img_stroke_width)
 		
-	def _convert(self, img):
+	def _convert(self, img, bake_stroke_colour,bake_stroke_width):
 		
 		drawlist = GL.glGenLists(1)
 		GL.glNewList(drawlist, GL.GL_COMPILE)
@@ -1408,8 +1422,11 @@ class OpenGLRenderer(object):
 		for pmp in PointMatrixPolygon.convert(img):
 			if pmp.stroke_colour is not None and pmp.stroke_width > 0:
 		
-				GL.glColor4f(*pmp.stroke_colour)
-				GL.glLineWidth(pmp.stroke_width)
+				if bake_stroke_colour:
+					GL.glColor4f(*pmp.stroke_colour)
+				if bake_stroke_width:
+					GL.glLineWidth(pmp.stroke_width)
+					
 				GL.glBegin(GL.GL_LINE_LOOP if pmp.closed else GL.GL_LINE_STRIP)
 			
 				for x,y in [(pmp.point_matrix[0][c],pmp.point_matrix[1][c]) 
@@ -1450,23 +1467,48 @@ def make_renderer(type, capabilities=None):
 						Use None for all available capabilites for the given type.
 	"""
 	if type == RENDERER_PYGAME:
-		if( capabilities is not None 
-				and any([capabilities & c != 0 for c in (CAP_FILL_ALPHA,CAP_STROKE_ALPHA)]) ):
-			raise CapabilityError("CAP_FILL_ALPHA and CAP_STROKE_ALPHA not supported by RENDERER_PYGAME")
+		_incapable_check(capabilities,("CAP_IMG_FILL_ALPHA","CAP_IMG_STROKE_ALPHA",
+				"CAP_OVR_FILL_ALPHA","CAP_OVR_STROKE_ALPHA"))
 		return PygameRenderer()		
 		
 	elif type == RENDERER_OPENGL:
-	
-		if( capabilities is not None
-				and any([capabilities & c != 0 for c in (CAP_FILL,CAP_FILL_ALPHA,CAP_MULTI_STROKE_COL,
-					CAP_MULTI_STROKE_WIDTH,CAP_MULTI_FILL_COL) ]) ):
-			raise CapabilityError("CAP_FILL, CAP_FILL_ALPHA, CAP_MULTI_STROKE_COL, "
-				+"CAP_MULTI_STROKE_WIDTH, CAP_MULTI_FILL_COL not supported by RENDERER_OPENGL")
-		return OpenGLRenderer(capabilities)
+		if capabilities is None:
+			capabilities = (CAP_POSITION|CAP_ROTATION|CAP_SCALE|CAP_IMG_STROKE_COLOUR
+					|CAP_IMG_STROKE_ALPHA|CAP_IMG_STROKE_WIDTH)
+		_incapable_check(capabilities,("CAP_IMG_FILL_COLOUR","CAP_IMG_FILL_ALPHA",
+				"CAP_OVR_FILL_COLOUR","CAP_OVR_FILL_ALPHA"))
+		_incapable_combination_check(capabilities,[
+			("CAP_IMG_STROKE_COLOUR","CAP_OVR_STROKE_COLOUR"),
+			("CAP_IMG_STROKE_ALPHA","CAP_OVR_STROKE_ALPHA"),
+			("CAP_IMG_STROKE_WIDTH","CAP_OVR_STROKE_WIDTH"),
+			("CAP_IMG_STROKE_COLOUR","CAP_OVR_STROKE_ALPHA"),
+			("CAP_OVR_STROKE_COLOUR","CAP_IMG_STROKE_ALPHA"),
+		])
+		img_stroke_colour = ( capabilities & (CAP_IMG_STROKE_COLOUR|CAP_IMG_STROKE_ALPHA) != 0
+				or capabilities & (CAP_OVR_STROKE_COLOUR|CAP_OVR_STROKE_ALPHA) == 0 )
+		img_stroke_width = ( capabilities & CAP_IMG_STROKE_WIDTH != 0
+				or capabilities & CAP_OVR_STROKE_WIDTH == 0 )
+		translate_transform = capabilities & CAP_POSITION != 0
+		rotate_transform = capabilities & CAP_ROTATE != 0
+		scale_transform = capabilities & CAP_SCALE != 0
+		
+		return OpenGLRenderer(img_stroke_colour,img_stroke_width,
+			translate_transform,rotate_transform,scale_transform)
 	
 	else:
 		raise ValueError("Unknown renderer type %s" % type)
 
+
+def _incapable_check(requested,incap_names):
+	if( requested is not None
+			and any([requested & globals()[c] != 0 for c in incap_names]) ):
+		raise CapabilityError("%s not supported by this renderer" % ", ".join(incap_names))
+
+def _incapable_combination_check(requested,incap_name_sets):
+	if requested is not None:
+		for nameset in incap_name_sets:
+			if all([requested & globals()[c] != 0 for c in nameset]):
+				raise CapabilityError("Use of %s together not supported by this renderer" % " and ".join(nameset))
 
 if __name__ == "__main__":
 	import sys
