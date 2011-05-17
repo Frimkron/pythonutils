@@ -26,13 +26,22 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 Vector Graphics Module
 
+
+load 			- loads a vector image from file
+
+make_renderer	- creates a new object for rendering vector image
+
 """
+
+# TODO: path curves
+# TODO: arc points based on angles
+# TODO: fills for opengl renderer
 
 import xml.dom.minidom as mdom
 import xml.dom as dom
 import re
 import mrf.mathutil as mu
-from mrf.structs import Dispatcher, DispatchLookupError
+from mrf.structs import Dispatcher, DispatchLookupError, FlagInitialiser
 
 
 RENDERER_PYGAME = "pygame"
@@ -47,9 +56,9 @@ CAP_IMG_STROKE_ALPHA	= f.next()
 CAP_IMG_STROKE_WIDTH 	= f.next()
 CAP_IMG_FILL_COLOUR		= f.next()
 CAP_IMG_FILL_ALPHA		= f.next()
-CAP_OVR_STROKE_COL 		= f.next()
+CAP_OVR_STROKE_COLOUR	= f.next()
 CAP_OVR_STROKE_ALPHA	= f.next()
-CAP_OVR_STROKE_WID 		= f.next()
+CAP_OVR_STROKE_WIDTH	= f.next()
 CAP_OVR_FILL_COLOUR		= f.next()
 CAP_OVR_FILL_ALPHA		= f.next()
 CAP_ALL = (1<<32)-1
@@ -932,10 +941,12 @@ class SvgReader(object):
 """	
 	Renderer interface:
 		
-	def render(self, target, img, pos, scale=1.0, rotation=0.0, stroke_colour=None, fill_colour=None)
+	def render(self, target, img, pos, scale=1.0, rotation=0.0, 
+				stroke_colour=None, stroke_alpha=None, stroke_width=None, 
+				fill_colour=None, fill_alpha=None)
 	
-		stroke_colour and fill_colour can be passed in to override the stroke and fill colours
-		specified in the vector image itself.
+		stroke_colour, stroke_alpha, stroke_width, fill_colour and fill_alpha can be passed in 
+		to override the stroke and fill properties specified in the vector image itself.
 		
 	def cache(self, img)
 	
@@ -1307,7 +1318,8 @@ class PygameRenderer(object):
 	def cache(self,img):
 		self._cache[img] = self._convert(img)
 						
-	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,fill_colour=None):
+	def render(self,target,img,pos,scale=1.0,rotation=0.0,
+			stroke_colour=None,stroke_alpha=None,stroke_width=None,fill_colour=None,fill_alpha=None):
 		
 		# fetch polygon list from cache
 		if not img in self._cache:
@@ -1336,13 +1348,15 @@ class PygameRenderer(object):
 		
 			# fill
 			if poly.fill_colour is not None:
-				fill = self._colour(poly.fill_colour if fill_colour is None else fill_colour)
+				fill = self._colour( (list(poly.fill_colour)[:-1] if fill_colour is None else list(fill_colour))
+						+ [poly.fill_colour[-1] if fill_alpha is None else fill_alpha] )
 				pygame.draw.polygon(target, fill, points)
 				
 			# stroke
 			if poly.stroke_colour is not None and poly.stroke_width > 0:
-				stroke = self._colour(poly.stroke_colour if stroke_colour is None else stroke_colour)
-				width = int(poly.stroke_width * scale)
+				stroke = self._colour( (list(poly.stroke_colour)[:-1] if stroke_colour is None else list(stroke_colour))
+						+ [poly.stroke_colour[-1] if stroke_alpha is None else stroke_alpha] )
+				width = int( (poly.stroke_width if stroke_width is None else stroke_width) * scale )
 				pygame.draw.lines(target, stroke, poly.closed, points, width)
 	
 	def _convert(self, img):
@@ -1367,7 +1381,8 @@ class OpenGLRenderer(object):
 		self.rotate_transform = rotate_transform
 		self.scale_transform = scale_transform
 
-	def render(self,target,img,pos,scale=1.0,rotation=0.0,stroke_colour=None,stroke_width=None,fill_colour=None):
+	def render(self,target,img,pos,scale=1.0,rotation=0.0,
+			stroke_colour=None,stroke_alpha=None,stroke_width=None,fill_colour=None,fill_alpha=None):
 		"""	
 		Renders the given vector image. It is assumed that an OpenGL context has been established.
 		
@@ -1377,17 +1392,17 @@ class OpenGLRenderer(object):
 			pos				2-tuple containing the x and y to draw at
 			scale			Float indicating the scale factor
 			rotation		Rotation to draw at, in radians
-			stroke_colour	Overriding stroke colour
-			stroke_width	Overriding stroke width
+			stroke_colour	Overriding stroke colour (feature must be enabled when constructed)
+			stroke_alpha	Overriding stroke alpha (feature must be enabled when constructed)
+			stroke_width	Overriding stroke width (feature must be enabled when constructed)
 			fill_colour		Not used
+			fill_alpha		Not used
 		"""
 		
+		# fetch image from cache
 		if not img in self._cache:
 			self.cache(img)
-		
-		if stroke_colour is None:
-			stroke_colour = (0,0,0)
-		
+				
 		# retrieve the drawlist	
 		drawlist = self._cache[img]
 		
@@ -1402,8 +1417,14 @@ class OpenGLRenderer(object):
 		if self.scale_transform:
 			GL.glScalef(scale, scale, 1.0)
 		
-		# set stroke colour
-		GL.glColor4f(stroke_colour[0], stroke_colour[1], stroke_colour[2], 1.0)
+		# set overriding colour and width
+		if not self.img_stroke_colour:
+			if stroke_colour is None: stroke_colour = (0.0, 0.0, 0.0)
+			if stroke_alpha is None: stroke_alpha = 1.0
+			GL.glColor4f(stroke_colour[0],stroke_colour[1],stroke_colour[2],stroke_alpha)
+		if not self.img_stroke_width:
+			if stroke_width is None: stroke_width = 1.0
+			GL.glLineWidth(stroke_width)
 		
 		# draw the drawlist
 		GL.glCallList(drawlist)		
@@ -1489,7 +1510,7 @@ def make_renderer(type, capabilities=None):
 		img_stroke_width = ( capabilities & CAP_IMG_STROKE_WIDTH != 0
 				or capabilities & CAP_OVR_STROKE_WIDTH == 0 )
 		translate_transform = capabilities & CAP_POSITION != 0
-		rotate_transform = capabilities & CAP_ROTATE != 0
+		rotate_transform = capabilities & CAP_ROTATION != 0
 		scale_transform = capabilities & CAP_SCALE != 0
 		
 		return OpenGLRenderer(img_stroke_colour,img_stroke_width,
@@ -1536,11 +1557,15 @@ if __name__ == "__main__":
 	GL.glMatrixMode(GL.GL_MODELVIEW)
 	GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
 	GL.glEnable(GL.GL_LINE_SMOOTH)
+	GL.glEnable(GL.GL_BLEND)
+	GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
 	GL.glLoadIdentity()
 	
 	clock = pygame.time.Clock()
 	#renderer = make_renderer(RENDERER_PYGAME)
-	renderer = make_renderer(RENDERER_OPENGL)
+	renderer = make_renderer(RENDERER_OPENGL,
+		capabilities = CAP_POSITION | CAP_SCALE | CAP_ROTATION | CAP_OVR_STROKE_COLOUR 
+			| CAP_OVR_STROKE_WIDTH | CAP_OVR_STROKE_ALPHA)
 	font = pygame.font.Font(None,32)
 	a = 0.0
 
@@ -1572,13 +1597,13 @@ if __name__ == "__main__":
 		GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 		
 		renderer.render(screen, v, (160,120), 0.25, 0.0)
-		renderer.render(screen, v, (480,120), 0.5, 0.2, stroke_colour=(1,0,0,1))
-		renderer.render(screen, v, (160,360), 1.0, 0.0, fill_colour=(0,1,1,1))
+		renderer.render(screen, v, (480,120), 0.5, 0.2, stroke_colour=(1,0,0), stroke_width=10.0, stroke_alpha=0.5)
+		renderer.render(screen, v, (160,360), 1.0, 0.0, fill_colour=(0,1,1))
 		renderer.render(screen, v, (480,360), 2.0, -0.2)
 		
 		a += 0.1
 		scale = 0.3 + (math.sin(a)/2.0+0.5) * 10.0
-		renderer.render(screen, v, (320,240), scale, a)
+		renderer.render(screen, v, (320,240), scale, a, stroke_width=1.0*scale)
 		
 		fpstext = font.render("fps: %d" % clock.get_fps(), True, (255,255,255))
 		#screen.blit(fpstext,(10,10))
