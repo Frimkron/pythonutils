@@ -1,4 +1,4 @@
-# TODO: comment properly
+# TODO: brackets?
 # TODO: unit tests
 # TODO: documentation
 # TODO: way of capturing global and local scope
@@ -347,55 +347,80 @@ class FunctionBuilderInterface(object):
 			
 		return self	
 			
-	# TODO: describe parameters!
 	def if_(self,statement):
 		"""	
-		Begins an "if" block definition. Should be used in a context block to delimit the block.
+		Begins an "if" block definition, using the given value as the condition expression. 
+		This may be a StatementBuilder or any other repr-able object. Should be used in a 
+		"with" context block to delimit the block.
 		"""
 		self._owner.start_if(statement)
 		return self
 
 	def elif_(self,statement):
 		"""	
-		Begins an "elif" definition. Should be used in a context block to delimit the block.
+		Begins an "elif" definition, using the given value as the condition expression. This
+		may be a StatementBuilder or any other repr-able object.  Should be used in a "with" 
+		context block to delimit the block.
 		"""
 		self._owner.start_elif(statement)
 		return self
 		
 	def else_(self):
 		"""	
-		Begins an "else" definition. Should be used in a context block to delimit the block.
+		Begins an "else" definition. Should be used in a "with" context block to delimit the block.
 		"""
 		self._owner.start_else()
 		return self
 		
 	def while_(self,statement):
 		"""	
-		Begins a "while" definition. Should be used in a context block to delimit the block.	
+		Begins a "while" definition, using the given value as the condition expression. This
+		may be a StatementBuilder or any other repr-able object. Should be used in a "with"
+		context block to delimit the block.	
 		"""
 		self._owner.start_while(statement)
 		return self
 		
 	def for_(self,var,seq):
 		"""	
-		Begins a "for" definition. Should be used in a contet block to delimit the block.
+		Begins a "for" definition, using the given values as the target expression and sequence
+		expressions repectively. Each may be a StatementBuilder or any other repr-able object.
+		Should be used in a "with" context block to delimit the block.
 		"""
 		self._owner.start_for(var,seq)
 		return self
 		
 	def try_(self):
+		"""	
+		Begins a "try" definition. Should be used in a "with" context block to delimit the block.
+		"""
 		self._owner.start_try()
 		return self
 		
 	def except_(self,exception=None,var=None):
+		"""	
+		Begins an "except" definition, using the given values as the exception expression and 
+		target expression respectively. Each is optional and may be a StatementBuilder or any 
+		other repr-able object. Should be used in a "with" context block to delimit the block.
+		"""
 		self._owner.start_except(exception,var)
 		return self
 		
 	def finally_(self):
+		"""	
+		Begins a "finally" definition. Should be used in a "with" context block to delimit the 
+		block.
+		"""
 		self._owner.start_finally()
 		return self
 		
 	def with_(self,*args):
+		"""	
+		Begins a "with" definition. Takes zero or more arguments, pairs of which are used for
+		the context object expression and target expression for each context object respectively.
+		Each value may be a StatementBuilder or any other repr-able object. Should be used in a
+		"with" context block to delimit the block.
+		"""
 		args = list(args)
 		if len(args) % 2 != 0:
 			args.append(None)
@@ -403,42 +428,102 @@ class FunctionBuilderInterface(object):
 		return self
 
 	def __enter__(self):
+		"""	
+		Invoked when object is entered in "with" context.
+		"""
 		return self
 		
 	def __exit__(self,extype,exvalue,traceback):
+		"""	
+		Invoked when object is exited in "with" context. This ends the current block definition.
+		"""
 		self._owner.end_block()
 		
 
 class StatementBuilder(object):
+	"""	
+	Used by FunctionBuilder to construct statements within the function. The object serves as an
+	interface to the user for building up the statement.
+	"""
 
 	class DUMMY(object): pass
 
 	def __init__(self,owner,propname):
+		"""	
+		Initialises the StatementBuilder with the given owning FunctionBuilder and the name
+		starting the statement.
+		"""
 		self._owner = owner
 		self._buffer = propname
 		
 	def is_(self,other):
+		"""	
+		Defines an "is" expression as part of the statement being built, using the given value 
+		as the right hand side. This may be another StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(value)
 		self._buffer += " is %s" % repr(other)
 		return self
 		
-	def prop(self,name):
+	def and_(self,other):
+		"""	
+		Defines an "and" comparison as part of the statement being built, using the given value
+		as the right hand side. This may be another StatementBuilder or any other repr-able object.
+		"""
+		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
+			self._owner.statement_combined(value)
+		self._buffer += " and %s" % repr(other)
+		return self
+		
+	def or_(self,other):
+		"""	
+		Defines an "or" compariso as part of the statement being built, using the given value
+		as the right hand side. This may be another StatementBuilder or any other repr-able object.
+		"""
+		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
+			self._owner.statement_combined(value)
+		self._buffer += " or %s" % repr(other)
+		return self
+		
+	def not_(self):
+		"""	
+		Defines a logical negation as part of the statement being built.
+		"""
+		self._buffer = "not "+self._buffer
+		return self
+		
+	def attr(self,name):
+		"""	
+		Defines an access of the named attribute as part of the statement being built. For use 
+		where an attribute already exists, e.g. "is_"
+		"""
 		return self.__getattr__(name)
 		
 	def __getattr__(self,name):
-		#print "get[%s]" % name
+		"""	
+		Invoked when an attribute is accessed (if it cannot be found). Allows arbitrary attribute 
+		access as part of the statement being built.
+		"""
 		self._buffer += "."+name
-		#print "\t=>%s" % repr(self)
 		return self
 
 	def __setattr__(self,name,value):
-		#print "set[%s][%s]" % (name,repr(value))
+		"""	
+		Invoked when an attribute is assigned to. Allows arbitrary attribute setting as part
+		of the statement being built.
+		"""
 		if isinstance(value,StatementBuilder):
+			# combine the statement, remove from main list
 			self._owner.statement_combined(value)
 		
+		# workaround for behaviour of += and the like
 		if value is StatementBuilder.DUMMY:
 			pass	
+		# special case for existing attributes
 		elif name in ("_owner","_buffer"):
 			super(StatementBuilder,self).__setattr__(name,value)
 		else:	
@@ -447,6 +532,12 @@ class StatementBuilder(object):
 		return self
 		
 	def __call__(self,*args,**kargs):
+		"""	
+		Invoked when the object is called as a function. Allows method invokation as part
+		of the statement being built. Arguments may be other StatementBuilders or any other
+		repr-able objects.
+		"""
+		# combine statements, removing from main list
 		for a in args:
 			if isinstance(a,StatementBuilder):
 				self._owner.statement_combined(a)
@@ -462,62 +553,106 @@ class StatementBuilder(object):
 		return self		
 		
 	def __repr__(self):
+		"""	
+		Returns the representation of the statement. This is the buffered code as a string.
+		"""
 		return self._buffer	
 	
 	def __lt__(self, other):
+		"""	
+		Invoked for < comparisons. Allows such comparisons in the statement being built.
+		Right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine the statment, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " < %s" % repr(other)
 		return self
 		
 	def __le__(self, other):
+		"""	
+		Invoked for <= comparisons. Allows such comparisons in the statement being built.
+		Right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine the statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " <= %s" % repr(other)
 		return self
 		
 	def __eq__(self, other):
+		"""	
+		Invoked for == comparisons. Allows such comparisons in the statement being built.
+		Right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine the statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " == %s" % repr(other)
 		return self
 		
 	def __ne__(self, other):
+		"""	
+		Invoked for != comparisons. Allows such comparisons in the statement being built.
+		Right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine the statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " != %s" % repr(other)
 		return self
 		
 	def __gt__(self, other):
+		"""	
+		Invoked for > comparisons. Allows such comparisons in the statement being built.
+		Right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine the statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " > %s" % repr(other)
 		return self
 		
 	def __ge__(self, other):
+		"""	
+		Invoked for >= comparisons. Allows such comparisons in the statement being built.
+		Right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine the statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " >= %s" % repr(other)
 		return self
 	
 	def __getitem__(self,key):
-		#print "getitem[%s]" % key
+		"""	
+		Invoked for [] value access or slicing, allowing such accesses as part of the statement 
+		being built. The key may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(key,slice):
+			# may be a slice object, if slicing
 			self._buffer += "[%s:%s:%s]" % (
 				repr(key.start) if key.start is not None else "",
 				repr(key.stop) if key.stop is not None else "",
 				repr(key.step) if key.step is not None else "" )
 		else:
+			# TODO: combine key statement here!
 			self._buffer += "[%s]" % repr(key)
 		return self
 		
 	def __setitem__(self,key,value):
-		#print "setitem[%s][%s]" % (key,repr(value))
+		"""	
+		Invoked for [] value or slice assignment, allowing such assignments as part of the
+		statement being built. The key may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(value,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(value)
 			
+		# workaround for += behaviour and the like
 		if value is StatementBuilder.DUMMY:
 			pass
+		# may be a slice object, if slicing
 		elif isinstance(key,slice):
 			self._buffer += "[%s:%s:%s] = %s" % (
 				repr(key.start) if key.start is not None else "",
@@ -525,192 +660,342 @@ class StatementBuilder(object):
 				repr(key.step) if key.step is not None else "",
 				repr(value) )			
 		else:
+			# TODO: combine key statement here!
 			self._buffer += "[%s] = %s" % (repr(key),repr(value))
 			
 		return self
 		
 	def __contains__(self,item):
+		"""	
+		Invoked for "in" comparisons, allowing such comparisons in the statement being built.
+		The item being checked for containment within this object may be a StatementBuilder
+		or any other repr-able object.
+		"""
 		if isinstance(item,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(item)			
 		self._buffer += "%s in " % repr(item)
 		return self
 
 	def __add__(self, other):
-		#print "add [%s]" % repr(other)
+		"""	
+		Invoked for + operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " + %s" % repr(other)
 		return self
 	
 	def __sub__(self, other):
+		"""	
+		Invoked for - operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " - %s" % repr(other)
 		return self
 		
 	def __mul__(self, other):
+		"""	
+		Invoked for * operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " * %s" % repr(other)
 		return self
 	
 	def __floordiv__(self, other):
+		"""	
+		Invoked for // operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " // %s" % repr(other)
 		return self
 	
 	def __mod__(self, other):
+		"""	
+		Invoked for % operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " %% %s" % repr(other)
 		return self
 		
 	def __pow__(self, other):
+		"""	
+		Invoked for ** operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " ** %s" % repr(other)
 		return self
 		
 	def __lshift__(self, other):
+		"""	
+		Invoked for << operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " << %s" % repr(other)
 		return self
 		
 	def __rshift__(self, other):
+		"""	
+		Invoked for >> operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " >> %s" % repr(other)
 		return self
 		
 	def __and__(self, other):
+		"""	
+		Invoked for & operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " & %s" % repr(other)
 		return self
 		
 	def __xor__(self, other):
+		"""	
+		Invoked for ^ operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " ^ %s" % repr(other)
 		return self
 		
 	def __or__(self, other):
+		"""	
+		Invoked for | operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " | %s" % repr(other)
 		return self
 
 	def __div__(self, other):
+		"""	
+		Invoked for / operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " / %s" % repr(other)
 		return self
 		
 	def __truediv__(self, other):
+		"""	
+		Invoked for (true) / operations, allowing such operations as part of the statement being
+		built. The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " / %s" % repr(other)
 		return self
 		
 	def __iadd__(self, other):
-		#print "iadd [%s]" % repr(other)
+		"""	
+		Invoked for += operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " += %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __isub__(self, other):
+		"""	
+		Invoked for -= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " -= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __imul__(self, other):
+		"""	
+		Invoked for *= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " *= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __idiv__(self, other):
+		"""	
+		Invoked for /= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " /= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __itruediv__(self, other):
+		"""	
+		Invoked for (true) /= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from list
 			self._owner.statement_combined(other)
-		self._buffer += " /= %s" % repr(other)		
+		self._buffer += " /= %s" % repr(other)	
+		# workaround for re-assignment behaviour	
 		return StatementBuilder.DUMMY
 		
 	def __ifloordiv__(self, other):
+		"""	
+		Invoked for //= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from list
 			self._owner.statement_combined(other)
 		self._buffer += " //= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __imod__(self, other):
+		"""	
+		Invoked for %= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from list
 			self._owner.statement_combined(other)
 		self._buffer += " %%= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __ipow__(self, other):
+		"""	
+		Invoked for **= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from list
 			self._owner.statement_combined(other)
 		self._buffer += " **= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __ilshift__(self, other):
+		"""	
+		Invoked for <<= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " <<= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __irshift__(self, other):
+		"""	
+		Invoked for >>= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " >>= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __iand__(self, other):
+		"""	
+		Invoked for &= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " &= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __ixor__(self, other):
+		"""	
+		Invoked for ^= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statmeent, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " ^= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __ior__(self, other):
+		"""	
+		Invoked for |= operations, allowing such operations as part of the statement being built.
+		The right hand side may be a StatementBuilder or any other repr-able object.
+		"""
 		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
 			self._owner.statement_combined(other)
 		self._buffer += " |= %s" % repr(other)
+		# workaround for re-assignment behaviour
 		return StatementBuilder.DUMMY
 		
 	def __neg__(self):
-		if isinstance(other,StatementBuilder):
-			self._owner.statement_combined(other)
+		"""	
+		Invoked when object negated, allowing negations as part of the statement being built.
+		"""
 		self._buffer = "-" + self._buffer
 		return self
 		
 	def __pos__(self):
-		if isinstance(other,StatementBuilder):
-			self._owner.statement_combined(other)
+		"""	
+		Invoked when object is unary +'d, allowing this as part of the statement being built.
+		"""
 		self._buffer = "+" + self._buffer
 		return self
 		
 	def __invert__(self):
-		if isinstance(other,StatementBuilder):
-			self._owner.statement_combined(other)
+		"""	
+		Invoked when object is bitwise negated, allowing this as part of the statement being built.
+		"""
 		self._buffer = "~" + self._buffer
 		return self
 		
-
 	
 
