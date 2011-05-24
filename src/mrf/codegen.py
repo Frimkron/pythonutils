@@ -1,4 +1,3 @@
-# TODO: brackets?
 # TODO: unit tests
 # TODO: documentation
 # TODO: way of capturing global and local scope
@@ -347,6 +346,30 @@ class FunctionBuilderInterface(object):
 			
 		return self	
 			
+	def b_(self,statement):
+		"""	
+		Defines a pair of parentheses, using the given value as the contents. This may be
+		a StatementBuilder or any other repr-able object. A new statement is started and its
+		StatementBuilder object is returned, allowing further operators to be chained to
+		build up the statement.
+		"""
+		if isinstance(statement,StatementBuilder):
+			# combine statement, remove from main list
+			self._owner.statement_combined(statement)
+		# begin new statement, starting with bracket
+		return self._owner.create_statement("( %s )" % repr(statement))
+			
+	def lit_(self,value):
+		"""	
+		Defines a literal value using the given value which may be any repr-able object. The
+		representation of the object is used in the function code as is. This is useful for
+		beginning statements with string or int literals, for example, which cannot be accessed
+		as attributes. A new statement is started and its StatementBuilder object is returned,
+		allowing further operators to be chained to build up the statement.
+		"""
+		# begin new statement, starting with literal value
+		return self._owner.create_statement(repr(value))
+			
 	def if_(self,statement):
 		"""	
 		Begins an "if" block definition, using the given value as the condition expression. 
@@ -496,7 +519,7 @@ class StatementBuilder(object):
 		self._buffer = "not "+self._buffer
 		return self
 		
-	def attr(self,name):
+	def attr_(self,name):
 		"""	
 		Defines an access of the named attribute as part of the statement being built. For use 
 		where an attribute already exists, e.g. "is_"
