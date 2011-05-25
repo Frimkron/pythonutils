@@ -1,6 +1,5 @@
 # TODO: unit tests
 # TODO: documentation
-# TODO: way of capturing global and local scope
 
 
 def def_(name,args=[],kargs={},globals={},locals={}):
@@ -253,15 +252,14 @@ class FunctionBuilder(object):
 		
 	def __exit__(self,extype,exvalue,traceback):
 		"""	
-		Invoked when context is exited. Invokes "build" to compile the function definition
+		Invoked when context is exited
 		"""
 		self.state = FunctionBuilder.STATE_AFTER
-		self.build()
 		
 	def build(self):
 		"""	
 		Builds the internal statement list into a function definition and attempts to execute
-		as python code, creating a new function
+		as python code, creating a new function. Returns the new function.
 		"""
 		if self.state != FunctionBuilder.STATE_AFTER:
 			raise FunctionBuilderError("Must complete 'with' block before building")
@@ -270,7 +268,6 @@ class FunctionBuilder(object):
 		buffer = "def %s (%s):\n" % (self.name, ",".join(arglist))
 		for d,s in self.statements:
 			buffer += "%s%s\n" % ("\t"*d,repr(s))
-		print buffer
 		exec buffer in self.globals, self.locals
 		return self.locals[self.name]
 	
@@ -369,6 +366,19 @@ class FunctionBuilderInterface(object):
 		"""
 		# begin new statement, starting with literal value
 		return self._owner.create_statement(repr(value))
+
+	def not_(self,statement):
+		"""	
+		Defines the logical negation of the given value, i.e. "not X" where X is the value.
+		This may be a StatementBuilder or any other repr-able object. A new statement is 
+		started and its StatementBuilder object is returned, allowing further operators to be
+		chained to build up the statement.
+		"""
+		if isinstance(statement,StatementBuilder):
+			# combine statement, remove from main list
+			self._owner.statement_combined(statement)
+		# begin new statement, starting with the statement negation
+		return self._owner.create_statement("not %s" % repr(statement))
 			
 	def if_(self,statement):
 		"""	
@@ -486,8 +496,19 @@ class StatementBuilder(object):
 		"""
 		if isinstance(other,StatementBuilder):
 			# combine statement, remove from main list
-			self._owner.statement_combined(value)
+			self._owner.statement_combined(other)
 		self._buffer += " is %s" % repr(other)
+		return self
+		
+	def is_not_(self,other):
+		"""	
+		Defines an "is not" expressio as part of the statement being built, using the given value
+		as the right hand side. This may be another StatementBuilder or any other repr-able object.
+		"""
+		if isinstance(other,StatementBuilder):
+			# combine statement, remove from main list
+			self._owner.statement_combined(other)
+		self._buffer += " is not %s" % repr(other)
 		return self
 		
 	def and_(self,other):
@@ -497,7 +518,7 @@ class StatementBuilder(object):
 		"""
 		if isinstance(other,StatementBuilder):
 			# combine statement, remove from main list
-			self._owner.statement_combined(value)
+			self._owner.statement_combined(other)
 		self._buffer += " and %s" % repr(other)
 		return self
 		
@@ -508,15 +529,8 @@ class StatementBuilder(object):
 		"""
 		if isinstance(other,StatementBuilder):
 			# combine statement, remove from main list
-			self._owner.statement_combined(value)
+			self._owner.statement_combined(other)
 		self._buffer += " or %s" % repr(other)
-		return self
-		
-	def not_(self):
-		"""	
-		Defines a logical negation as part of the statement being built.
-		"""
-		self._buffer = "not "+self._buffer
 		return self
 		
 	def attr_(self,name):
@@ -659,7 +673,8 @@ class StatementBuilder(object):
 				repr(key.stop) if key.stop is not None else "",
 				repr(key.step) if key.step is not None else "" )
 		else:
-			# TODO: combine key statement here!
+			if isinstance(key,StatementBuilder):
+				self._owner.statement_combined(key)
 			self._buffer += "[%s]" % repr(key)
 		return self
 		
@@ -683,7 +698,8 @@ class StatementBuilder(object):
 				repr(key.step) if key.step is not None else "",
 				repr(value) )			
 		else:
-			# TODO: combine key statement here!
+			if isinstance(key,StatementBuilder):
+				self._owner.statement_combined(key)
 			self._buffer += "[%s] = %s" % (repr(key),repr(value))
 			
 		return self
@@ -697,7 +713,7 @@ class StatementBuilder(object):
 		if isinstance(item,StatementBuilder):
 			# combine statement, remove from main list
 			self._owner.statement_combined(item)			
-		self._buffer += "%s in " % repr(item)
+		self._buffer = "%s in %s" % (repr(item),self._buffer)
 		return self
 
 	def __add__(self, other):
@@ -1020,5 +1036,479 @@ class StatementBuilder(object):
 		self._buffer = "~" + self._buffer
 		return self
 		
+		
+if __name__ == "__main__":	
+	import unittest
 	
+	class MockFunctionBuilder(object):
+	
+		def __init__(self,statement=None):
+			self.statement = statement
+			self.combined = []
+			self.created = []
+			
+		def statement_combined(self,stmt):
+			self.combined.append(stmt)
+			
+		def check_combined(self,testcase,vals):
+			testcase.assertEquals(len(vals),len(self.combined))
+			for i,c in enumerate(self.combined):
+				testcase.assertIs(vals[i],c)
+	
+		def create_statement(self,name):
+			self.created.append(name)
+			return self.statement
+			
+		def check_created(self,testcase,vals):
+			testcase.assertEquals(len(vals),len(self.created))
+			for i,c in enumerate(self.created):
+				testcase.assertEquals(vals[i],c)
+	
+	
+	class TestStatementBuilder(unittest.TestCase):
+	
+		def setUp(self):
+			self.o = MockFunctionBuilder()
+			self.s = StatementBuilder(self.o,"foobar")
+			self.t = StatementBuilder(MockFunctionBuilder(),"blah")
+	
+		def test_repr(self):
+			self.assertEquals("foobar",repr(self.s))
+			
+		def test_get_attribute(self):
+			a = self.s.yadda
+			self.assertIs(self.s, a)
+			self.assertEquals("foobar.yadda",repr(self.s))
+			
+		def test_get_existing_attribute(self):
+			a = self.s._owner
+			self.assertIs(self.o,a)
+			self.assertEquals("foobar",repr(self.s))
+			
+		def test_set_attribute(self):
+			self.s.yadda = 5
+			self.assertEquals("foobar.yadda = 5", repr(self.s))
+			
+		def test_set_existing_attribute(self):
+			self.s._owner = None
+			self.assertEquals(None, self.s._owner)
+			self.assertEquals("foobar", repr(self.s))
+			
+		def test_set_attribute_statement(self):
+			self.s.yadda = self.t
+			self.assertEquals("foobar.yadda = blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_is(self):
+			self.s.is_("blah")
+			self.assertEquals("foobar is 'blah'", repr(self.s))
+			
+		def test_is_statement(self):
+			self.s.is_(self.t)
+			self.assertEquals("foobar is blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_is_not(self):
+			self.s.is_not_(False)
+			self.assertEquals("foobar is not False", repr(self.s))
+		
+		def test_is_not_statement(self):
+			self.s.is_not_(self.t)
+			self.assertEquals("foobar is not blah",repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_and(self):
+			self.s.and_(5.7)
+			self.assertEquals("foobar and 5.7", repr(self.s))
+			
+		def test_and_statement(self):
+			self.s.and_(self.t)
+			self.assertEquals("foobar and blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_or(self):
+			self.s.or_([42])
+			self.assertEquals("foobar or [42]", repr(self.s))
+			
+		def test_or_statement(self):
+			self.s.or_(self.t)
+			self.assertEquals("foobar or blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
 
+		def test_attr(self):
+			self.s.attr_("_owner")
+			self.assertEquals("foobar._owner", repr(self.s))
+				
+		def test_call(self):
+			self.s(42,69,foo="bar")
+			self.assertEquals("foobar(42,69,foo='bar')", repr(self.s))
+			
+		def test_call_statement(self):
+			self.s(weh=self.t)
+			self.assertEquals("foobar(weh=blah)", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_less_than(self):
+			self.s < 99
+			self.assertEquals("foobar < 99",repr(self.s))
+			
+		def test_less_than_statement(self):
+			self.s < self.t
+			self.assertEquals("foobar < blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_less_equal(self):
+			self.s <= 69
+			self.assertEquals("foobar <= 69", repr(self.s))
+			
+		def test_less_equal_statement(self):
+			self.s <= self.t
+			self.assertEquals("foobar <= blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_greater_than(self):
+			self.s > "lol"
+			self.assertEquals("foobar > 'lol'",repr(self.s))
+			
+		def test_greater_than_statement(self):
+			self.s >= self.t
+			self.assertEquals("foobar >= blah",repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_greater_equal(self):
+			self.s >= 777
+			self.assertEquals("foobar >= 777", repr(self.s))
+			
+		def test_greater_equal_statement(self):
+			self.s >= self.t
+			self.assertEquals("foobar >= blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_get_item(self):
+			v = self.s["cake"]
+			self.assertIs(self.s, v)
+			self.assertEquals("foobar['cake']", repr(self.s))
+			
+		def test_get_item_slice(self):
+			v = self.s[1:2:3]
+			self.assertIs(self.s, v)
+			self.assertEquals("foobar[1:2:3]", repr(self.s))
+			
+		def test_get_item_slice_blanks(self):
+			v = self.s[::]
+			self.assertIs(self.s, v)
+			self.assertEquals("foobar[::]", repr(self.s))
+			
+		def test_get_item_statement(self):
+			v = self.s[self.t]
+			self.assertIs(self.s,v)
+			self.assertEquals("foobar[blah]", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_set_item(self):
+			self.s[999] = ":D"
+			self.assertEquals("foobar[999] = ':D'", repr(self.s))
+			
+		def test_set_item_slice(self):
+			self.s[1:2:3] = "XD"
+			self.assertEquals("foobar[1:2:3] = 'XD'", repr(self.s))
+			
+		def test_set_item_slice_blanks(self):
+			self.s[::] = ":|"
+			self.assertEquals("foobar[::] = ':|'", repr(self.s))
+			
+		def test_set_item_statement(self):
+			u = StatementBuilder(MockFunctionBuilder(),"yadda")
+			self.s[self.t] = u
+			self.assertEquals("foobar[blah] = yadda",repr(self.s))
+			self.o.check_combined(self,[u,self.t])
+
+		def test_contains(self):
+			42 in self.s
+			self.assertEquals("42 in foobar", repr(self.s))
+			
+		def test_contains_statement(self):
+			self.t in self.s
+			self.assertEquals("blah in foobar", repr(self.s))
+			self.o.check_combined(self,[self.t])
+	
+		def test_add(self):
+			self.s + 0xFF
+			self.assertEquals("foobar + 255", repr(self.s))
+			
+		def test_add_statement(self):
+			self.s + self.t
+			self.assertEquals("foobar + blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+				
+		def test_sub(self):
+			self.s - ";)"
+			self.assertEquals("foobar - ';)'", repr(self.s))
+		
+		def test_sub_statement(self):
+			self.s - self.t
+			self.assertEquals("foobar - blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+
+		def test_mul(self):
+			self.s * 0.5
+			self.assertEquals("foobar * 0.5", repr(self.s))
+			
+		def test_mul_statement(self):
+			self.s * self.t
+			self.assertEquals("foobar * blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+		
+		def test_floordiv(self):
+			self.s // 7
+			self.assertEquals("foobar // 7", repr(self.s))
+			
+		def test_floordiv_statement(self):
+			self.s // self.t
+			self.assertEquals("foobar // blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+		
+		def test_div(self):
+			self.s / 1337
+			self.assertEquals("foobar / 1337", repr(self.s))
+			
+		def test_div_statement(self):
+			self.s / self.t
+			self.assertEquals("foobar / blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+
+		def test_mod(self):
+			self.s % {}
+			self.assertEquals("foobar % {}", repr(self.s))
+			
+		def test_mod_statement(self):
+			self.s % self.t
+			self.assertEquals("foobar % blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_pow(self):
+			self.s ** 6
+			self.assertEquals("foobar ** 6", repr(self.s))
+			
+		def test_pow_statement(self):
+			self.s ** self.t
+			self.assertEquals("foobar ** blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+
+		def test_left_shift(self):
+			self.s << 16
+			self.assertEquals("foobar << 16", repr(self.s))
+
+		def test_left_shift_statement(self):
+			self.s << self.t
+			self.assertEquals("foobar << blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+
+		def test_right_shift(self):
+			self.s >> 50
+			self.assertEquals("foobar >> 50", repr(self.s))
+			
+		def test_right_shift_statement(self):
+			self.s >> self.t
+			self.assertEquals("foobar >> blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_bit_and(self):
+			self.s & 9
+			self.assertEquals("foobar & 9", repr(self.s))
+		
+		def test_bit_and_statement(self):
+			self.s & self.t
+			self.assertEquals("foobar & blah",repr(self.s))
+			self.o.check_combined(self,[self.t])
+			
+		def test_bit_or(self):
+			self.s | "!"
+			self.assertEquals("foobar | '!'", repr(self.s))
+			
+		def test_bit_or_statement(self):
+			self.s | self.t
+			self.assertEquals("foobar | blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+
+		def test_bit_xor(self):
+			self.s ^ 666
+			self.assertEquals("foobar ^ 666", repr(self.s))
+			
+		def test_bit_xor_statement(self):
+			self.s ^ self.t
+			self.assertEquals("foobar ^ blah", repr(self.s))
+			self.o.check_combined(self,[self.t])
+
+		def test_iadd(self):
+			ss = self.s
+			self.s += 7
+			self.assertEquals("foobar += 7", repr(ss))
+			
+		def test_iadd_statement(self):
+			ss = self.s
+			self.s += self.t
+			self.assertEquals("foobar += blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+			
+		def test_isub(self):
+			ss = self.s
+			self.s -= 8
+			self.assertEquals("foobar -= 8", repr(ss))
+			
+		def test_isub_statement(self):
+			ss = self.s
+			self.s -= self.t
+			self.assertEquals("foobar -= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+
+		def test_imul(self):
+			ss = self.s
+			self.s *= 8.8
+			self.assertEquals("foobar *= 8.8", repr(ss))
+			
+		def test_imul_statement(self):
+			ss = self.s
+			self.s *= self.t
+			self.assertEquals("foobar *= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+
+		def test_ifloordiv(self):
+			ss = self.s
+			self.s //= 9
+			self.assertEquals("foobar //= 9", repr(ss))
+			
+		def test_ifloordiv_statement(self):
+			ss = self.s
+			self.s //= self.t
+			self.assertEquals("foobar //= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+
+		def test_idiv(self):
+			ss = self.s
+			self.s / 4
+			self.assertEquals("foobar / 4", repr(ss))
+			
+		def test_idiv_statement(self):
+			ss = self.s
+			self.s / self.t
+			self.assertEquals("foobar / blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+	
+		def test_imod(self):
+			ss = self.s
+			self.s %= 2
+			self.assertEquals("foobar %= 2", repr(ss))
+			
+		def test_imod_statement(self):
+			ss = self.s
+			self.s %= self.t
+			self.assertEquals("foobar %= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+			
+		def test_ipow(self):
+			ss = self.s
+			self.s **= 10
+			self.assertEquals("foobar **= 10", repr(ss))
+	
+		def test_ipow_statement(self):
+			ss = self.s
+			self.s **= self.t
+			self.assertEquals("foobar **= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+	
+		def test_ileft(self):
+			ss = self.s
+			self.s <<= 5
+			self.assertEquals("foobar <<= 5", repr(ss))
+			
+		def test_ileft_statement(self):
+			ss = self.s
+			self.s <<= self.t
+			self.assertEquals("foobar <<= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+			
+		def test_iright(self):
+			ss = self.s
+			self.s >>= 77
+			self.assertEquals("foobar >>= 77", repr(ss))
+			
+		def test_iright_statement(self):
+			ss = self.s
+			self.s >>= self.t
+			self.assertEquals("foobar >>= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+			
+		def test_ibitand(self):
+			ss = self.s
+			self.s &= 43
+			self.assertEquals("foobar &= 43", repr(ss))
+			
+		def test_ibitand_statement(self):
+			ss = self.s
+			self.s &= self.t
+			self.assertEquals("foobar &= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+			
+		def test_ibitor(self):
+			ss = self.s
+			self.s |= 3
+			self.assertEquals("foobar |= 3", repr(ss))
+	
+		def test_ibitor_statement(self):
+			ss = self.s
+			self.s |= self.t
+			self.assertEquals("foobar |= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+	
+		def test_ibitxor(self):
+			ss = self.s
+			self.s ^= 7
+			self.assertEquals("foobar ^= 7", repr(ss))
+	
+		def test_ibitxor_statement(self):
+			ss = self.s
+			self.s ^= self.t
+			self.assertEquals("foobar ^= blah", repr(ss))
+			self.o.check_combined(self,[self.t])
+
+		def test_neg(self):
+			-self.s
+			self.assertEquals("-foobar", repr(self.s))
+			
+		def test_pos(self):
+			+self.s
+			self.assertEquals("+foobar", repr(self.s))
+			
+		def test_invert(self):
+			~self.s
+			self.assertEquals("~foobar", repr(self.s))
+
+
+	class MockStatement(object):
+		pass
+
+
+	class TestFunctionBuilderInterface(unittest.TestCase):
+	
+		def setUp(self):
+			self.s = MockStatement()
+			self.o = MockFunctionBuilder(self.s)
+			self.i = FunctionBuilderInterface(self.o)
+	
+		def test_get_attribute(self):
+			s = self.i.foo
+			self.assertIs(self.s,s)
+			self.o.check_created(self,["foo"])
+			
+		def test_get_attribute_special(self):
+			for n in ("assert","pass","del","print","return","yield","raise","break",
+					"continue","import","global","exec"):
+				self.s = MockStatement()
+				self.o = MockFunctionBuilder(self.s)
+				self.i = FunctionBuilderInterface(self.o)
+				s = getattr(self.i, n+"_")
+				self.assertIs(self.s,s)
+				self.o.check_created(self,[n])
+			
+	unittest.main()
