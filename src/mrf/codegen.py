@@ -1039,6 +1039,7 @@ class StatementBuilder(object):
 		
 if __name__ == "__main__":	
 	import unittest
+	import sys
 	
 	class MockFunctionBuilder(object):
 	
@@ -1066,6 +1067,10 @@ if __name__ == "__main__":
 	
 	
 	class TestStatementBuilder(unittest.TestCase):
+
+		if sys.version_info < (2,7):
+			def assertIs(self, a,b):
+				self.assertTrue(a is b)
 	
 		def setUp(self):
 			self.o = MockFunctionBuilder()
@@ -1118,8 +1123,8 @@ if __name__ == "__main__":
 			self.o.check_combined(self,[self.t])
 			
 		def test_and(self):
-			self.s.and_(5.7)
-			self.assertEquals("foobar and 5.7", repr(self.s))
+			self.s.and_(5.0)
+			self.assertEquals("foobar and 5.0", repr(self.s))
 			
 		def test_and_statement(self):
 			self.s.and_(self.t)
@@ -1364,8 +1369,8 @@ if __name__ == "__main__":
 
 		def test_imul(self):
 			ss = self.s
-			self.s *= 8.8
-			self.assertEquals("foobar *= 8.8", repr(ss))
+			self.s *= 8.0
+			self.assertEquals("foobar *= 8.0", repr(ss))
 			
 		def test_imul_statement(self):
 			ss = self.s
@@ -1491,6 +1496,10 @@ if __name__ == "__main__":
 
 	class TestFunctionBuilderInterface(unittest.TestCase):
 	
+		if sys.version_info < (2,7):
+			def assertIs(self,a,b):
+				self.assertTrue(a is b)
+	
 		def setUp(self):
 			self.s = MockStatement()
 			self.o = MockFunctionBuilder(self.s)
@@ -1510,5 +1519,6 @@ if __name__ == "__main__":
 				s = getattr(self.i, n+"_")
 				self.assertIs(self.s,s)
 				self.o.check_created(self,[n])
+
 			
 	unittest.main()
