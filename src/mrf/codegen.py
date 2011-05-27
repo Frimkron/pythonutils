@@ -36,21 +36,30 @@ class FunctionBuilder(object):
 	STATE_DURING = 1
 	STATE_AFTER = 2
 	
-	def __init__(self,name,args,kargs,globals,locals):
+	def __init__(self, name, args, kargs, globals, locals,
+			stmt_tester=lambda s: isinstance(s,StatementBuilder),
+			stmt_factory=lambda s,n: StatementBuilder(s,n),
+			blkstmt_factory=lambda p,s: BlockStatement(p,s) ):
 		"""	
 		Initialises the FunctionBuilder
 		Parameters:
-			name	The name of the function to define
-			args	List of names for standard arguments
-			kargs	Dictionary of names and default values for keyword arguments
-			globals	Global scope in which to define function
-			locals	Local scope in which to define function
+			name			The name of the function to define
+			args			List of names for standard arguments
+			kargs			Dictionary of names and default values for keyword arguments
+			globals			Global scope in which to define function
+			locals			Local scope in which to define function
+			stmt_tester		One-arg function for determining whether a value is a statement builder or not
+			stmt_factory	Two-arg function for constructing statement builders. Takes owner and name
+			blkstmt_factory	Two-arg function for constructing block statements. Takes pattern and statements
 		"""
 		self.name = name
 		self.args = args
 		self.kargs = kargs
 		self.globals = globals
 		self.locals = locals
+		self.stmt_tester = stmt_tester
+		self.stmt_factory = stmt_factory
+		self.blkstmt_factory = blkstmt_factory
 		self.indent = 1
 		self.state = FunctionBuilder.STATE_BEFORE
 		self.statements = []
@@ -74,7 +83,7 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		sb = StatementBuilder(self,name)
+		sb = self.stmt_factory(self,name)
 		self.statements.append((self.indent,sb))
 		return sb
 		
@@ -102,9 +111,9 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		if isinstance(stmt,StatementBuilder):
+		if self.stmt_tester(stmt):
 			self.statement_combined(stmt)
-		self.statements.append((self.indent,BlockStatement("if %s :",[stmt])))
+		self.statements.append((self.indent,self.blkstmt_factory("if %s :",[stmt])))
 		self.indent += 1
 		
 	def start_elif(self,stmt):
@@ -117,9 +126,9 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		if isinstance(stmt,StatementBuilder):
+		if self.stmt_tester(stmt);
 			self.statement_combined(stmt)
-		self.statements.append((self.indent,BlockStatement("elif %s :",[stmt])))
+		self.statements.append((self.indent,self.blkstmt_factory("elif %s :",[stmt])))
 		self.indent += 1
 		
 	def start_else(self):
@@ -130,7 +139,7 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")			
-		self.statements.append((self.indent,BlockStatement("else :",[])))
+		self.statements.append((self.indent,self.blkstmt_factory("else :",[])))
 		self.indent += 1
 		
 	def start_while(self,stmt):
@@ -143,9 +152,9 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		if isinstance(stmt,StatementBuilder):
+		if self.stmt_tester(stmt):
 			self.statement_combined(stmt)
-		self.statements.append((self.indent,BlockStatement("while %s :",[stmt])))
+		self.statements.append((self.indent,self.blkstmt_factory("while %s :",[stmt])))
 		self.indent += 1
 		
 	def start_for(self,varstmt,seqstmt):
@@ -158,11 +167,11 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		if isinstance(varstmt,StatementBuilder):
+		if self.stmt_tester(varstmt):
 			self.statement_combined(varstmt)
-		if isinstance(seqstmt,StatementBuilder):
+		if self.stmt_tester(seqstmt):
 			self.statement_combined(seqstmt)
-		self.statements.append((self.indent,BlockStatement("for %s in %s :",[varstmt,seqstmt])))
+		self.statements.append((self.indent,self.blkstmt_factory("for %s in %s :",[varstmt,seqstmt])))
 		self.indent += 1
 		
 	def start_try(self):
@@ -173,7 +182,7 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		self.statements.append((self.indent,BlockStatement("try :",[])))
+		self.statements.append((self.indent,self.blkstmt_factory("try :",[])))
 		self.indent += 1
 		
 	def start_except(self,exstmt,varstmt):
@@ -186,9 +195,9 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		if isinstance(exstmt,StatementBuilder):			
+		if self.stmt_tester(exstmt):
 			self.statement_combined(exstmt)
-		if varstmt is not None and isinstance(varstmt,StatementBuilder):
+		if varstmt is not None and self.stmt_tester(varstmt):
 			self.statement_combined(varstmt)
 		if exstmt is not None:
 			if varstmt is not None:
@@ -197,7 +206,7 @@ class FunctionBuilder(object):
 				pattern,statements = "except %s :",[exstmt]
 		else:
 			pattern,statements = "except :",[]			
-		self.statements.append((self.indent,BlockStatement(pattern,statements)))
+		self.statements.append((self.indent,self.blkstmt_factory(pattern,statements)))
 		self.indent += 1
 		
 	def start_finally(self):
@@ -208,7 +217,7 @@ class FunctionBuilder(object):
 		"""
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		self.statements.append((self.indent,BlockStatement("finally :",[])))
+		self.statements.append((self.indent,self.blkstmt_factory("finally :",[])))
 		self.indent += 1
 		
 	def start_with(self,pairs):
@@ -223,9 +232,9 @@ class FunctionBuilder(object):
 		if self.state != FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
 		for o,v in pairs:
-			if o is not None and isinstance(o,StatementBuilder):
+			if o is not None and self.stmt_tester(o):
 				self.statement_combined(o)
-			if v is not None and isinstance(v,StatementBuilder):
+			if v is not None and self.stmt_tester(v):
 				self.statement_combined(v)
 		patterns = []
 		statements = []
@@ -238,7 +247,7 @@ class FunctionBuilder(object):
 				patterns.append("%s")
 				statements.append(objstmt)
 		pattern = "with %s :" % ", ".join(patterns)
-		self.statements.append((self.indent,BlockStatement(pattern,statements)))
+		self.statements.append((self.indent,self.blkstmt_factory(pattern,statements)))
 		self.indent += 1
 		
 	def end_block(self):
@@ -1059,6 +1068,36 @@ if __name__ == "__main__":
 			self.created.append(name)
 			return self.statement
 			
+		def start_if(self,val):
+			self.created.append("if "+repr(val))
+			
+		def start_elif(self,val):
+			self.created.append("elif "+repr(val))
+			
+		def start_else(self):
+			self.created.append("else")
+			
+		def start_while(self,val):
+			self.created.append("while "+repr(val))
+			
+		def start_for(self,tval,sval):
+			self.created.append("for "+repr(tval)+" in "+repr(sval))
+			
+		def start_try(self):
+			self.created.append("try")
+			
+		def start_except(self,eval,tval):
+			self.created.append("except "+repr(eval)+" as "+repr(tval))	
+		
+		def start_finally(self):
+			self.created.append("finally")
+		
+		def start_with(self, pairs):
+			self.created.append("with "+repr(pairs))
+		
+		def end_block(self):
+			self.created.append("end")
+			
 		def check_created(self,testcase,vals):
 			testcase.assertEquals(len(vals),len(self.created))
 			for i,c in enumerate(self.created):
@@ -1510,5 +1549,97 @@ if __name__ == "__main__":
 				s = getattr(self.i, n+"_")
 				self.assertIs(self.s,s)
 				self.o.check_created(self,[n])
+
+		def test_if(self):
+			with self.i.if_(5):
+				pass
+			self.o.check_created(self,["if 5","end"])
+		
+		def test_elif(self):
+			with self.i.elif_(5.0):
+				pass
+			self.o.check_created(self,["elif 5.0","end"])
+			
+		def test_else(self):
+			with self.i.else_():
+				pass
+			self.o.check_created(self,["else","end"])
+			
+		def test_while(self):
+			with self.i.while_(99):
+				pass
+			self.o.check_created(self,["while 99","end"])
+			
+		def test_for(self):
+			with self.i.for_(4, "foo"):
+				pass
+			self.o.check_created(self,["for 4 in 'foo'","end"])
+			
+		def test_try(self):
+			with self.i.try_():
+				pass
+			self.o.check_created(self,["try","end"])
+			
+		def test_except(self):
+			with self.i.except_(69,":|"):
+				pass
+			self.o.check_created(self,["except 69 as ':|'","end"])
+			
+		def test_except_no_args(self):
+			with self.i.except_():
+				pass
+			self.o.check_created(self,["except None as None","end"])
+			
+		def test_except_no_target(self):
+			with self.i.except_(8008135):
+				pass
+			self.o.check_created(self,["except 8008135 as None","end"])
+
+		def test_finally(self):
+			with self.i.finally_():
+				pass
+			self.o.check_created(self,["finally","end"])
+
+		def test_with(self):
+			with self.i.with_(1,"2",3.0,[1,1,1,1]):
+				pass
+			self.o.check_created(self,["with [(1, '2'), (3.0, [1, 1, 1, 1])]","end"])
+			
+		def test_with_one_pair(self):
+			with self.i.with_("a","b"):
+				pass
+			self.o.check_created(self,["with [('a', 'b')]","end"])
+			
+		def test_with_no_target(self):
+			with self.i.with_(42):
+				pass
+			self.o.check_created(self,["with [(42, None)]","end"])
+			
+		def test_with_pair_no_target(self):
+			with self.i.with_(42,None,"foo"):
+				pass
+			self.o.check_created(self,["with [(42, None), ('foo', None)]","end"])
+			
+	
+	class TestFunctionBuilder(unittest.TestCase):
+
+		def is_statement(self,s):
+			return isinstance(s,MockStatement)
+			
+		def make_statement(self,owner,name):
+			return MockStatement()
+			
+		def make_block(self,pattern,statments):
+			return MockStatement()
+
+		def test_basic_build(self):
+			fb = FunctionBuilder("foo",[],{},globals(),locals(),self.is_statement,
+					self.make_statement, self.make_block)
+			with fb as f:
+				f.pass_
+			# TODO: finish this!
+
+	# init, enter, create, combine, start_x, end, exit, build
+
 			
 	unittest.main()
