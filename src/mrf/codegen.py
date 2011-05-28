@@ -1,6 +1,19 @@
 # TODO: unit tests
 # TODO: documentation
 
+"""	
+Facilitates the dynamic generation of functions using an intuitive syntax.
+
+	>>> with def_("myfunction",globals=globals(),locals=locals()) as f:
+	... 	with f.for_( f.i, f.range(3) ):
+	... 		f.print_("Hi")
+	...
+	>>> myfunction()
+	Hi
+	Hi
+	Hi
+
+"""
 
 def def_(name,args=[],kargs={},globals={},locals={}):
 	"""	
@@ -261,9 +274,10 @@ class FunctionBuilder(object):
 		
 	def __exit__(self,extype,exvalue,traceback):
 		"""	
-		Invoked when context is exited
+		Invoked when context is exited. The function is automatically built.
 		"""
 		self.state = FunctionBuilder.STATE_AFTER
+		self.build()
 		
 	def build(self):
 		"""	
@@ -1048,6 +1062,8 @@ class StatementBuilder(object):
 		
 if __name__ == "__main__":	
 	import unittest
+	import sys
+	import doctest
 	
 	class MockFunctionBuilder(object):
 	
@@ -1105,6 +1121,10 @@ if __name__ == "__main__":
 	
 	
 	class TestStatementBuilder(unittest.TestCase):
+
+		if sys.version_info < (2,7):
+			def assertIs(self, a,b):
+				self.assertTrue(a is b)
 	
 		def setUp(self):
 			self.o = MockFunctionBuilder()
@@ -1157,8 +1177,8 @@ if __name__ == "__main__":
 			self.o.check_combined(self,[self.t])
 			
 		def test_and(self):
-			self.s.and_(5.7)
-			self.assertEquals("foobar and 5.7", repr(self.s))
+			self.s.and_(5.0)
+			self.assertEquals("foobar and 5.0", repr(self.s))
 			
 		def test_and_statement(self):
 			self.s.and_(self.t)
@@ -1403,8 +1423,8 @@ if __name__ == "__main__":
 
 		def test_imul(self):
 			ss = self.s
-			self.s *= 8.8
-			self.assertEquals("foobar *= 8.8", repr(ss))
+			self.s *= 8.0
+			self.assertEquals("foobar *= 8.0", repr(ss))
 			
 		def test_imul_statement(self):
 			ss = self.s
@@ -1525,10 +1545,15 @@ if __name__ == "__main__":
 
 
 	class MockStatement(object):
-		pass
+		def __repr__(self):
+			return "MOCK"
 
 
 	class TestFunctionBuilderInterface(unittest.TestCase):
+	
+		if sys.version_info < (2,7):
+			def assertIs(self,a,b):
+				self.assertTrue(a is b)
 	
 		def setUp(self):
 			self.s = MockStatement()
@@ -1549,6 +1574,43 @@ if __name__ == "__main__":
 				s = getattr(self.i, n+"_")
 				self.assertIs(self.s,s)
 				self.o.check_created(self,[n])
+		
+		def test_set_attribute(self):
+			self.i.foo = "bar"	
+			self.o.check_created(self,["foo = 'bar'"])
+
+		def test_set_existing_attribute(self):
+			self.i._owner = "bar"
+			self.o.check_created(self,[])
+			
+		def test_brackets(self):
+			s = self.i.b_(77)
+			self.assertIs(self.s, s)
+			self.o.check_created(self,["( 77 )"])
+			
+		def test_brackets_statement(self):
+			t = StatementBuilder(self.o,"foo")
+			s = self.i.b_(t)
+			self.assertIs(self.s, s)
+			self.o.check_created(self,["( foo )"])
+			self.o.check_combined(self,[t])
+				
+		def test_lit(self):
+			s = self.i.lit_("hi")
+			self.assertIs(self.s, s)
+			self.o.check_created(self,["'hi'"])
+				
+		def test_not(self):
+			s = self.i.not_(20)
+			self.assertIs(self.s, s)
+			self.o.check_created(self,["not 20"])
+				
+		def test_not_statement(self):
+			t = StatementBuilder(self.o,"foo")
+			s = self.i.not_(t)
+			self.assertIs(self.s,s)
+			self.o.check_created(self,["not foo"])
+			self.o.check_combined(self,[t])
 
 		def test_if(self):
 			with self.i.if_(5):
@@ -1641,5 +1703,6 @@ if __name__ == "__main__":
 
 	# init, enter, create, combine, start_x, end, exit, build
 
-			
+
+	doctest.testmod()		
 	unittest.main()
