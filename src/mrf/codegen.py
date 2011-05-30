@@ -1,8 +1,37 @@
-# TODO: unit tests
-# TODO: documentation
-
 """	
+Copyright (c) 2011 Mark Frimston
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------------
+
+Code Generation Module
+
+
+FunctionDefiner
+---------------
+
 Facilitates the dynamic generation of functions using an intuitive syntax.
+Example:
 
 	>>> d = FunctionDefiner()
 	>>> with d.def_("myfunction") as f:
@@ -16,7 +45,167 @@ Facilitates the dynamic generation of functions using an intuitive syntax.
 	Hi
 	Hi
 
+Def
+
+To define a new function, construct a FunctionDefiner and invoke 'def_' in a
+'with' context block. The block delimits the function definition. The context
+target variable can then be used to add statements to the function definition.
+Finally, the new function can be retrieved by invoking 'get' on the definer.
+
+For example, the following defines a function called 'foo' with a single 'pass' 
+statement. The context target 'f' is used to add the statement to the function:
+
+	>>> d = FunctionDefiner()
+	>>> with d.def_("foo") as f:
+	... 	f.pass_
+	...
+	pass
+	>>> foo = d.get()
+
+Statements
+
+The context target allows any statement to be added to the function definition.
+To begin a statement with a name, simply use the dot operator to request it as 
+an attribute. Most unary and binary operators, slicing, indexing, calling etc
+can then be performed in the statement and added to the definition.
+
+For example, the following defines a function which returns the sum of the first
+two indexes of a list named 'mylist':
+
+	>>> d = FunctionDefiner()
+	>>> with d.def_("foo") as f:
+	... 	f.mylist = [1,2,3]
+	... 	f.return_( f.mylist[0] + f.mylist[1] )
+	... 
+	return(mylist[0] + mylist[1])
+	>>> foo = d.get()
+	>>> foo()
+	3
+	
+Literals
+	
+Literals can be used in the middle of statements as one might expect, but to
+begin a statement with a literal, the 'lit_' function must be used.
+
+For example, the following defines a function which returns the concatenation of
+the string 'foo' with string variable 'bar'
+
+	>>> d = FunctionDefiner()
+	>>> with d.def_("foo") as f:
+	... 	f.bar = "bagh"
+	... 	f.return_( f.lit_("foo") + f.bar )
+	...
+	return('foo' + bar)
+	>>> foo = d.get()
+	>>> foo()
+	'foobagh'
+	
+Parameters 
+
+Function parameters can be specified in the 'def_' call. It takes the function name
+followed by an optional list of standard argument names, and an optional dictionary
+for keyword argument names and default values.
+
+For example, for following function returns the sum of arguments 'a', 'b' and 'c'. 
+The last of which has a default value of 5:
+
+	>>> d = FunctionDefiner()
+	>>> with d.def_("foo", ["a","b"], {"c": 5}) as f:
+	... 	f.return_( f.a + f.b + f.c )
+	...
+	return(a + b + c)
+	>>> foo = d.get()
+	>>> foo(2, 5)
+	12
+	
+Special Functions
+
+Certain operations require a special function to be acheived, including 'return' and
+'pass' statements and their ilk, logical 'and' and 'or', 'is' and others. The following
+table describes these functions:
+
+	Operation		Function to use
+	---------       ---------------
+	logical and		and_
+	logical or		or_
+	logical not		not_
+	is				is_
+	is not			is_not_
+	parentheses		b_
+	assert			assert_
+	pass			pass_
+	del				del_
+	print			print_
+	return			return_
+	yield			yield_
+	raise			raise_
+	break			break_
+	continue		continue_
+	import			import_
+	global			global_
+	exec			exec_
+	
+Compound Statements
+
+Flow control statements such as 'if' and 'while' are acheived by using the appropriate
+function in a 'with' context block. The block delimits the scope of the statement. 
+
+For example, the following definition includes an 'if-else' statement which returns a 
+different value depending on the value of parameter 'x':
+
+	>>> d = FunctionDefiner()
+	>>> with d.def_("foo",["x"]) as f:
+	... 	with f.if_( f.x ):
+	... 		f.return_( True )
+	... 	with f.else_():
+	... 		f.return_( False )
+	...
+	return(True)
+	return(False)
+	>>> foo = d.get()
+	>>> foo(True)
+	True
+	>>> foo(False)
+	False
+	
+The flow control statement functions and their parameters are described below:
+
+	Statement	Function	Parameters
+	---------	--------	----------
+	if			if_			The statement to branch on
+	elif		elif_		The statement to branch on
+	else		else_		None
+	while		while_		The statement to check
+	for			for_		Target statement, sequence statement
+	try			try_		None
+	except		except_		Exception type statement (optional), target statement (optional)
+	finally		finally_	None
+	with		with_		Variable list of params of the form A, B, A, B where A is
+							a context object statement and B is a target statement.
+
+Scope
+
+By default, the new function is declared in an empty scope. But the global and local variables
+to be made available to the function can be specified using the 'globals' and 'locals' 
+parameters of 'def_'. 
+
+For example, the following function adds together the global variables 'alpha' and 'beta':
+
+	>>> alpha = 10
+	>>> beta = 6
+	>>> d = FunctionDefiner()
+	>>> with d.def_("foo",globals=globals()) as f:
+	... 	f.return_( f.alpha + f.beta )
+	...
+	return(alpha + beta)
+	>>> foo = d.get()
+	>>> foo()
+	16
+	
 """
+
+from mrf.structs import iscollection
+
 
 class FunctionDefiner(object):
 	"""	
@@ -131,11 +320,12 @@ class _FunctionBuilder(object):
 		incorporated into the other statement.
 		"""
 		if self.state != _FunctionBuilder.STATE_DURING:
-			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
+			raise FunctionBuilderError("Cannot invoke outside of 'with' block")			
 		for i,(d,s) in enumerate(self.statements):
 			if s is statement:
 				del(self.statements[i])
-				break
+				return
+		assert False, "Statement to combine was not found"
 				
 	def start_if(self,stmt):
 		"""	
@@ -221,9 +411,9 @@ class _FunctionBuilder(object):
 		self.statements.append((self.indent,self.blkstmt_factory("try :",[])))
 		self.indent += 1
 		
-	def start_except(self,exstmt,varstmt):
+	def start_except(self,exstmts,varstmt):
 		"""	
-		Begins an "except" block definition, using exstmt as the exception expression and varstmt
+		Begins an "except" block definition, using exstmt as the exception expression list and varstmt
 		as the target expression. Each may be a _StatementBuilder or any other value with an appropriate 
 		"repr" representation. They may be emitted by passing as None. The "except" start is added as a 
 		statement line and the indentation increased. Subsequent statements will be included inside the 
@@ -231,17 +421,18 @@ class _FunctionBuilder(object):
 		"""
 		if self.state != _FunctionBuilder.STATE_DURING:
 			raise FunctionBuilderError("Cannot invoke outside of 'with' block")
-		if self.stmt_tester(exstmt):
-			self.statement_combined(exstmt)
+		for ex in exstmts:
+			if self.stmt_tester(ex):
+				self.statement_combined(ex)
 		if varstmt is not None and self.stmt_tester(varstmt):
 			self.statement_combined(varstmt)
-		if exstmt is not None:
+		if len(exstmts) > 0:
 			if varstmt is not None:
-				pattern,statements = "except %s as %s :",[exstmt,varstmt]
+				pattern,statements = "except %s as %s :",[tuple(exstmts),varstmt]
 			else:
-				pattern,statements = "except %s :",[exstmt]
+				pattern,statements = "except %s :",[tuple(exstmts)]
 		else:
-			pattern,statements = "except :",[]			
+			pattern,statements = "except :",[]
 		self.statements.append((self.indent,self.blkstmt_factory(pattern,statements)))
 		self.indent += 1
 		
@@ -486,13 +677,19 @@ class _FunctionBuilderInterface(object):
 		self._owner.start_try()
 		return self
 		
-	def except_(self,exception=None,var=None):
+	def except_(self,exceptions=None,var=None):
 		"""	
-		Begins an "except" definition, using the given values as the exception expression and 
+		Begins an "except" definition, using the given values as the exception expression(s) and 
 		target expression respectively. Each is optional and may be a _StatementBuilder or any 
 		other repr-able object. Should be used in a "with" context block to delimit the block.
+		To specify multiple exception types, pass a sequence as the first parameter.
 		"""
-		self._owner.start_except(exception,var)
+		if exceptions is None:
+			exceptions = []
+		elif not iscollection(exceptions):
+			exceptions = [exceptions]
+		exceptions = list(exceptions)
+		self._owner.start_except(exceptions,var)
 		return self
 		
 	def finally_(self):
@@ -1680,17 +1877,22 @@ if __name__ == "__main__":
 		def test_except(self):
 			with self.i.except_(69,":|"):
 				pass
-			self.o.check_created(self,["except 69 as ':|'","end"])
+			self.o.check_created(self,["except [69] as ':|'","end"])
 			
 		def test_except_no_args(self):
 			with self.i.except_():
 				pass
-			self.o.check_created(self,["except None as None","end"])
+			self.o.check_created(self,["except [] as None","end"])
 			
 		def test_except_no_target(self):
 			with self.i.except_(8008135):
 				pass
-			self.o.check_created(self,["except 8008135 as None","end"])
+			self.o.check_created(self,["except [8008135] as None","end"])
+
+		def test_except_two_exceptions(self):
+			with self.i.except_((123,456),789):
+				pass
+			self.o.check_created(self,["except [123, 456] as 789","end"])
 
 		def test_finally(self):
 			with self.i.finally_():
@@ -1721,6 +1923,14 @@ if __name__ == "__main__":
 	class MockInterface(object):
 		pass
 		
+	class MockContext(object):
+		def __init__(self):
+			self.log = []
+		def __enter__(self):
+			self.log.append("entered")
+			return self
+		def __exit__(self,a,b,c):
+			self.log.append("exited")
 	
 	class TestFunctionBuilder(unittest.TestCase):
 
@@ -1993,12 +2203,12 @@ if __name__ == "__main__":
 			with self.assertRaises(FunctionBuilderError):
 				self.fb.start_for(None,None)
 
-		def test_start_try(self):
+		def test_start_try_start_except(self):
 			with self.fb:
 				self.fb.start_try()
 				self.fb.create_statement("[][1]")
 				self.fb.end_block()
-				self.fb.start_except(None,None)
+				self.fb.start_except([],None)
 				self.fb.create_statement("return True")
 			self.assertEquals(True, self.fb.get_function()())
 			
@@ -2012,7 +2222,134 @@ if __name__ == "__main__":
 			with self.assertRaises(FunctionBuilderError):
 				self.fb.start_try()
 
-	# except, finally, with
+		def test_start_except_both_args(self):
+			with self.fb:
+				self.fb.start_try()
+				self.fb.create_statement("[][1]")
+				self.fb.end_block()
+				self.fb.start_except([self.fb.create_statement("IndexError")],
+						self.fb.create_statement("e"))
+				self.fb.create_statement("return e")
+				self.fb.end_block()
+			self.assertEquals(IndexError, type(self.fb.get_function()()))
+			
+		def test_start_except_both_args_type(self):
+			with self.fb:
+				self.fb.start_try()
+				self.fb.create_statement("[][1]")
+				self.fb.end_block()
+				self.fb.start_except([self.fb.create_statement("ValueError")],
+						self.fb.create_statement("e"))
+				self.fb.create_statement("return e")
+				self.fb.end_block()
+			with self.assertRaises(IndexError):
+				self.fb.get_function()()
+				
+		def test_start_except_one_arg(self):
+			with self.fb:
+				self.fb.start_try()
+				self.fb.create_statement("[][1]")
+				self.fb.end_block()
+				self.fb.start_except([self.fb.create_statement("IndexError")],None)
+				self.fb.create_statement("return True")
+			self.assertEquals(True, self.fb.get_function()())
+		
+		def test_start_except_two_exceptions(self):
+			with self.fb:
+				self.fb.start_try()
+				self.fb.create_statement("[]['a']")
+				self.fb.end_block()
+				self.fb.start_except([self.fb.create_statement("IndexError"),self.fb.create_statement("Exception")],
+						self.fb.create_statement("e"))
+				self.fb.create_statement("return True")
+			self.assertEquals(True, self.fb.get_function()())			
+			
+		def test_early_start_except(self):
+			with self.assertRaises(FunctionBuilderError):
+				self.fb.start_except([],None)
+				
+		def test_late_start_except(self):
+			with self.fb:
+				self.fb.create_statement("pass")
+			with self.assertRaises(FunctionBuilderError):
+				self.fb.start_except([],None)
+	
+		def test_start_finally(self):
+			self.fb = _FunctionBuilder("foo",[],{},{},{},self.is_statement,
+					self.make_statement, self.make_block, self.make_interface)
+			with self.fb:
+				self.fb.start_try()
+				self.fb.create_statement("pass")
+				self.fb.end_block()
+				self.fb.start_finally()
+				self.fb.create_statement("return True")
+				self.fb.end_block()	
+			self.assertEquals(True, self.fb.get_function()())
+			
+			self.fb = _FunctionBuilder("foo",[],{},{},{},self.is_statement,
+					self.make_statement, self.make_block, self.make_interface)
+			with self.fb:
+				self.fb.start_try()
+				self.fb.create_statement("[][1]")
+				self.fb.end_block()
+				self.fb.start_finally()
+				self.fb.create_statement("return True")
+				self.fb.end_block()	
+			self.assertEquals(True, self.fb.get_function()())
+			
+		def test_early_start_finally(self):
+			with self.assertRaises(FunctionBuilderError):
+				self.fb.start_finally()
+				
+		def test_late_start_finally(self):
+			with self.fb:
+				self.fb.create_statement("pass")
+			with self.assertRaises(FunctionBuilderError):
+				self.fb.start_finally()
+
+		def test_start_with(self):
+			self.fb = _FunctionBuilder("foo",["context"],{},{},{},self.is_statement,
+					self.make_statement, self.make_block, self.make_interface)
+			with self.fb:
+				self.fb.start_with([[self.fb.create_statement("context"),None]])
+				self.fb.create_statement("pass")
+			c = MockContext()
+			self.fb.get_function()(c)
+			self.assertEquals(["entered","exited"], c.log)
+			
+		def test_start_with_both_args(self):
+			self.fb = _FunctionBuilder("foo",["context"],{},{},{},self.is_statement,
+					self.make_statement, self.make_block, self.make_interface)
+			with self.fb:
+				self.fb.start_with([[self.fb.create_statement("context"),self.fb.create_statement("c")]])
+				self.fb.create_statement("return c")
+			c = MockContext()
+			self.assertEquals(c, self.fb.get_function()(c))
+			self.assertEquals(["entered","exited"], c.log)
+
+		def test_start_with_two_contexts(self):
+			self.fb = _FunctionBuilder("foo",["context1","context2"],{},{},{},self.is_statement,
+					self.make_statement, self.make_block, self.make_interface)
+			with self.fb:
+				self.fb.start_with([[self.fb.create_statement("context1"),None],
+						[self.fb.create_statement("context2"),self.fb.create_statement("c")]])
+				self.fb.create_statement("return c")
+			c1 = MockContext()
+			c2 = MockContext()
+			self.assertEquals(c2, self.fb.get_function()(c1,c2))
+			self.assertEquals(["entered","exited"], c1.log)
+			self.assertEquals(["entered","exited"], c2.log)
+			
+		def test_early_start_with(self):
+			with self.assertRaises(FunctionBuilderError):
+				self.fb.start_with([[None,None]])
+				
+		def test_late_start_with(self):
+			with self.fb:
+				self.fb.create_statement("pass")
+			with self.assertRaises(FunctionBuilderError):
+				self.fb.start_with([[None,None]])
+
 
 	doctest.testmod()		
 	unittest.main()
