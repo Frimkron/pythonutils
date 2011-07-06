@@ -313,6 +313,54 @@ class FlagInitialiser(object):
 		f = 1 << self.val
 		self.val += 1
 		return f
+
+
+def one_to_many(classa,classb,abname=None,baname=None):
+
+	if abname is None:
+		abname = classb.__name__.lower()+"s"
+	if baname is None:
+		baname = classa.__name__.lower()
+		
+	abinner = "_"+abname
+	bainner = "_"+baname
+	
+	def a_get_b(self):
+		return getattr(self,abinner)
+	def a_set_b(self,val):
+		# unset old bs' refs
+		for b in getattr(self,abinner) or []:
+			setattr(b,bainner,None)
+		# set new b collection
+		val = tuple(val)
+		setattr(self,abinner,val)
+		#  set new bs' refs
+		for b in val or []:
+			setattr(b,bainner,self)
+	setattr(classa,abname, property(a_get_b,a_set_b))
+	setattr(classa,abinner, None)
+	
+	def b_get_a(self):
+		return getattr(self,bainner)
+	def b_set_a(self,val):
+		# remove self from old a's collection
+		a = getattr(self,bainner)
+		if a:
+			old = list(getattr(a,abinner) or [])
+			old.remove(self)
+			new = tuple(old)		
+			setattr(a,abinner,new)
+		# set new a
+		setattr(self,bainner,val)
+		# add self to new a's collection
+		a = getattr(self,bainner)
+		if a:
+			old = list(getattr(a,abinner) or [])
+			old.append(self)
+			new = tuple(old)
+			setattr(a,abinner,new)		
+	setattr(classb,baname, property(b_get_a,b_set_a))
+	setattr(classb,bainner, None)
 	
 
 # -- Testing -----------------------------
