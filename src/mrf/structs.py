@@ -313,6 +313,78 @@ class FlagInitialiser(object):
 		f = 1 << self.val
 		self.val += 1
 		return f
+
+def _make_ref_property(aupdaters,bupdaters):
+	_geta,_getsa,_seta,_adda,_rema = aupdaters
+	_getb,_getsb,_setb,_addb,_remb = bupdaters
+	
+	def set(obj,newrefs):
+		oldrefs = _get_ab_refs(obj)
+		for oldref in oldrefs:
+			_rem_ba_ref(oldref,obj)
+		_set_ab_refs(obj,newrefs)
+		for newref in newrefs:
+			_add_ba_ref(newref,obj)
+	
+def _make_ref_updaters(reftype,refname):
+
+	refinner = "_"+refname
+
+	if reftype == "ref":
+	
+		def _get(obj):
+			return getattr(obj,refinner)
+		def _gets(obj):
+			return ( getattr(obj,refinner), )
+		def _set(obj, ref):
+			setattr(obj,refinner,ref)
+		def _add(obj, ref):
+			setattr(obj,refinner,ref)
+		def _rem(obj,ref):
+			setattr(obj,refinner,None)			
+			
+	elif reftype == "seq":
+	
+		def _get(obj):
+			return getattr(obj,refinner)
+		def _gets(obj):
+			return getattr(obj,refinner)
+		def _set(obj, refs):
+			setattr(obj,refinner,tuple(refs))
+		def _add(obj,ref):
+			s = getattr(obj,refinner)
+			s += (ref,)
+			setattr(obj,refinner,s)
+		def _rem(obj,ref):
+			s = list(getattr(obj,refinner))
+			s.remove(ref)
+			setattr(obj,refinner,tuple(s))
+			
+	return _get, _gets, _set, _add, _rem
+
+def two_way_ref(classa,classb,abtype="ref",batype="seq",abname=None,baname=None):
+	"""	
+	Declare self-updating references between the given two classes.
+	abname and baname define the name of class a's reference to b
+	and b's to a, respectively. abtype and batype define the nature 
+	of these references:
+		ref - a single object reference
+		seq - a sequence of object references
+	"""
+	if not abtype in ("ref","seq"):
+		raise ValueError("Unknown abtype %s" % abtype)
+	if not batype in ("ref","seq"):
+		raise ValueError("Unknown batype %s" % batype)
+	
+	if abname is None:
+		abname = classb.__name__.lower()
+		if abtype == "seq": abname += "s"
+	if baname is None:
+		baname = classa.__name__.lower()
+		if batype == "seq": baname += "s"
+		
+	aupdaters = _make_ref_updaters(abtype,abname)
+	bupdaters = _make_ref_updaters(batype,baname)
 	
 
 # -- Testing -----------------------------
