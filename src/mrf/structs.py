@@ -314,28 +314,36 @@ class FlagInitialiser(object):
 		self.val += 1
 		return f
 
+
 def _make_ref_property(aupdaters,bupdaters):
 	_geta,_getsa,_seta,_adda,_rema = aupdaters
 	_getb,_getsb,_setb,_addb,_remb = bupdaters
 	
-	def set(obj,newrefs):
-		oldrefs = _get_ab_refs(obj)
+	def set(obj,val):
+		# get currently referenced object(s)
+		oldrefs = _getsa(obj)
+		# remove from each their reference to this object
 		for oldref in oldrefs:
-			_rem_ba_ref(oldref,obj)
-		_set_ab_refs(obj,newrefs)
+			_remb(oldref,obj)
+		# replace this object's reference(s)
+		_seta(obj,val)
+		# get newly referenced objects
+		newrefs = _getsa(obj)
+		# add to each a reference to this object
 		for newref in newrefs:
-			_add_ba_ref(newref,obj)
+			_addb(newref,obj)
+			
+	return property(_geta, set)
 	
-def _make_ref_updaters(reftype,refname):
-
-	refinner = "_"+refname
+def _make_ref_updaters(reftype,refinner):
 
 	if reftype == "ref":
 	
 		def _get(obj):
 			return getattr(obj,refinner)
 		def _gets(obj):
-			return ( getattr(obj,refinner), )
+			r = getattr(obj,refinner)
+			return ( r, ) if r is not None else ()
 		def _set(obj, ref):
 			setattr(obj,refinner,ref)
 		def _add(obj, ref):
@@ -348,28 +356,28 @@ def _make_ref_updaters(reftype,refname):
 		def _get(obj):
 			return getattr(obj,refinner)
 		def _gets(obj):
-			return getattr(obj,refinner)
+			return getattr(obj,refinner) or ()
 		def _set(obj, refs):
-			setattr(obj,refinner,tuple(refs))
+			setattr(obj,refinner,tuple(refs) if refs is not None else None)
 		def _add(obj,ref):
-			s = getattr(obj,refinner)
+			s = getattr(obj,refinner) or ()
 			s += (ref,)
 			setattr(obj,refinner,s)
 		def _rem(obj,ref):
-			s = list(getattr(obj,refinner))
+			s = list(getattr(obj,refinner) or ())
 			s.remove(ref)
 			setattr(obj,refinner,tuple(s))
 			
 	return _get, _gets, _set, _add, _rem
 
-def two_way_ref(classa,classb,abtype="ref",batype="seq",abname=None,baname=None):
+def two_way_ref(classa,classb,abtype="ref",batype="ref",abname=None,baname=None):
 	"""	
 	Declare self-updating references between the given two classes.
 	abname and baname define the name of class a's reference to b
 	and b's to a, respectively. abtype and batype define the nature 
 	of these references:
 		ref - a single object reference
-		seq - a sequence of object references
+		seq - a tuple of object references
 	"""
 	if not abtype in ("ref","seq"):
 		raise ValueError("Unknown abtype %s" % abtype)
@@ -382,9 +390,17 @@ def two_way_ref(classa,classb,abtype="ref",batype="seq",abname=None,baname=None)
 	if baname is None:
 		baname = classa.__name__.lower()
 		if batype == "seq": baname += "s"
-		
-	aupdaters = _make_ref_updaters(abtype,abname)
-	bupdaters = _make_ref_updaters(batype,baname)
+
+	abinner = "_"+abname
+	bainner = "_"+baname		
+	aupdaters = _make_ref_updaters(abtype,abinner)
+	bupdaters = _make_ref_updaters(batype,bainner)
+	
+	setattr(classa, abname, _make_ref_property(aupdaters,bupdaters))
+	setattr(classa, abinner, None)
+	
+	setattr(classb, baname, _make_ref_property(bupdaters,aupdaters))
+	setattr(classb, bainner, None)
 	
 
 # -- Testing -----------------------------
@@ -648,6 +664,196 @@ if __name__ == "__main__":
 					break
 				flags.append(f)
 			self.assertEquals([1,2,4,8,16,32,64,128], flags)
+
+	class TestTwoWayRef(unittest.TestCase):
+	
+		def testOneToOne(self):
+			
+			class Foo(object): pass
+			class Bar(object): pass			
+			two_way_ref(Foo,Bar,abtype="ref",batype="ref")
+			
+			foo = Foo()
+			bar = Bar()
+			
+			self.assertIn("bar", dir(foo))
+			self.assertIn("foo", dir(bar))
+			
+			self.assertIs(None, foo.bar)
+			self.assertIs(None, bar.foo)			
+			foo.bar = bar
+			self.assertIs(bar, foo.bar)
+			self.assertIs(foo, bar.foo)			
+			foo.bar = None
+			self.assertIs(None, foo.bar)
+			self.assertIs(None, bar.foo)
+			bar.foo = foo
+			self.assertIs(bar, foo.bar)
+			self.assertIs(foo, bar.foo)
+			bar.foo = None
+			self.assertIs(None, foo.bar)
+			self.assertIs(None, bar.foo)
+
+		def testOneToMany(self):
+		
+			class Foo(object): pass
+			class Bar(object): pass
+			two_way_ref(Foo,Bar,abtype="seq",batype="ref")
+			
+			foo = Foo()
+			bar = Bar()
+			bar2 = Bar()
+			
+			self.assertIn("bars", dir(foo))
+			self.assertIn("foo", dir(bar))
+			self.assertIn("foo", dir(bar2))
+			
+			self.assertIs(None, foo.bars)
+			self.assertIs(None, bar.foo)
+			self.assertIs(None, bar.foo)
+			foo.bars = ( bar, )
+			self.assertEquals(( bar, ), foo.bars)
+			self.assertIs(foo, bar.foo)
+			self.assertIs(None, bar2.foo)
+			bar2.foo = foo
+			self.assertEquals(( bar,bar2 ), foo.bars)
+			self.assertIs(foo, bar.foo)
+			self.assertIs(foo, bar2.foo) 
+			foo.bars = ( bar2, )
+			self.assertEquals(( bar2, ), foo.bars)
+			self.assertIs(None, bar.foo)
+			self.assertIs(foo, bar2.foo)
+			bar2.foo = None
+			self.assertEquals((), foo.bars)
+			self.assertIs(None, bar.foo)
+			self.assertIs(None, bar2.foo)
+			
+		def testManyToOne(self):
+		
+			class Foo(object): pass
+			class Bar(object): pass
+			two_way_ref(Foo,Bar,abtype="ref",batype="seq")
+			
+			foo = Foo()
+			foo2 = Foo()
+			bar = Bar()
+			
+			self.assertIn("bar", dir(foo))
+			self.assertIn("bar", dir(foo2))
+			self.assertIn("foos", dir(bar))
+			
+			self.assertIs(None, foo.bar)
+			self.assertIs(None, foo2.bar)
+			self.assertIs(None, bar.foos)
+			bar.foos = ( foo, )
+			self.assertEquals(( foo, ), bar.foos)
+			self.assertIs(bar, foo.bar)
+			self.assertIs(None, foo2.bar)
+			foo2.bar = bar
+			self.assertEquals(( foo, foo2 ), bar.foos)
+			self.assertIs(bar, foo.bar)
+			self.assertIs(bar, foo2.bar)
+			bar.foos = ( foo2, )
+			self.assertEquals(( foo2, ), bar.foos)
+			self.assertIs(None, foo.bar)
+			self.assertIs(bar, foo2.bar)
+			foo2.bar = None
+			self.assertEquals((), bar.foos)
+			self.assertIs(None, foo.bar)
+			self.assertIs(None, foo2.bar)
+			
+		def testManyToMany(self):
+		
+			class Foo(object): pass
+			class Bar(object): pass
+			two_way_ref(Foo,Bar,abtype="seq",batype="seq")
+			
+			foo = Foo()
+			foo2 = Foo()
+			bar = Bar()
+			bar2 = Bar()
+			
+			self.assertIn("bars", dir(foo))
+			self.assertIn("bars", dir(foo2))
+			self.assertIn("foos", dir(bar))
+			self.assertIn("foos", dir(bar2))
+			
+			self.assertIs(None, foo.bars)
+			self.assertIs(None, foo2.bars)
+			self.assertIs(None, bar.foos)
+			self.assertIs(None, bar2.foos)
+			foo.bars = ( bar, )
+			self.assertEquals(( bar, ), foo.bars)
+			self.assertIs(None, foo2.bars)
+			self.assertEquals(( foo, ), bar.foos)
+			self.assertIs(None, bar2.foos)
+			bar2.foos = ( foo, )
+			self.assertEquals(( bar, bar2 ), foo.bars)
+			self.assertIs(None, foo2.bars)
+			self.assertEquals(( foo, ), bar.foos)
+			self.assertEquals(( foo, ), bar2.foos)
+			foo2.bars = ( bar2, bar )
+			self.assertEquals(( bar,bar2 ), foo.bars)
+			self.assertEquals(( bar2,bar ), foo2.bars)
+			self.assertEquals(( foo,foo2 ), bar.foos)
+			self.assertEquals(( foo,foo2 ), bar2.foos)
+			foo.bars = ( bar2, )
+			self.assertEquals(( bar2, ), foo.bars)
+			self.assertEquals(( bar2,bar ), foo2.bars)
+			self.assertEquals(( foo2, ), bar.foos)
+			self.assertEquals(( foo2,foo ), bar2.foos)
+			bar2.foos = None
+			self.assertEquals((), foo.bars)
+			self.assertEquals(( bar, ), foo2.bars)
+			self.assertEquals(( foo2, ), bar.foos)
+			self.assertIs(None, bar2.foos)
+			
+		def testNames(self):
+		
+			class Foo(object): pass
+			class Bar(object): pass
+			two_way_ref(Foo,Bar,abtype="ref",batype="ref",abname="thisbar",baname="thatfoo")
+			
+			foo = Foo()
+			bar = Bar()
+			
+			self.assertIn("thisbar", dir(foo))
+			self.assertIn("thatfoo", dir(bar))
+			
+			self.assertIs(None, foo.thisbar)
+			self.assertIs(None, bar.thatfoo)
+			foo.thisbar = bar
+			self.assertIs(bar, foo.thisbar)
+			self.assertIs(foo, bar.thatfoo)
+			bar.thatfoo = None
+			self.assertIs(None, foo.thisbar)
+			self.assertIs(None, bar.thatfoo)
+
+		def testSelfReference(self):
+		
+			class Foo(object): pass
+			two_way_ref(Foo,Foo,abtype="seq",batype="ref",abname="children",baname="parent")
+			
+			foo = Foo()
+			foo2 = Foo()
+			
+			self.assertIn("children", dir(foo))
+			self.assertIn("parent", dir(foo2))
+			
+			self.assertIs(None, foo.children)
+			self.assertIs(None, foo.parent)
+			self.assertIs(None, foo2.children)
+			self.assertIs(None, foo2.parent)
+			foo.children = ( foo2, )
+			self.assertEquals(( foo2, ), foo.children)
+			self.assertIs(None, foo.parent)
+			self.assertIs(None, foo2.children)
+			self.assertIs(foo, foo2.parent)
+			foo2.parent = None
+			self.assertEquals((), foo.children)
+			self.assertIs(None, foo.parent)
+			self.assertIs(None, foo2.children)
+			self.assertIs(None, foo2.parent)
 
 	unittest.main()
 	
