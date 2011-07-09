@@ -314,100 +314,106 @@ class FlagInitialiser(object):
 		self.val += 1
 		return f
 
-
-def _make_ref_property(aupdaters,bupdaters):
-	_geta,_getsa,_seta,_adda,_rema = aupdaters
-	_getb,_getsb,_setb,_addb,_remb = bupdaters
-	
+def _make_ref_updaters(innername):
+	def get(obj):
+		return getattr(obj,innername,None)
+	def gets(obj):
+		v = getattr(obj,innername,None)
+		return (v,) if v else ()
 	def set(obj,val):
-		# get currently referenced object(s)
-		oldrefs = _getsa(obj)
-		# remove from each their reference to this object
-		for oldref in oldrefs:
-			_remb(oldref,obj)
-		# replace this object's reference(s)
-		_seta(obj,val)
-		# get newly referenced objects
-		newrefs = _getsa(obj)
-		# add to each a reference to this object
-		for newref in newrefs:
-			_addb(newref,obj)
-			
-	return property(_geta, set)
+		setattr(obj,innername,val)
+	def add(obj,val):
+		setattr(obj,innername,val)
+	def rem(obj,val):
+		setattr(obj,innername,None)
+	return get,gets,set,add,rem
 	
-def _make_ref_updaters(reftype,refinner):
+def _make_tuple_ref_updaters(innername):
+	def get(obj):
+		return getattr(obj,innername,None)
+	def gets(obj):
+		return getattr(obj,innername,None) or ()
+	def set(obj,val):
+		setattr(obj,innername,tuple(val) if val else None)
+	def add(obj,val):
+		v = getattr(obj,innername,None) or ()
+		v += (val,)
+		setattr(obj,innername,v)
+	def rem(obj,val):
+		v = list(getattr(obj,innername,None) or ())
+		v.remove(val)
+		setattr(obj,innername,tuple(v))
+	return get,gets,set,add,rem
 
-	if reftype == "ref":
-	
-		def _get(obj):
-			return getattr(obj,refinner)
-		def _gets(obj):
-			r = getattr(obj,refinner)
-			return ( r, ) if r is not None else ()
-		def _set(obj, ref):
-			setattr(obj,refinner,ref)
-		def _add(obj, ref):
-			setattr(obj,refinner,ref)
-		def _rem(obj,ref):
-			setattr(obj,refinner,None)			
-			
-	elif reftype == "seq":
-	
-		def _get(obj):
-			return getattr(obj,refinner)
-		def _gets(obj):
-			return getattr(obj,refinner) or ()
-		def _set(obj, refs):
-			setattr(obj,refinner,tuple(refs) if refs is not None else None)
-		def _add(obj,ref):
-			s = getattr(obj,refinner) or ()
-			s += (ref,)
-			setattr(obj,refinner,s)
-		def _rem(obj,ref):
-			s = list(getattr(obj,refinner) or ())
-			s.remove(ref)
-			setattr(obj,refinner,tuple(s))
-			
-	return _get, _gets, _set, _add, _rem
-
-def two_way_ref(classa,classb,abtype="ref",batype="ref",abname=None,baname=None):
+def two_way_ref(aname,bname,atype=object,btype=object):
 	"""	
-	Declare self-updating references between the given two classes.
-	abname and baname define the name of class a's reference to b
-	and b's to a, respectively. abtype and batype define the nature 
-	of these references:
-		ref - a single object reference
-		seq - a tuple of object references
+	Returns a property which behaves as a self-maintaining two-way reference.
+	When the property is set, the object it points to will have its reference 
+	set to point back. A corresponding property should be declared on the 
+	class(es) to be referenced.
+	
+	Parameters:
+		aname	- the name of this property
+		bname	- the name of the corresponding property on the referenced class
+		atype	- the type of reference for this property. See below.
+		btype	- the type of reference for the corresponding property on the 
+					referenced class. See below.
+	Reference Types:
+		object	- a singular object reference (e.g. if the object references one 
+					other object)
+		tuple	- a tuple of object references (e.g. if the object references a 
+					collection of other objects)
+					
+	Example:
+		>>> class Parent(object):
+		... 	children = two_way_ref("children","parent",tuple,object)
+		... 	def __init__(self,name):
+		... 		self.name = name
+		... 	def __repr__(self):
+		... 		return self.name
+		... 
+		>>> class Child(object):
+		... 	parent = two_way_ref("parent","children",object,tuple)
+		... 	def __init__(self,name):
+		... 		self.name = name
+		... 	def __repr__(self):
+		... 		return self.name
+		... 
+		>>> p = Parent("Senior")
+		>>> c = Child("Junior")
+		>>> p.children = ( c, )
+		>>> p.children
+		(Junior,)
+		>>> c.parent
+		Senior
 	"""
-	if not abtype in ("ref","seq"):
-		raise ValueError("Unknown abtype %s" % abtype)
-	if not batype in ("ref","seq"):
-		raise ValueError("Unknown batype %s" % batype)
+	for p in (atype,btype):
+		if not p in (object,tuple):
+			raise ValueError("Unknown ref type %s" % atype)
 	
-	if abname is None:
-		abname = classb.__name__.lower()
-		if abtype == "seq": abname += "s"
-	if baname is None:
-		baname = classa.__name__.lower()
-		if batype == "seq": baname += "s"
+	makers = {
+		object: _make_ref_updaters,
+		tuple: _make_tuple_ref_updaters,
+	}
+	geta,getsa,seta,adda,rema = makers[atype]("_"+aname)
+	getb,getsb,setb,addb,remb = makers[btype]("_"+bname)
+	
+	def setter(self,val):
+		for oldref in getsa(self):
+			remb(oldref,self)
+		seta(self,val)
+		for newref in getsa(self):
+			addb(newref,self)
+	
+	return property(geta,setter)
 
-	abinner = "_"+abname
-	bainner = "_"+baname		
-	aupdaters = _make_ref_updaters(abtype,abinner)
-	bupdaters = _make_ref_updaters(batype,bainner)
-	
-	setattr(classa, abname, _make_ref_property(aupdaters,bupdaters))
-	setattr(classa, abinner, None)
-	
-	setattr(classb, baname, _make_ref_property(bupdaters,aupdaters))
-	setattr(classb, bainner, None)
-	
 
 # -- Testing -----------------------------
 
 if __name__ == "__main__":
 
 	import unittest
+	import doctest
 	
 	class TestTicketQueue(unittest.TestCase):
 	
@@ -669,9 +675,10 @@ if __name__ == "__main__":
 	
 		def testOneToOne(self):
 			
-			class Foo(object): pass
-			class Bar(object): pass			
-			two_way_ref(Foo,Bar,abtype="ref",batype="ref")
+			class Foo(object):
+				bar = two_way_ref("bar","foo")
+			class Bar(object):
+				foo = two_way_ref("foo","bar")		
 			
 			foo = Foo()
 			bar = Bar()
@@ -696,9 +703,10 @@ if __name__ == "__main__":
 
 		def testOneToMany(self):
 		
-			class Foo(object): pass
-			class Bar(object): pass
-			two_way_ref(Foo,Bar,abtype="seq",batype="ref")
+			class Foo(object):
+				bars = two_way_ref("bars","foo",tuple,object)
+			class Bar(object):
+				foo = two_way_ref("foo","bars",object,tuple)
 			
 			foo = Foo()
 			bar = Bar()
@@ -730,9 +738,10 @@ if __name__ == "__main__":
 			
 		def testManyToOne(self):
 		
-			class Foo(object): pass
-			class Bar(object): pass
-			two_way_ref(Foo,Bar,abtype="ref",batype="seq")
+			class Foo(object):
+				bar = two_way_ref("bar","foos",object,tuple)
+			class Bar(object):
+				foos = two_way_ref("foos","bar",tuple,object)
 			
 			foo = Foo()
 			foo2 = Foo()
@@ -764,9 +773,10 @@ if __name__ == "__main__":
 			
 		def testManyToMany(self):
 		
-			class Foo(object): pass
-			class Bar(object): pass
-			two_way_ref(Foo,Bar,abtype="seq",batype="seq")
+			class Foo(object):
+				bars = two_way_ref("bars","foos",tuple,tuple)
+			class Bar(object):
+				foos = two_way_ref("foos","bars",tuple,tuple)
 			
 			foo = Foo()
 			foo2 = Foo()
@@ -808,31 +818,11 @@ if __name__ == "__main__":
 			self.assertEquals(( foo2, ), bar.foos)
 			self.assertIs(None, bar2.foos)
 			
-		def testNames(self):
-		
-			class Foo(object): pass
-			class Bar(object): pass
-			two_way_ref(Foo,Bar,abtype="ref",batype="ref",abname="thisbar",baname="thatfoo")
-			
-			foo = Foo()
-			bar = Bar()
-			
-			self.assertIn("thisbar", dir(foo))
-			self.assertIn("thatfoo", dir(bar))
-			
-			self.assertIs(None, foo.thisbar)
-			self.assertIs(None, bar.thatfoo)
-			foo.thisbar = bar
-			self.assertIs(bar, foo.thisbar)
-			self.assertIs(foo, bar.thatfoo)
-			bar.thatfoo = None
-			self.assertIs(None, foo.thisbar)
-			self.assertIs(None, bar.thatfoo)
-
 		def testSelfReference(self):
 		
-			class Foo(object): pass
-			two_way_ref(Foo,Foo,abtype="seq",batype="ref",abname="children",baname="parent")
+			class Foo(object):
+				parent = two_way_ref("parent","children",object,tuple)
+				children = two_way_ref("children","parent",tuple,object)
 			
 			foo = Foo()
 			foo2 = Foo()
@@ -855,6 +845,7 @@ if __name__ == "__main__":
 			self.assertIs(None, foo2.children)
 			self.assertIs(None, foo2.parent)
 
+	doctest.testmod()
 	unittest.main()
 	
 	
