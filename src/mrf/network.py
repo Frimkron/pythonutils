@@ -50,14 +50,14 @@ TODO: Refactor telnet module to use generic client/server classes
 
                     NetworkThread
                         ^  ^
-   ,-----2--------------'  '---------.                  TODO: out of date:
-   |         Node                 SkListener            SkListener:		
-   |        ^ ^ ^                   ^ ^	                        send
-   | ,---1--' | '--2----. ,----1----' |	                        received
+   ,-----2--------------'  '---------.                  
+   |         Node                 SkListener            
+   |        ^ ^ ^                   ^ ^	                
+   | ,---1--' | '--2----. ,----1----' |	                
  Server    GameNode    Client       ClHandler
-    ^         ^  ^        ^ 	      ^	                Node:
-    '--2----. |1 '--1---. |2          |	                        send
-          GameServer   GameClient  GameClHandler                received
+    ^         ^  ^        ^ 	      ^	                
+    '--2----. |1 '--1---. |2          |	                
+          GameServer   GameClient  GameClHandler
 
 """
 	
@@ -142,6 +142,7 @@ class EvtConnectionError(Event):
 	def __init__(self, to_client, error):
 		self.to_client = to_client	
 		self.error = error
+
 
 class EvtClientArrived(Event):
 	"""	
@@ -301,6 +302,8 @@ class Server(Node, NetworkThread):
 		try:
 			# open listen socket
 			self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			# turn off nagle's algorithm to favour low latency over bandwidth
+			self.listen_socket.setsockopt(socket.SOL_TCP,socket.TCP_NODELAY,1)
 			self.listen_socket.setblocking(False)
 			self.listen_socket.bind((socket.gethostname(),self.port))
 			self.listen_socket.listen(1)
@@ -311,7 +314,7 @@ class Server(Node, NetworkThread):
 				self.handlers = {}
 			with self.node_groups_lock:
 				self.node_groups = TagLookup()
-				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)					
+				self.node_groups.tag_item(Server.SERVER, Server.GROUP_ALL)
 		
 			# begin running in thread
 			NetworkThread.start(self)
@@ -469,6 +472,7 @@ class Server(Node, NetworkThread):
 		with self.handlers_lock:
 			return len(self.handlers)
 
+
 class SocketListener(NetworkThread):
 	"""	
 	Base class for client socket listeners. Once constructed, "start" method should
@@ -537,9 +541,8 @@ class SocketListener(NetworkThread):
 			# need to acquire lock to write to socket
 			with self.get_socket_lock():
 				# send x bytes describing the message size
-				self.get_socket().sendall(length_encoded)
 				# send the message itself
-				self.get_socket().sendall(data)
+				self.get_socket().sendall(length_encoded + data)
 
 	def received(self, message):
 		"""	
@@ -693,6 +696,8 @@ class Client(SocketListener, Node):
 		try:
 			with self.socket_lock:
 				self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				# turn off nagle's algorithm to favour low latency over bandwidth
+				self.socket.setsockopt(socket.SOL_TCP,socket.TCP_NODELAY,1)
 				# connect using blocking call				
 				self.socket.setblocking(True)				
 				self.socket.connect((self.host, self.port))
@@ -840,8 +845,10 @@ class Message(Event):
 		for k in dict:
 			setattr(self, k, dict[k])
 
+
 class MessageError(Exception):
 	pass
+
 
 class JsonEncoder(object):
 	"""	
@@ -958,6 +965,7 @@ class MsgServerShutdown(Message):
 	def to_dict(self):
 		return self._get_attrs(())
 
+
 class MsgRequestConnect(Message):
 	"""	
 	Sent from client to server when first connected to provide information
@@ -971,6 +979,7 @@ class MsgRequestConnect(Message):
 
 	def to_dict(self):
 		return self._get_attrs(("player_info",))
+
 
 class MsgAcceptConnect(Message):
 	"""	
@@ -987,6 +996,7 @@ class MsgAcceptConnect(Message):
 	def to_dict(self):
 		return self._get_attrs(("player_id","players_info"))
 
+
 class MsgRejectConnect(Message):
 	"""	
 	Sent from server to client to indicate that connection to the game was
@@ -1000,6 +1010,7 @@ class MsgRejectConnect(Message):
 	def to_dict(self):
 		return self._get_attrs(("reason",))
 
+
 class MsgPing(Message):
 	"""	
 	Sent between client and server for calculaating network latency	
@@ -1011,6 +1022,7 @@ class MsgPing(Message):
 
 	def to_dict(self):
 		return self._get_attrs(("ping_timestamp",))
+
 
 class MsgPong(Message):
 	"""	
@@ -1087,6 +1099,7 @@ class GameNode(Node):
 		"""
 		resp = MsgPong([message.sender], [], self.get_node_id(), 
 			message.ping_timestamp, self.get_timestamp())
+
 		try:
 			self.send(resp)
 		
@@ -1416,8 +1429,8 @@ class GameClient(GameNode, Client, StateMachineBase):
 				with self.stopping_lock:
 					if self.stopping:
 						break									
-						
-				self.send(MsgPing([Server.SERVER],[],-1,self.get_timestamp()))			
+				mp = MsgPing([Server.SERVER],[],-1,self.get_timestamp())	
+				self.send(mp)			
 			
 				time.sleep(3.0)
 				
@@ -1506,16 +1519,13 @@ class GameClient(GameNode, Client, StateMachineBase):
 		round_time = recv_time - message.ping_timestamp
 		latn = round_time/2		
 		
-		# ignore the latency value if more than 1 sd from mean
-		if deviation(self.latencies, latn) < 1.0:
-			
-			self.latencies.append(latn)			
-			# keep the last 5 latency values
-			if len(self.latencies) > 5:
-				self.latencies.pop(0)
+		self.latencies.append(latn)
+		if len(self.latencies) > 5:
+			self.latencies.pop(0)
 				
-		# get the current average latency
-		av_latn = mean(self.latencies)	
+		# get the current average latency - ignore if more than 1 sd from mean
+		av_latn = mean( filter(lambda x: deviation(self.latencies,x) < 1.0, 
+			self.latencies) )
 				
 		# find difference between local clock and server clock
 		server_time = message.pong_timestamp + av_latn
@@ -1906,20 +1916,28 @@ if __name__ == "__main__":
 
 	class TestGameClientServer(unittest.TestCase):
 
-		def test_handle_pong(self):
-			"""	
-			Test that time calculations in pong handler are correct 
-			"""
+		def pong_test(self,round_trips,offset,expected_latency,expected_delta):
 			encoder = JsonEncoder()
 			client = GameClient({"name":"tester"},"localhost", 4447,encoder)
-			round_trips = [300,100,1200,200]
-			offset = 500
 			for rt in round_trips:
 				start = int(time.time()*1000)-rt
-				client.intercept_MsgPong(MsgPong([],[],-1,ping_timestamp=start,pong_timestamp=start+(rt/2)+offset))
-			self.assertEquals(100, client.get_latency())
-			self.assertEquals(-offset, client.get_time_delta())
+				client.intercept_MsgPong(MsgPong([],[],-1,ping_timestamp=start,
+						pong_timestamp=start+(rt/2)+offset))
+			self.assertAlmostEquals(expected_latency, client.get_latency(), delta=10)
+			self.assertAlmostEquals(expected_delta, client.get_time_delta(), delta=10)
+
+		def test_handle_pong_calculates_delta_and_latency(self):
+			self.pong_test([200,202,198,200],500,100,-500)
 	
+		def test_handle_pong_ignores_rogue_measurements(self):
+			self.pong_test([200,1000,198,202],500,100,-500)
+			
+		def test_handle_pong_discards_old_measurements(self):
+			self.pong_test([200,205,210,215,220,225,230,235,240,245],500,117,-500)
+		
+		def test_handle_pong_allows_rogue_measurements_to_become_norm(self):
+			self.pong_test([200,202,198,200,1000,1002,998,1000],500,500,-500)
+		
 		def make_client_handler(self,server,socket,client_id):
 			return GameClientHandler(server,socket,client_id,JsonEncoder())
 
