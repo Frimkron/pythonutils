@@ -199,7 +199,7 @@ class Rotation(object):
 	def matrix(self):
 		"""	
 		Returns a 3x3 rotation matrix suitable for rotating sets of x,y,z coordinates.
-		Uses a left-handed coordinate system where roll is about the x axis, pitch about
+		Uses a right-handed coordinate system where roll is about the x axis, pitch about
 		the y and yaw about the z, so a positive rotation will be clockwise
 		when looking in the direction of the axis. Rotation uses a z-y-x convention, 
 		applying yaw, then pitch, then roll.
