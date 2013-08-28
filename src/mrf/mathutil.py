@@ -136,6 +136,19 @@ class Angle(object):
 			( math.cos(self.val), -math.sin(self.val) ),
 			( math.sin(self.val),  math.cos(self.val) )
 		))
+		
+	def affine_matrix(self):
+		"""	
+		Returns a 3x3 affine rotation matrix suitable for rotating 2d homogeneous 
+		coordinates. Uses a right-handed coordinate system so a positive rotation will
+		be clockwise where the x axis points right and the y axis points down.
+		"""
+		return Matrix((
+			( math.cos(self.val), -math.sin(self.val), 0.0 ),
+			( math.sin(self.val),  math.cos(self.val), 0.0 ),
+			( 0.0,                 0.0,                1.0 )
+		))
+		
 
 class Rotation(object):
 	"""	
