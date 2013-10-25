@@ -23,6 +23,8 @@ class XBox360Pad(object):
 	BUTTON_START = 7
 	BUTTON_BACK = 6
 	BUTTON_CENTRE = 8
+	BUTTON_LEFT_STICK = 9
+	BUTTON_RIGHT_STICK = 10
 
 	HAT_DPAD = 0
 	
@@ -54,10 +56,16 @@ class XBox360Pad(object):
 			self._apply_dead_zone(self.joystick.get_axis(self.AXIS_LSTICK_X)),
 			self._apply_dead_zone(self.joystick.get_axis(self.AXIS_LSTICK_Y)) )
 
+	def get_left_stick_click(self):
+		return self.joystick.get_button(self.BUTTON_LEFT_STICK)
+
 	def get_right_stick(self):
 		return (
 			self._apply_dead_zone(self.joystick.get_axis(self.AXIS_RSTICK_X)),
 			self._apply_dead_zone(self.joystick.get_axis(self.AXIS_RSTICK_Y)) )
+	
+	def get_right_stick_click(self):
+		return self.joystick.get_button(self.BUTTON_RIGHT_STICK)
 	
 	def get_left_trigger(self):
 		axval = self.joystick.get_axis(self.AXIS_LEFT_TRIGGER)
