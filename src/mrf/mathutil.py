@@ -214,22 +214,25 @@ class Rotation(object):
 		Returns a 3x3 rotation matrix suitable for rotating sets of x,y,z coordinates.
 		Uses a right-handed coordinate system where roll is about the x axis, pitch about
 		the y and yaw about the z, so a positive rotation will be clockwise
-		when looking in the direction of the axis. Rotation uses a z-y-x convention, 
-		applying yaw, then pitch, then roll.
+		when looking in the direction of the axis. Rotation uses an x-y-z convention, 
+		applying roll, then pitch, then yaw, from a global frame of reference
 		"""
-		# apply yaw, then pitch, then roll
+		# apply roll, then pitch, then yaw
+		sinx,cosx = math.sin(self.roll.val),math.cos(self.roll.val)
+		siny,cosy = math.sin(self.pitch.val),math.cos(self.pitch.val)
+		sinz,cosz = math.sin(self.yaw.val),math.cos(self.yaw.val)		
 		return Matrix((
-			(	1,	0,							0							),
-			(	0,	math.cos(self.roll.val),	-math.sin(self.roll.val)	),
-			(	0,	math.sin(self.roll.val),	math.cos(self.roll.val)		)
-		))* Matrix((
-			(	math.cos(self.pitch.val),	0,	math.sin(self.pitch.val)	),
-			(	0,							1,	0 							),
-			(	-math.sin(self.pitch.val),	0,	math.cos(self.pitch.val)	)
+			( cosz,  -sinz, 0     ),  # yaw
+			( sinz,  cosz,  0     ),
+			( 0,     0,     1     )
 		)) * Matrix((
-			(	math.cos(self.yaw.val),	-math.sin(self.yaw.val),	0	),
-			(	math.sin(self.yaw.val),	math.cos(self.yaw.val),		0	),
-			(	0,						0,							1	)
+			( cosy,  0,     siny  ), # pitch
+			( 0,     1,     0     ),
+			( -siny, 0,     cosy  )
+		)) * Matrix((
+			( 1,     0,     0     ), # roll
+			( 0,     cosx,  -sinx ),
+			( 0,     sinx,  cosx  )
 		))
 
 class Vector2d(object):
