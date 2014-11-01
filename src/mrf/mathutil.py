@@ -339,6 +339,13 @@ class Vector2d(object):
 			point = Vector2d(*point)
 		return (self - point).rotate(angle) + point
 
+	def flip_x(self):
+		return Vector2d( -self.i, self.j )
+		
+	def flip_y(self):
+		return Vector2d( self.i, -self.j )
+
+
 class Vector3d(object):
 	
 	def __init__(self, i=0, j=0, k=0, dir=0, mag=0):
@@ -465,6 +472,16 @@ class Vector3d(object):
 		if not isinstance(point,Vector3d):
 			point = Vector3d(*point)
 		return (self - point).rotate(rotation) + point
+		
+	def flip_x(self):
+		return Vector3d( -self.i, self.j, self.k )
+		
+	def flip_y(self):
+		return Vector3d( self.i, -self.j, self.k )
+		
+	def flip_z(self):
+		return Vector3d( self.i, self.j, -self.k )
+
 
 class Matrix(object):
 
