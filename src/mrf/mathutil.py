@@ -265,6 +265,10 @@ class Vector2d(object):
 	
 	def dot(self, w):
 		return self.i*w.i + self.j*w.j
+
+	def project(self,vec):
+		unit = vec.unit()
+		return unit * vec.dot(unit)
 	
 	def __str__(self):
 		return str(self.to_tuple())
@@ -284,9 +288,11 @@ class Vector2d(object):
 	
 	def get_dir(self):
 		return Angle(math.atan2(self.j,self.i))
+	dir = get_dir
 		
 	def get_mag(self):
 		return math.sqrt(math.pow(self.i,2)+math.pow(self.j,2))
+	mag = get_mag
 	
 	def unit(self):
 		if self.get_mag() != 0:
@@ -411,9 +417,11 @@ class Vector3d(object):
 		fwd = math.sqrt(math.pow(self.i,2)+math.pow(self.j,2))
 		pitch = math.atan2(self.k,fwd)
 		return Rotation(0.0, pitch, yaw)
+	dir = get_dir
 		
 	def get_mag(self):
 		return math.sqrt(math.pow(self.i,2)+math.pow(self.j,2)+math.pow(self.k,2))
+	mag = get_mag
 	
 	def dot(self, w):
 		return self.i*w.i + self.j*w.j + self.k*w.k
