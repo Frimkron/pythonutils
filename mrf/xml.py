@@ -33,30 +33,38 @@ from __future__ import absolute_import
 import xml.dom.minidom
 
 
-def doc(namespace_uri=None, doctype=None, root_spec=None):
-    """Create and return a new DOM document with the given namespace_uri, doctype, and nodes.
+def xhtml(*child_specs):
+    return doc(('html', '-//W3C//DTD XHTML 1.0 Strict//EN', 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'), 
+               None, ['html']+list(child_specs))
+
+
+def doc(doctype=None, ns_map=None, root_spec=None):
+    """Create and return a new DOM document with the given doctype, and nodes.
        doctype is a 3-tuple consisting of the name, publicid and systemid.
+       ns_map is an optional dictionary of prefixes to namespace uris
        root_spec is either a Node object, or a sequence decribing the root element, consisting of:
-         Optional namespace uri as a string
-         Name as a string
-         Optional attribute set as a dictionary, each key either the name as a string or both a namespace uri and the
-           name as a 2-tuple
-         Optional further sequences and strings describing nested elements and text nodes, respectively"""
+         Name as a string, optionally prefixed with a key from ns_map followed by a colon, to specify namespace
+         Optional attribute set as a dictionary, each key optionally prefixed with namespace key and colon
+         Optional further sequences and strings describing nested elements and text nodes, respectively
+       Note, the doctype cannot be set without also specifying root_spec"""
+         
     dom = xml.dom.minidom.getDOMImplementation()
-    dt = dom.createDocumentType(*doctype) if doctype else None
-    doc = dom.createDocument(namespace_uri, None, dt)
     if root_spec:
-        doc.appendChild(node(doc, root_spec))
+        namespace, name, attributes, child_specs = _expand_args(root_spec, ns_map)
+        dt = dom.createDocumentType(*doctype) if doctype else None   
+        doc = dom.createDocument(namespace, name, dt)
+        _add_attrs_and_children(doc, doc.documentElement, ns_map, attributes, child_specs)
+    else:
+        doc = dom.createDocument(None, None, None)
     return doc 
     
 
-def node(doc, spec):
+def node(doc, ns_map, spec):
     """Returns a Node object for the given DOM document.
+       ns_map is an optional dictionary of prefixes to namespace uris
        spec is either a Node object, a string to become a TextNode, or a sequence describing an element, consisting of:
-         Optional namespace uri as a string
-         Name as a string
-         Optional attribute set as a dictionary, each key either the name as a string or both a namespace uri and the
-           name as a 2-tuple
+         Name as a string, optionally prefixed with key from ns_map followed by a colon, to specify the namespace
+         Optional attribute set as a dictionary, each key optionally prefixed with namespace key and colon
          Optional further sequences and strings describing nested elements and text nodes, respectively"""
          
     if isinstance(spec, xml.dom.Node):
@@ -66,38 +74,38 @@ def node(doc, spec):
         return doc.createTextNode(spec)
         
     else:
-        namespace, name, attributes, child_specs = _expand_args(spec)
+        namespace, name, attributes, child_specs = _expand_args(spec, ns_map)
         
         if namespace is not None:
             n = doc.createElementNS(namespace, name)
         else:
             n = doc.createElement(name)
             
-        for atname, atval in attributes.items():
-            if isinstance(atname, basestring):
-                atnamespace = None
-            else:
-                atnamespace, atname = atname
-                
-            if atnamespace is not None:
-                at = doc.createAttributeNS(atnamespace, atname)
-            else:
-                at = doc.createAttribute(atname)
-                
-            at.appendChild(doc.createTextNode(atval))
-            if atnamespace is not None:
-                n.setAttributeNodeNS(at)
-            else:
-                n.setAttributeNode(at)
-            
-        for child_spec in child_specs:
-            child_node = node(doc, child_spec)
-            n.appendChild(child_node)
+        _add_attrs_and_children(doc, n, ns_map, attributes, child_specs)
             
         return n
+
+
+def _add_attrs_and_children(doc, n, ns_map, attributes, child_specs):
+
+    for (atnamespace, atname), atval in attributes.items():
+        if atnamespace is not None:
+            at = doc.createAttributeNS(atnamespace, atname)
+        else:
+            at = doc.createAttribute(atname)
+
+        at.value = atval
+        if atnamespace is not None:
+            n.setAttributeNodeNS(at)
+        else:
+            n.setAttributeNode(at)
+        
+    for child_spec in child_specs:
+        child_node = node(doc, ns_map, child_spec)
+        n.appendChild(child_node)
                 
         
-def _expand_args(args):
+def _expand_args(args, ns_map):
     namespace = None
     name = None
     attributes = {}
@@ -106,17 +114,26 @@ def _expand_args(args):
     args = list(args)
     
     a = _pop_arg(args)
-    if isinstance(_peek_arg(args), basestring):
-        namespace = a
-        name = _pop_arg(args)
+    if ':' in a:
+        key, name = a.split(':')
+        namespace = ns_map[key]
     else:
         name = a
-    
+       
     if isinstance(_peek_arg(args), dict):
-        attributes = _pop_arg(args)
+        for key, val in _pop_arg(args).items():
+            if ':' in key:
+                nkey, aname = key.split(':')
+                ans = ns_map[nkey]
+            else:
+                aname = key
+                ans = None
+            attributes[(ans, aname)] = val
         
-    if _peek_arg(args) is not None:
-        children = _pop_arg(args)
+    while True:
+        child = _pop_arg(args)
+        if child is None: break
+        children.append(child)
         
     return namespace, name, attributes, children
         
@@ -127,4 +144,6 @@ def _peek_arg(args):
         
 def _pop_arg(args):
     return args.pop(0) if len(args) > 0 else None
+
+
 
