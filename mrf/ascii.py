@@ -78,6 +78,22 @@ class Canvas(object):
             self.set(x,y,c)
             x+=1
             i+=1
+            
+    def rectangle(self, x, y, width, height):
+        """ 
+        Draws an ascii rectangle on the canvas, using '+' for the corners and '-'/'|' for the sides. The width and
+        height include the sides.
+        """
+        self.set(x, y, '+')
+        self.set(x+width-1, y, '+')
+        self.set(x, y+height-1, '+')
+        self.set(x+width-1, y+height-1, '+')
+        for i in range(width-2):
+            self.set(x+1+i, y, '-')
+            self.set(x+1+i, y+height-1, '-')
+        for i in range(height-2):
+            self.set(x, y+1+i, '|')
+            self.set(x+width-1, y+1+i, '|')
     
     def render(self):
         """    
