@@ -1,9 +1,162 @@
 import re
 import urllib
 import urllib2
+import urlparse
 import json
 import base64
 import time
+import uuid
+import hashlib
+import hmac
+import base64
+
+
+class Client1(object):
+    """ 
+    OAuth 1a helper.
+    
+    A client is constructed with the client credentials, auth server info, and optionally existing access token info if
+    one has already been obtained.
+    
+    An authorization url is created with the make_auth_url method. The resource owner is directed to this url, grants
+    permission and is redirected to the auth_redirect_uri with a verifier value. This is passed into the 
+    complete_authorization method to obtain the access token. The access_resource method can then be used to make 
+    authenticated requests.
+    
+    Token info should be read from the following properties and persisted between application runs:
+        token
+        token_secret
+    """
+
+    # expose attributes as read-only properties
+    id = property(lambda self: self._id)
+    secret = property(lambda self: self._secret)
+    temp_creds_endpoint = property(lambda self: self._temp_creds_endpoint)
+    auth_endpoint = property(lambda self: self._auth_endpoint)
+    token_endpoint = property(lambda self: self._token_endpoint)
+    auth_redirect_uri = property(lambda self: self._auth_redirect_uri)
+    signature_method = property(lambda self: self._signature_method)
+    token = property(lambda self: self._token)
+    token_secret = property(lambda self: self._token_secret)
+    temp_token = property(lambda self: self._temp_token)
+    temp_secret = property(lambda self: self._temp_secret)
+    
+    def __init__(self, id, secret, temp_creds_endpoint, auth_endpoint, token_endpoint, auth_redirect_uri, 
+                 signature_method, token=None, token_secret=None):
+        """Constructs a new OAuth1 client with the following parameters:
+            id                  - the client id obtained when the application was registered
+            secret              - the client secret obtained when the application was registered
+            temp_creds_endpoint - URL on the auth server used for obtaining temporary credentials
+            auth_endpoint       - URL on the auth server that resource owner is sent to to grant permission
+            token_endpoint      - URL on the auth server used for obtaining an access token
+            auth_redirect_uri   - Application URL to redirect resource owner back to with new grant info
+            signature_method    - Type of signing to use for requests. Supported types are 'plaintext' and 'hmac-sha1'
+            token               - (Optional) Existing access token if one has been obtained
+            token_secret        - (Optional) Secret accompanying existing token if one has been obtained"""            
+
+        self._id = id
+        self._secret = secret
+        self._temp_creds_endpoint = temp_creds_endpoint
+        self._auth_endpoint = auth_endpoint
+        self._token_endpoint = token_endpoint
+        self._auth_redirect_uri = auth_redirect_uri
+        if signature_method.lower() not in ('plaintext','hmac-sha1'):
+            raise ValueError('Signature method not supported: {}'.format(signature_method))
+        self._signature_method = signature_method.lower()
+        if token is not None:
+            self._token = token
+            self._token_secret = token_secret
+        else:
+            self._token = None
+            self._token_secret = None
+        self._temp_token = None
+        self._temp_secret = None
+            
+    def make_auth_url(self):
+        """Returns a url that the resource owner should be directed to in order to grant access permission to the
+           application. They will be redirected to the auth_redirect_uri. This method also clears the current access 
+           token."""
+        self._token = None
+        self._token_secret = None
+        if self._temp_token is None:
+            self._request_temp_token()
+        return self._auth_endpoint + '?' + urllib.urlencode({'oauth_token': self._temp_token})
+        
+    def complete_authorization(self, verifier):
+        """Should be called on receipt of an authorization callback request. Attempts to obtain an access token
+           using the given verifier code."""
+        if self._temp_token is None:
+            raise GrantRequiredError('Temporary credentials not found. Generate a new grant url')
+        result = self._oauth_request(self._token_endpoint, self._temp_token, self._temp_secret, 
+                                     {'oauth_verifier': verifier})
+        self._token = result['oauth_token']
+        self._token_secret = result['oauth_token_secret']        
+        
+    def access_resource(self, request_obj):
+        """Makes an authenticated request. request_obj is a urllib2.Request object which will have authentication info
+        added to it before sending. Returns the response if available"""
+        if self._token is None:
+            raise GrantRequiredError('No access token been obtained yet. Generate a new grant url')
+        return self._authenticated_request(request_obj, self._token, self._token_secret)
+        
+    def _request_temp_token(self):
+        self._temp_token = None
+        self._temp_secret = None
+        result = self._oauth_request(self._temp_creds_endpoint, '', '', {'oauth_callback': self._auth_redirect_uri})
+        self._temp_token = result['oauth_token']
+        self._temp_secret = result['oauth_token_secret']
+                
+    def _oauth_request(self, url, token, token_secret, params, realm=None):
+        try:
+            response = self._authenticated_request(urllib2.Request(url, ''), token, token_secret, params, realm)
+        except urllib2.HTTPError as e:
+            raise OAuthError('Error response from request', e, str(e))
+        except IOError as e:
+            raise OAuthError('Failed to make request', e, str(e))
+        result = urlparse.parse_qs(response.read())
+        return {n:v[0] for n,v in result.items()}
+        
+    def _authenticated_request(self, request_obj, token, token_secret, extra_oauth_params={}, realm=None):
+        oauth_params = {
+            'oauth_consumer_key': self._id,
+            'oauth_signature_method': self._signature_method.upper(),
+            'oauth_version': '1.0',
+            'oauth_token': token,
+        }        
+        oauth_params.update(extra_oauth_params)
+        if self._signature_method == 'plaintext':
+            signature = self._cypher_key(token_secret)
+        elif self._signature_method == 'hmac-sha1':
+            oauth_params['oauth_timestamp'] = str(int(time.time()))
+            oauth_params['oauth_nonce'] = str(uuid.uuid4())
+            text = self._signature_base_string(request_obj, oauth_params)            
+            key = self._cypher_key(token_secret)
+            signature = base64.b64encode(hmac.new(key, text, hashlib.sha1).digest())
+        authzn_params = dict(oauth_params)
+        authzn_params['oauth_signature'] = signature
+        if realm is not None:
+            authzn_params['realm'] = realm
+        auth_header = 'OAuth '+','.join(['{}="{}"'.format(self._encode(name),self._encode(value)) 
+                                         for name,value in authzn_params.items()])
+        request_obj.headers['Authorization'] = auth_header
+        return urllib2.urlopen(request_obj)        
+        
+    def _cypher_key(self, token_secret):
+        return self._encode(self._secret) + '&' + self._encode(token_secret)
+        
+    def _signature_base_string(self, request_obj, oauth_params):
+        scheme, netloc, path, params, query, fragment = urlparse.urlparse(request_obj.get_full_url())
+        basestring_uri = scheme + '://' + netloc + path + (params if params!='' else '')
+        param_list = urlparse.parse_qsl(params) + oauth_params.items()
+        if request_obj.headers.get('Content-Type','') == 'application/x-www-form-urlencoded':
+            param_list += urlparse.parse_qsl(request_obj.data)
+        param_list = [(self._encode(name),self._encode(value)) for name,value in param_list]
+        param_list.sort(cmp=lambda a, b: cmp(a[1],b[1]) if a[0]==b[0] else cmp(a[0],b[0]))
+        param_string = '&'.join(['{}={}'.format(n,v) for n,v in param_list])
+        return request_obj.get_method() + '&' + self._encode(basestring_uri) + '&' + self._encode(param_string)
+        
+    def _encode(self, val):
+        return urllib.quote(val,'~')
 
 
 class Client2(object):
@@ -214,7 +367,6 @@ class Client2(object):
         
     def _grant_request(self, params):
         jdata = self._request(self._token_endpoint, params)
-        print jdata
         token_type = jdata.get('token_type',None)
         if token_type is not None: token_type = token_type.lower()
         if not self._is_valid_token_type(token_type):
