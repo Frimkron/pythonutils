@@ -782,6 +782,10 @@ def dist_to_line2d_seg(line, point):
     
     return dist
 
+
+def line_plane_intersection(line3d,plane):
+    pass
+
     
 class Line2d(object):
     
@@ -799,6 +803,18 @@ class Line2d(object):
         segment.
         """
         return dist_to_line2d_seg((self.a.to_tuple(),self.b.to_tuple()), point.to_tuple())
+
+    def dir(self):
+        """ 
+        Returns a unit vector representing the direction of the line from a to b
+        """
+        return (self.b-self.a).unit()
+
+    def length(self):
+        """ 
+        Returns the length of the line
+        """
+        return (self.b-self.a).mag()
 
     def __repr__(self):
         return "Line2d(%s,%s)" % (repr(self.a),repr(self.b))
@@ -897,8 +913,20 @@ class Line3d(object):
         self.a = a
         self.b = b
 
+    def dir(self):
+        """ 
+        Returns a unit vector representing the direction of this line from a to b
+        """
+        return (self.b-self.a).unit()
+
+    def length(self):
+        """ 
+        Returns the length of the line
+        """
+        return (self.b-self.a).mag()
+
     def __repr__(self):
-        return "Line3d(%s,%s)" % (repr(self.a),repr(self.b),repr(self.c))
+        return "Line3d(%s,%s)" % (repr(self.a),repr(self.b))
 
     def __eq__(self, other):
         if type(self) != type(other): return False
@@ -910,6 +938,81 @@ class Line3d(object):
 
     def __hash__(self):
         return hash("Line3d") ^ hash(self.a) ^ hash(self.b)
+
+
+class Plane(object):
+    """ 
+    A 2-dimensional infinite plane in 3 dimensions
+    """
+
+    def __init__(self, point, normal):
+        """ 
+        Takes a 3d representing a point on the plane and another representing the plane's normal
+        """
+        self.point = point
+        self.normal = normal.unit()
+        self._normalise()
+       
+    def point_on_plane(self, point):
+        """ 
+        Takes a 3d vector representing a point in space and returns True if the point lies on this plane
+        """
+        return (point-self.point).dot(self.normal) == 0
+        
+    def is_parallel(self, vector):
+        """ 
+        Takes a 3d vector representing a direction and returns True if it is parallel to the plane
+        """
+        return self.normal.dot(vector.unit()) == 0
+        
+    def line_intersection(self, line):
+        """ 
+        Takes a Line3d representing a line segment between two points and returns the 3d vector where it intersects this
+        plane, or None if it does not intersect. Returns None if the line lies in the plane.
+        """
+        l0 = line.a
+        ld = line.dir()
+        denom = ld.dot(self.normal)
+        if denom == 0: return None
+        d = (self.point-l0).dot(self.normal) / denom
+        if d < 0 or d > line.length(): return None
+        return l0 + ld*d
+        
+    def __repr__(self):
+        return "Plane(%s,%s)" % (repr(self.point),repr(self.normal))
+        
+    def __eq__(self,other):        
+        """ 
+        Returns True if the object represents the same plane
+        """
+        if type(self) != type(other): return False
+        return self.normal == other.normal and self.point == other.point
+    
+    def __ne__(self,other):
+        """ 
+        Returns False if the object represents the same plane
+        """
+        if type(self) != type(other): return True
+        return self.normal != other.normal or self.point != other.point
+    
+    def __hash__(self):
+        return hash("Plane") ^ hash(self.point) ^ hash(self.normal)
+    
+    def _normalise(self):
+        """ 
+        Ensure that point and normal will be the same as other equivalent Plane objects constructed with different 
+        parameters
+        """
+        if not self.is_parallel(Vector3d(0,0,1)):
+            z = self.point.dot(self.normal) / Vector3d(0,0,1).dot(self.normal)
+            self.point = Vector3d(0,0,z)
+        elif not self.is_parallel(Vector3d(0,1,0)):
+            y = self.point.dot(self.normal) / Vector3d(0,1,0).dot(self.normal)
+            self.point = Vector3d(0,y,0)
+        elif not self.is_parallel(Vector3d(1,0,0)):
+            x = self.point.dot(self.normal) / Vector3d(1,0,0).dot(self.normal)
+            self.point = Vector3d(x,0,0) 
+        
 
 class Polygon2d(object):
     """    
