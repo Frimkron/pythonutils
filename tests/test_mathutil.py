@@ -2,76 +2,139 @@ from mrf.mathutil import *
 import unittest
 
 
-class Test(unittest.TestCase):
+class AngleTests(unittest.TestCase):
 
-    def testAngles(self):
+    def test_zero_angles_equal(self):   
         self.assertEqual(Angle(0), Angle(0))
-        self.assertEqual(Angle(10),Angle(10))
-        self.assertNotEqual(Angle(0),Angle(10))
-
+        
+    def test_nonzero_angles_equal(self):
+        self.assertEqual(Angle(10), Angle(10))
+        
+    def test_different_angles_not_equal(self):
+        self.assertNotEqual(Angle(0), Angle(10))
+        
+    def test_additional_normalises_to_neg_pi_pos_pi_range(self):
         self.assertEqual(Angle(math.pi/2) + Angle(math.pi), Angle(-math.pi/2))
+
+    def test_subtraction_normalises_to_neg_pi_pos_pi_rang(self):
         self.assertEqual(Angle(-math.pi/2) - Angle(math.pi), Angle(math.pi/2))
+        
+    def test_conversion_to_degrees(self):
         self.assertAlmostEqual(Angle(math.pi/2).to_deg(), 90, 4) 
 
+    def test_angles_with_same_value_have_same_hash(self):
         self.assertTrue(Angle(10) in set([Angle(10)]))
+
+    def test_angles_with_different_values_have_different_hashes(self):
         self.assertFalse(Angle(10) in set([Angle(11)]))
-        
+    
+    def test_produces_working_rotation_matrix(self):
         self.assertAlmostEquals((Angle(math.pi/2).matrix() * (4,8))[0], (-8,4)[0], 4)
         self.assertAlmostEquals((Angle(math.pi/2).matrix() * (4,8))[1], (-8,4)[1], 4)
-    
-    def testRotations(self):
+
+
+class RotationTests(unittest.TestCase):
+
+    def test_rotations_with_same_values_are_equal(self):
         self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(0.5,1.5,2.5))
-        self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(2*math.pi+0.5, 2*math.pi+1.5, 2*math.pi+2.5))
+
+    def test_rotations_with_different_values_are_not_equal(self):
         self.assertNotEqual(Rotation(0.5,1.5,2.5),Rotation(0.5,1.5,2.6))
+                
+    def test_rotation_doesnt_equal_other_type(self):
         self.assertNotEqual(Rotation(0.5,1.5,2.5),0.0)
 
+    def test_normalises_constructor_values(self):
+        self.assertEqual(Rotation(0.5,1.5,2.5),Rotation(2*math.pi+0.5, 2*math.pi+1.5, 2*math.pi+2.5))
+
+    def test_addition_increases_roll_value(self):
         self.assertEqual(Rotation(0.5,1.5,2.5) + Rotation(0.1,0.0,0.0), Rotation(0.6,1.5,2.5))
+
+    def test_addition_increases_pitch_value(self):
         self.assertEqual(Rotation(0.5,1.5,2.5) + Rotation(0.0,4*math.pi,0.0), Rotation(0.5,1.5,2.5))
+
+    def test_addition_increases_yaw_value(self):
         self.assertEqual(Rotation(0.5,1.5,2.5) + Rotation(0.0,0.0,0.2), Rotation(0.5,1.5,2.7))
 
+    def test_subtraction_decreases_roll_value(self):
         self.assertEqual(Rotation(0.5,1.5,2.5) - Rotation(0.1,0.0,0.0), Rotation(0.4,1.5,2.5))
+
+    def test_subtraction_decreases_pitch_value(self):            
         self.assertEqual(Rotation(0.5,1.5,2.5) - Rotation(0.0,4*math.pi,0.0), Rotation(0.5,1.5,2.5))
+
+    def test_subtraction_decreases_yaw_value(self):
         self.assertEqual(Rotation(0.5,1.5,2.5) - Rotation(0.0,0.0,0.2), Rotation(0.5,1.5,2.3))
 
+    def test_rotations_with_same_values_have_same_hash(self):
         self.assertTrue(Rotation(1,2,3) in set([Rotation(1,2,3)]))
-        self.assertFalse(Rotation(1,2,3) in set([Rotation(2,3,4)]))
-        
-        self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[0], (0,-2,-8)[0], 4)
-        self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[1], (0,-2,-8)[1], 4)
-        self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[2], (0,-2,-8)[2], 4)
-        
 
-    def testVector2dMath(self):
+    def test_rotations_with_different_values_have_different_hashes(self):
+        self.assertFalse(Rotation(1,2,3) in set([Rotation(2,3,4)]))
+
+    def test_produces_working_rotation_matrix(self):
+        self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[0], (2, 8, 0)[0], 4)
+        self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[1], (2, 8, 0)[1], 4)
+        self.assertAlmostEquals((Rotation(-math.pi/2,0,math.pi/2).matrix() * (8,0,-2))[2], (2, 8, 0)[2], 4)
+
+
+class Vector2dTests(unittest.TestCase):
+
+    def test_vectors_with_same_values_are_equal(self):
         self.assertEqual(Vector2d(0,0), Vector2d(0,0))
+    
+    def test_vectors_with_different_values_are_not_equal(self):
         self.assertNotEqual(Vector2d(0,0), Vector2d(0,1))
 
+    def test_adding_two_vectors_gives_correct_vector(self):
         self.assertEqual(Vector2d(1,2) + Vector2d(2,3), Vector2d(3,5))
+
+    def test_subtracting_two_vectors_gives_correct_vector(self):
         self.assertEqual(Vector2d(1,2) - Vector2d(2,3), Vector2d(-1,-1))
+
+    def test_multiplying_by_scalar_gives_correct_vector(self):        
         self.assertEqual(Vector2d(1,2) * 5, Vector2d(5,10))
 
+    def test_construction_from_direction_and_magnitude(self):
         self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).i, Vector2d(0,2).i, 4)
         self.assertAlmostEqual(Vector2d(dir=math.pi/2,mag=2).j, Vector2d(0,2).j, 4)
-
+        
+    def test_get_mag_returns_length_of_vector(self):
         self.assertAlmostEqual(Vector2d(3,4).get_mag(), 5, 4)
-        self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
-        self.assertAlmostEqual(Vector2d(3,4).unit().get_mag(), 1.0, 4)
 
+    def test_get_dir_returns_angle_of_vector(self):
+        self.assertAlmostEqual(Vector2d(3,3).get_dir().val, Angle(math.pi/4).val, 4)
+
+    def test_unit_returns_length_one_vector_with_same_direction(self):
+        n = Vector2d(3,4).unit()
+        self.assertAlmostEqual(n.get_mag(), 1.0, 4)
+        self.assertAlmostEqual(n.get_dir().to_rad(), 0.9273, 4)
+                    
+    def test_dot_product_returns_correct_scalar_value(self):
         a = Vector2d(2,0)
         b = Vector2d(2,2)
-        self.assertAlmostEqual(a.dot(b), a.get_mag()*b.get_mag()*math.cos(math.pi/4), 4)
-
+        self.assertAlmostEqual(a.dot(b), 4.0, 4)
+        
+    def test_indexing_returns_components(self):
         self.assertEqual(Vector2d(1,2)[0], 1.0)
         self.assertEqual(Vector2d(1,2)[1], 2.0)
-
+        
+    def test_rotate_returns_correct_rotated_vector(self):
         self.assertAlmostEqual((Vector2d(1,2).rotate(math.pi/2))[0], Vector2d(-2,1)[0], 4)
         self.assertAlmostEqual((Vector2d(1,2).rotate(math.pi/2))[1], Vector2d(-2,1)[1], 4)
-
+        
+    def test_rotate_about_returns_correct_rotated_vector(self):
         self.assertAlmostEqual((Vector2d(1,2).rotate_about(math.pi/2,(2,3)))[0], Vector2d(3,2)[0], 4)
         self.assertAlmostEqual((Vector2d(1,2).rotate_about(math.pi/2,(2,3)))[1], Vector2d(3,2)[1], 4)
-
+        
+    def test_vectors_with_same_values_have_same_hash(self):
         self.assertTrue(Vector2d(1,2) in set([Vector2d(1,2)]))
+
+    def test_vectors_with_different_values_have_different_hashes(self):
         self.assertFalse(Vector2d(1,2) in set([Vector2d(2,3)]))
-    
+                
+
+class Test(unittest.TestCase):
+
     def testVector3dMath(self):
         self.assertEqual(Vector3d(0,0,0), Vector3d(0,0,0))
         self.assertNotEqual(Vector3d(0,0,0), Vector3d(0,1,2))

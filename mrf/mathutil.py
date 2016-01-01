@@ -25,20 +25,9 @@ OTHER DEALINGS IN THE SOFTWARE.
 ------------------------
 
 Math Utils Module
-
-Math utilities. Notably:
-
-    Angle       - angle class
-    Rotation    - 3d rotation class
-    Vector2d    - 2D vector class
-    Vector3d    - 3D vector class
-    Matrix      - n x m Matrix class
-    Line        - 2D line
-    Polygon     - 2D shape
-    Rectangle   - 2D rectangle
 """
 
-"""    
+""" 
     TODO: test cuboid
     TODO: test 2d line intersection
     TODO: test 2d line clipping
