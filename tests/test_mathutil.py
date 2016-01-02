@@ -131,57 +131,103 @@ class Vector2dTests(unittest.TestCase):
 
     def test_vectors_with_different_values_have_different_hashes(self):
         self.assertFalse(Vector2d(1,2) in set([Vector2d(2,3)]))
-                
 
-class Test(unittest.TestCase):
 
-    def testVector3dMath(self):
+class Vector3dTests(unittest.TestCase):
+
+    def test_vectors_with_same_values_are_equal(self):
         self.assertEqual(Vector3d(0,0,0), Vector3d(0,0,0))
+
+    def test_vectors_with_different_values_are_not_equal(self):
         self.assertNotEqual(Vector3d(0,0,0), Vector3d(0,1,2))
 
+    def test_addition_returns_correct_vector(self):
         self.assertEqual(Vector3d(1,2,3) + Vector3d(2,3,4), Vector3d(3,5,7))
+
+    def test_subtraction_returns_correct_vector(self):
         self.assertEqual(Vector3d(1,2,3) - Vector3d(2,3,4), Vector3d(-1,-1,-1))
+
+    def test_multiplication_by_scalar_returns_correct_vector(self):    
         self.assertEqual(Vector3d(1,2,3) * 5, Vector3d(5,10,15))
 
+    def test_construction_from_direction_and_magnitude_gives_correct_vector(self):
         self.assertAlmostEqual(Vector3d(dir=Rotation(0.5,math.pi/4,math.pi/2),mag=2).i, Vector3d(0,1.4142,1.4142).i, 4)
         self.assertAlmostEqual(Vector3d(dir=Rotation(0.5,math.pi/4,math.pi/2),mag=2).j, Vector3d(0,1.4142,1.4142).j, 4)
         self.assertAlmostEqual(Vector3d(dir=Rotation(0.5,math.pi/4,math.pi/2),mag=2).k, Vector3d(0,1.4142,1.4142).k, 4)
-
+        
+    def test_get_mag_returns_vector_length(self):
         self.assertAlmostEqual(Vector3d(0,4,3).get_mag(), 5, 4)
 
+    def test_get_dir_returns_vector_direction_as_rotation(self):
         self.assertAlmostEqual(Vector3d(0,4,4).get_dir().roll.val,  Rotation(0.0,math.pi/4,math.pi/2).roll.val,  4)
         self.assertAlmostEqual(Vector3d(0,4,4).get_dir().pitch.val, Rotation(0.0,math.pi/4,math.pi/2).pitch.val, 4)
         self.assertAlmostEqual(Vector3d(0,4,4).get_dir().yaw.val,   Rotation(0.0,math.pi/4,math.pi/2).yaw.val,   4)
+        
+    def test_unit_returns_length_one_vector_with_same_direction(self):
+        v = Vector3d(9,8,7)
+        direction = v.get_dir()
+        unit = v.unit()
+        self.assertAlmostEqual(unit.get_mag(), 1.0, 4)
+        self.assertEqual(unit.get_dir(), direction)
 
-        self.assertAlmostEqual(Vector3d(9,8,7).unit().get_mag(), 1.0, 4)
-
+    def test_dot_product_returns_correct_scalar_value(self):
         self.assertAlmostEqual(Vector3d(1,2,3).dot(Vector3d(4,5,6)), 1*4+2*5+3*6 ,4)
-        self.assertEqual(Vector3d(1,2,3).cross(Vector3d(4,5,6)), Vector3d(2*6-3*5,3*4-1*6,1*5-2*4))
 
+    def test_cross_product_returns_correct_vector_value(self):
+        self.assertEqual(Vector3d(1,2,3).cross(Vector3d(4,5,6)), Vector3d(2*6-3*5,3*4-1*6,1*5-2*4))
+                
+    def test_indexing_returns_components(self):
         self.assertEqual(Vector3d(9,8,7)[0], 9.0)
         self.assertEqual(Vector3d(9,8,7)[1], 8.0)
         self.assertEqual(Vector3d(9,8,7)[2], 7.0)
 
+    def test_rotate_returns_correctly_rotated_vector(self):
         self.assertAlmostEqual((Vector3d(5,0,0).rotate((-math.pi/2,math.pi/2,math.pi/2)))[0],Vector3d(0,0,-5)[0], 4)
         self.assertAlmostEqual((Vector3d(5,0,0).rotate((-math.pi/2,math.pi/2,math.pi/2)))[1],Vector3d(0,0,-5)[1], 4)
         self.assertAlmostEqual((Vector3d(5,0,0).rotate((-math.pi/2,math.pi/2,math.pi/2)))[2],Vector3d(0,0,-5)[2], 4)
-
+        
+    def test_rotate_about_returns_correctly_rotated_vector(self):
         self.assertAlmostEqual((Vector3d(5,0,0).rotate_about((-math.pi/2,0,0),(5,-5,0)))[0], Vector3d(5,-5,-5)[0], 4)
         self.assertAlmostEqual((Vector3d(5,0,0).rotate_about((-math.pi/2,0,0),(5,-5,0)))[1], Vector3d(5,-5,-5)[1], 4)
         self.assertAlmostEqual((Vector3d(5,0,0).rotate_about((-math.pi/2,0,0),(5,-5,0)))[2], Vector3d(5,-5,-5)[2], 4)
-
+        
+    def test_vectors_with_same_values_have_same_hash(self):
         self.assertTrue(Vector3d(1,2,3) in set([Vector3d(1,2,3)]))
+
+    def test_vectors_with_different_values_have_different_hashes(self):
         self.assertFalse(Vector3d(1,2,3) in set([Vector3d(2,3,4)]))
 
-    def testStandardDeviation(self):
+
+class MeanTests(unittest.TestCase):
+
+    def test_returns_correct_value_for_populated_list(self):
         self.assertEquals(8.0,mean([2,6,4,20]))
+
+    def test_returns_zero_for_empty_list(self):
         self.assertEquals(0.0,mean([])) 
+
+                    
+class StandardDeviationTests(unittest.TestCase):
+
+    def test_returns_correct_value_for_populated_list(self):
         self.assertAlmostEquals(7.071,standard_deviation([2,6,4,20]),3)
+
+    def test_returns_zero_for_empty_list(self):
         self.assertEquals(0.0,standard_deviation([]))
+
+
+class DeviationTest(unittest.TestCase):
+
+    def test_returns_correct_value_for_populated_list(self):
         self.assertAlmostEquals(0.141,deviation([2,6,4,20],9),3)
+
+    def test_returns_zero_for_empty_list(self):
         self.assertEquals(0.0,deviation([],5))
 
-    def testRoulette(self):
+
+class WeightedRouletteTests(unittest.TestCase):
+
+    def test_returns_results_with_correct_probabilities(self):
         items = {
             "alpha": 1,
             "beta": 2,
@@ -192,45 +238,87 @@ class Test(unittest.TestCase):
             "beta":0,
             "gamma":0
         }
-        for i in range(1000):
+        iterations = 10000
+        for i in range(iterations):
             result = weighted_roulette(items)
             self.assert_(result!=None)
             results[result] += 1
             
-        self.assertAlmostEquals(results["alpha"]/1000.0,1.0/10.0,1)
-        self.assertAlmostEquals(results["beta"]/1000.0,2.0/10.0,1)
-        self.assertAlmostEquals(results["gamma"]/1000.0,7.0/10.0,1)
+        self.assertAlmostEquals(results["alpha"]/float(iterations),1.0/10.0,1)
+        self.assertAlmostEquals(results["beta"]/float(iterations),2.0/10.0,1)
+        self.assertAlmostEquals(results["gamma"]/float(iterations),7.0/10.0,1)
 
-    def testLeadAngle(self):
+    def test_returns_none_for_empty_dict(self):
+        self.assertIsNone(weighted_roulette({}))
+
+
+class LeadAngleTests(unittest.TestCase):
+
+    def test_returns_correct_angle_as_float_when_solution_possible(self):
         ang = lead_angle((math.sqrt(2),math.sqrt(2)),math.sqrt(2),math.pi,math.sqrt(2))
         self.assertAlmostEquals(math.pi/2.0,ang,2)
+        
+    def test_returns_none_when_bullet_and_target_are_already_at_same_position(self):
         self.assertEquals(None,lead_angle((0.0,0.0),1.0,0.0,1.0))
+
+    def test_returns_none_when_bullet_cannot_catch_up_to_target(self):
         self.assertEquals(None,lead_angle((1.0,1.0),1.0,0.0,0.9))
 
-    
-    def testLine2d(self):
-        line1 = Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
-        line2 = Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0))
-        line3 = Line2d(Vector2d(0.0,0.0),Vector2d(1.0,0.0))
-        self.assertEquals(line1, line2)
-        self.assertNotEquals(line2, line3)
-        self.assertNotEquals(line3, line1)
 
-        self.assertTrue(Line2d(Vector2d(0,0),Vector2d(1,2)) in set([Line2d(Vector2d(0,0),Vector2d(1,2))]))
-        self.assertFalse(Line2d(Vector2d(0,0),Vector2d(1,2)) in set([Line2d(Vector2d(0,0),Vector2d(2,3))]))
+class Line2dTests(unittest.TestCase):
+
+    def test_lines_with_same_values_are_equal(self):
+        self.assertEqual(Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0)), Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0)))
         
-    def testLine3d(self):
-        line1 = Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,1.0,1.0))
-        line2 = Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,1.0,1.0))
-        line3 = Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,0.0,1.0))
-        self.assertEquals(line1, line2)
-        self.assertNotEquals(line2, line3)
-        self.assertNotEquals(line3, line1)
+    def test_lines_with_different_values_are_not_equal(self):
+        self.assertNotEqual(Line2d(Vector2d(0.0,0.0),Vector2d(1.0,1.0)), Line2d(Vector2d(0.0,1.0),Vector2d(1.0,0.0)))
 
+    def test_lines_with_same_values_have_same_hash(self):
+        self.assertTrue(Line2d(Vector2d(0,0),Vector2d(1,2)) in set([Line2d(Vector2d(0,0),Vector2d(1,2))]))
+
+    def test_lines_with_different_values_have_different_hashes(self):
+        self.assertFalse(Line2d(Vector2d(0,0),Vector2d(1,2)) in set([Line2d(Vector2d(0,0),Vector2d(2,3))]))
+
+    def test_length_returns_length_of_line(self):
+        self.assertAlmostEqual(Line2d(Vector2d(1.0,2.0),Vector2d(3.0,4.0)).length(), 2.8284, 4)
+        
+    def test_dir_returns_correct_direction_vector(self):
+        result = Line2d(Vector2d(1.0,2.0),Vector2d(3.0,4.0)).dir()
+        self.assertAlmostEqual(result.mag(), 1.0, 4)
+        self.assertAlmostEqual(result[0], 0.7071, 4)
+        self.assertAlmostEqual(result[1], 0.7071, 4)
+    
+    
+class Line3dTests(unittest.TestCase):
+
+    def test_lines_with_same_values_are_equal(self):
+        self.assertEqual(Line2d(Vector2d(0.0,1.0,2.0),Vector2d(1.0,2.0,3.0)), 
+                         Line2d(Vector2d(0.0,1.0,2.0),Vector2d(1.0,2.0,3.0)))
+    
+    def test_lines_with_different_values_are_not_equal(self):
+        self.assertNotEqual(Line2d(Vector2d(0.0,1.0,2.0),Vector2d(1.0,2.0,3.0)),
+                            Line2d(Vector2d(2.0,1.0,0.0),Vector2d(2.0,1.0,3.0)))
+                            
+    def test_lines_with_same_values_have_same_hash(self):
         self.assertTrue(Line3d(Vector3d(0,0,0),Vector3d(1,2,3)) in set([Line3d(Vector3d(0,0,0),Vector3d(1,2,3))]))
+
+    def test_lines_with_different_values_have_different_hashes(self):
         self.assertFalse(Line3d(Vector3d(0,0,0),Vector3d(1,2,3)) in set([Line3d(Vector3d(0,0,0),Vector3d(2,3,4))]))
 
-    def testPolygon2d(self):
+    def test_length_returns_length_of_line_as_float(self):
+        self.assertAlmostEqual(Line3d(Vector3d(0.0,1.0,2.0),Vector3d(3.0,4.0,5.0)).length(), 5.1962, 4)
+        
+    def test_dir_returns_correct_direction_vector(self):
+        result = Line3d(Vector3d(0.0,1.0,2.0),Vector3d(3.0,4.0,5.0)).dir()
+        self.assertAlmostEqual(result.mag(), 1.0, 4)
+        self.assertAlmostEqual(result[0], 0.5774, 4)
+        self.assertAlmostEqual(result[1], 0.5774, 4)
+        self.assertAlmostEqual(result[2], 0.5774, 4)
+    
+    
+class Polygon2dTests(unittest.TestCase):
+
+    def test_lines_returns_correct_edge_definitions_as_line_objects(self):
         p = Polygon2d([Vector2d(0.0,0.0), Vector2d(1.0,0.0), Vector2d(1.0,1.0)])
         lines = [
             Line2d(Vector2d(0.0,0.0),Vector2d(1.0,0.0)),
@@ -238,13 +326,19 @@ class Test(unittest.TestCase):
             Line2d(Vector2d(1.0,1.0),Vector2d(0.0,0.0))
         ]
         self.assertEquals(lines, p.get_lines())
-
+        
+    def test_polygons_with_same_values_have_same_hash(self):        
         self.assertTrue(Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3))) 
             in set([Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3)))]))
+            
+    def test_polygons_with_different_values_have_different_hashes(self):
         self.assertFalse(Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3))) 
             in set([Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(4,5)))]))
+        
+        
+class Polygon3dTests(unittest.TestCase):
 
-    def testPolygon3d(self):
+    def test_points_returns_correct_vertex_definitions_as_vectors(self):
         p = Polygon3d([
             Line3d(Vector3d(0.0,0.0,0.0),Vector3d(1.0,0.0,0.0)),
             Line3d(Vector3d(1.0,0.0,0.0),Vector3d(0.0,1.0,0.0)),
@@ -258,7 +352,8 @@ class Test(unittest.TestCase):
             Vector3d(0.0,1.0,0.0), Vector3d(0.0,0.0,1.0)
         ])
         self.assertEquals(points, p.get_points())
-
+        
+    def test_polygons_with_same_values_have_same_hash(self):
         self.assertTrue(Polygon3d((
                 Line3d(Vector3d(0,0,0),Vector3d(1,0,0)),
                 Line3d(Vector3d(0,0,0),Vector3d(0,1,0)),
@@ -275,6 +370,8 @@ class Test(unittest.TestCase):
                 Line3d(Vector3d(0,0,1),Vector3d(1,0,0)),
                 Line3d(Vector3d(0,0,1),Vector3d(0,1,0))
             ))]))
+        
+    def test_polygons_with_different_values_have_different_hashes(self):
         self.assertFalse(Polygon3d((
                 Line3d(Vector3d(0,0,0),Vector3d(1,0,0)),
                 Line3d(Vector3d(0,0,0),Vector3d(0,1,0)),
@@ -292,102 +389,186 @@ class Test(unittest.TestCase):
                 Line3d(Vector3d(0,0,1),Vector3d(0,1,0))
             ))]))
 
-    def testRectangle(self):
-        r1 = Rectangle(Vector2d(0.0,0.0), Vector2d(5.0,10.0))
-        r2 = Rectangle(Vector2d(0.0,0.0), Vector2d(5.0,10.0))
-        r3 = Rectangle(Vector2d(-2.0,-3.0),Vector2d(5.0,5.0))
 
-        self.assertEqual(r1, r2)
-        self.assertNotEqual(r2, r3)
-        self.assertNotEqual(r3, r1)
+class RectangleTest(unittest.TestCase):
 
-        noisec = [
-            Rectangle(Vector2d(-4.0,-4.0),Vector2d(-2.0,-2.0)),
-            Rectangle(Vector2d(2.0,-4.0),Vector2d(3.0,-2.0)),
-            Rectangle(Vector2d(7.0,-4.0),Vector2d(9.0,-2.0)),
-            Rectangle(Vector2d(-4.0,2.0),Vector2d(-2.0,8.0)),
-            Rectangle(Vector2d(7.0,2.0),Vector2d(9.0,8.0)),
-            Rectangle(Vector2d(-4.0,12.0),Vector2d(-2.0,14.0)),
-            Rectangle(Vector2d(2.0,12.0),Vector2d(3.0,14.0)),
-            Rectangle(Vector2d(7.0,12.0),Vector2d(9.0,14.0)),    
+    def setUp(self):
+        self.fiveten = Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,10.0))
 
-            Rectangle(Vector2d(-2.0,-4.0),Vector2d(7.0,-2.0)),
-            Rectangle(Vector2d(-2.0,12.0),Vector2d(7.0,14.0)),
-            Rectangle(Vector2d(-4.0,-2.0),Vector2d(-2.0,12.0)),
-            Rectangle(Vector2d(7.0,-2.0),Vector2d(9.0,12.0))
-        ]
-        yesisec = [
-            Rectangle(Vector2d(-2.0,-2.0),Vector2d(2.0,2.0)),
-            Rectangle(Vector2d(2.0,-2.0),Vector2d(3.0,2.0)),
-            Rectangle(Vector2d(3.0,-2.0),Vector2d(7.0,2.0)),
-            Rectangle(Vector2d(-2.0,2.0),Vector2d(2.0,8.0)),
-            Rectangle(Vector2d(2.0,2.0),Vector2d(3.0,8.0)),
-            Rectangle(Vector2d(3.0,2.0),Vector2d(7.0,8.0)),
-            Rectangle(Vector2d(-2.0,8.0),Vector2d(2.0,12.0)),
-            Rectangle(Vector2d(2.0,8.0),Vector2d(3.0,12.0)),
-            Rectangle(Vector2d(3.0,8.0),Vector2d(7.0,12.0)),
-
-            Rectangle(Vector2d(-2.0,-2.0),Vector2d(7.0,2.0)),
-            Rectangle(Vector2d(-2.0,2.0),Vector2d(7.0,8.0)),
-            Rectangle(Vector2d(-2.0,8.0),Vector2d(7.0,12.0)),
-            Rectangle(Vector2d(-2.0,-2.0),Vector2d(2.0,12.0)),
-            Rectangle(Vector2d(2.0,-2.0),Vector2d(3.0,12.0)),
-            Rectangle(Vector2d(3.0,-2.0),Vector2d(7.0,12.0))
-        ]
-
-        for r in yesisec:
-            self.assertTrue(r1.intersects(r))
-        for r in noisec:
-            self.assertFalse(r1.intersects(r))
-
-        isect = Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,5.0))
-        self.assertEqual(isect, r1.intersection(r3))
-        self.assertEqual(r1, r1.intersection(r2))
-
-    def testMatrix(self):
-    
-        self.assertEqual(Matrix(((1,2),(3,4))),Matrix(((1,2),(3,4))))
-        self.assertNotEqual(Matrix(((1,2),(3,4))),Matrix(((5,6,7),(8,9,10))))
+    def test_rectangles_with_same_values_are_equal(self):
+        self.assertEqual(Rectangle(Vector2d(1.0,2.0),Vector2d(3.0,4.0)), 
+                         Rectangle(Vector2d(1.0,2.0),Vector2d(3.0,4.0)))
+                         
+    def test_rectangles_with_different_values_are_not_equal(self):
+        self.assertNotEqual(Rectangle(Vector2d(1.0,2.0),Vector2d(3.0,4.0)),
+                            Rectangle(Vector2d(2.0,1.0),Vector2d(4.0,3.0)))
+            
+    def test_nw_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(-4.0,-4.0),Vector2d(-2.0,-2.0)))
         
+    def test_n_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(2.0,-4.0),Vector2d(3.0,-2.0)))
+        
+    def test_ne_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(7.0,-4.0),Vector2d(9.0,-2.0)))
+
+    def test_w_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(-4.0,2.0),Vector2d(-2.0,8.0)))
+        
+    def test_e_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(7.0,2.0),Vector2d(9.0,8.0)))
+    
+    def test_sw_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(-4.0,12.0),Vector2d(-2.0,14.0)))
+        
+    def test_s_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(2.0,12.0),Vector2d(3.0,14.0)))
+        
+    def test_se_rect_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(7.0,12.0),Vector2d(9.0,14.0)))
+
+    def test_rect_across_top_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(-2.0,-4.0),Vector2d(7.0,-2.0)))
+        
+    def test_rect_across_bottom_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(-2.0,12.0),Vector2d(7.0,14.0)))
+        
+    def test_rect_down_left_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(-4.0,-2.0),Vector2d(-2.0,12.0)))
+        
+    def test_rect_down_right_doesnt_intersect(self):
+        self._noisec(Rectangle(Vector2d(7.0,-2.0),Vector2d(9.0,12.0)))
+
+    def test_intersects_through_nw(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,-2.0),Vector2d(2.0,2.0)))
+        
+    def test_intersects_through_n(self):
+        self._yesisec(Rectangle(Vector2d(2.0,-2.0),Vector2d(3.0,2.0)))
+        
+    def test_intersects_through_ne(self):
+        self._yesisec(Rectangle(Vector2d(3.0,-2.0),Vector2d(7.0,2.0)))
+        
+    def test_intersects_through_w(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,2.0),Vector2d(2.0,8.0)))
+        
+    def test_intersects_inside(self):
+        self._yesisec(Rectangle(Vector2d(2.0,2.0),Vector2d(3.0,8.0)))
+        
+    def test_intersects_through_e(self):
+        self._yesisec(Rectangle(Vector2d(3.0,2.0),Vector2d(7.0,8.0)))
+        
+    def test_intersects_through_sw(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,8.0),Vector2d(2.0,12.0)))
+
+    def test_intersects_through_s(self):
+        self._yesisec(Rectangle(Vector2d(2.0,8.0),Vector2d(3.0,12.0)))
+        
+    def test_intersects_through_se(self):
+        self._yesisec(Rectangle(Vector2d(3.0,8.0),Vector2d(7.0,12.0)))
+
+    def test_intersects_through_top(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,-2.0),Vector2d(7.0,2.0)))
+        
+    def test_intersects_through_middle_horizontally(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,2.0),Vector2d(7.0,8.0)))
+        
+    def test_intersects_through_bottom(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,8.0),Vector2d(7.0,12.0)))
+        
+    def test_intersects_through_left(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,-2.0),Vector2d(2.0,12.0)))
+
+    def test_intersects_through_middle_vertically(self):
+        self._yesisec(Rectangle(Vector2d(2.0,-2.0),Vector2d(3.0,12.0)))
+        
+    def test_intersects_through_right(self):
+        self._yesisec(Rectangle(Vector2d(3.0,-2.0),Vector2d(7.0,12.0)))
+
+    def test_intersects_when_surrounded(self):
+        self._yesisec(Rectangle(Vector2d(-2.0,-2.0),Vector2d(6.0,12.0)))
+
+    def test_intersection_returns_correct_rectangle_for_overlap(self):
+        self.assertEqual(Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,5.0)),
+                         Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,10.0)).intersection(
+                            Rectangle(Vector2d(-2.0,-3.0),Vector2d(5.0,5.0))))
+                            
+    def test_intersection_returns_same_rect_for_identical_rectangles(self):
+        self.assertEqual(Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,10.0)),
+                         Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,10.0)).intersection(
+                            Rectangle(Vector2d(0.0,0.0),Vector2d(5.0,10.0))))
+                            
+    def test_intersection_returns_none_when_rects_dont_intersect(self):
+        self.assertIsNone(Rectangle(Vector2d(-5.0,-5.0),Vector2d(5.0,5.0)).intersection(
+                            Rectangle(Vector2d(6.0,6.0),Vector2d(7.0,7.0))))
+
+    def _noisec(self,rect):
+        self.assertFalse(self.fiveten.intersects(rect))
+        
+    def _yesisec(self,rect):
+        self.assertTrue(self.fiveten.intersects(rect))
+
+
+class MatrixTest(unittest.TestCase):
+
+    def test_matrices_with_same_values_are_equal(self):
+        self.assertEqual(Matrix(((1,2),(3,4))),Matrix(((1,2),(3,4))))
+
+    def test_matrices_with_different_values_are_not_equal(self):
+        self.assertNotEqual(Matrix(((1,2),(3,4))),Matrix(((5,6,7),(8,9,10))))
+
+    def test_addition_returns_correct_matrix(self):
         self.assertEquals( Matrix(((1,2,3),(4,5,6)))+Matrix(((3,4,5),(6,7,8))), 
             Matrix(((4,6,8),(10,12,14))) )
-        self.assertEquals( Matrix(((1,2,3),(4,5,6)))-Matrix(((3,4,5),(6,7,8))),
-            Matrix(((-2,-2,-2),(-2,-2,-2))) )
             
+    def test_subtraction_returns_correct_matrix(self):
+        self.assertEquals( Matrix(((1,2,3),(4,5,6)))-Matrix(((3,4,5),(6,7,8))),
+            Matrix(((-2,-2,-2),(-2,-2,-2))) )        
+            
+    def test_additional_of_different_sized_matrices_raises_typeerror(self):
         self.assertRaises(TypeError, 
             lambda: Matrix(((1,2,3),(4,5,6))) + Matrix(((1,2),(3,4),(5,6))) )
+            
+    def test_substraction_of_different_sized_matrices_raises_typeerror(self):
         self.assertRaises(TypeError,
             lambda: Matrix(((1,2,3),(4,5,6))) - Matrix(((1,2),(3,4),(5,6))) )
-
+    
+    def test_addition_with_tuple_returns_correct_matrix(self):
         self.assertEquals( Matrix((2,3,4)) + (1,2,3), Matrix((3,5,7)) )
+        
+    def test_subtraction_with_tuple_returns_correct_matrix(self):
         self.assertEquals( Matrix((2,3,4)) - (1,2,3), Matrix((1,1,1)) )
 
+    def test_multiplication_with_scalar_on_rhs_returns_correct_matrix(self):            
         self.assertEquals( Matrix(((1,2,3),(4,5,6))) * 2.0, Matrix(((2,4,6),(8,10,12))) )
+
+    def test_multiplication_with_scalar_on_lhs_returns_correct_matrix(self):
         self.assertEquals( 2.0 * Matrix(((1,2,3),(4,5,6))), Matrix(((2,4,6),(8,10,12))) )
 
+    def test_division_by_scalar_returns_correct_matrix(self):
         self.assertEquals( Matrix(((1,2,3),(4,5,6))) / 2.0, Matrix(((0.5,1,1.5),(2,2.5,3))) )
-        
+
+    def test_multiplication_with_matrix_returns_correct_matrix(self):
         self.assertEquals( Matrix(((1,2,3),(4,5,6))) * Matrix(((1,2),(3,4),(5,6))),
             Matrix(((1*1+2*3+3*5, 1*2+2*4+3*6),(4*1+5*3+6*5, 4*2+5*4+6*6))) )
             
+    def test_multiplication_with_sequence_on_lhs_returns_correct_matrix(self):
         self.assertEquals( [[1,2,3],[4,5,6]] * Matrix([9,8,7]),
-            Matrix([1*9+2*8+3*7,4*9+5*8+6*7]) )
-            
+            Matrix([1*9+2*8+3*7,4*9+5*8+6*7]) )            
+
+    def test_multiplication_with_sequence_on_rhs_returns_correct_sequence(self):
         self.assertEquals( Matrix(((1,2,3),(4,5,6))) * [[9],[8],[7]],
-             [1*9+2*8+3*7, 4*9+5*8+6*7] )
-            
+             [1*9+2*8+3*7, 4*9+5*8+6*7] )            
+             
+    def test_identity_returns_correct_identity_matrix(self):
         self.assertEquals(Matrix.identity(2), Matrix(((1,0),(0,1))))
-        
+
+    def test_transpose_returns_correctly_transposed_matrix(self):
         self.assertEquals(Matrix(((1,2),(3,4),(5,6))).transpose(), Matrix(((1,3,5),(2,4,6))))
-        
+
+    def test_matrices_with_same_values_have_same_hash(self):            
         self.assertTrue(Matrix(((1,2),(3,4))) in set([Matrix(((1,2),(3,4)))]))
+
+    def test_matrices_with_different_values_have_different_hashes(self):
         self.assertFalse(Matrix(((1,2),(3,4))) in set([Matrix(((9,8),(7,6)))]))
         
-        
-
-
-
-
-
-
-
+             
