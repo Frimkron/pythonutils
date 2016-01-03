@@ -572,3 +572,66 @@ class MatrixTest(unittest.TestCase):
         self.assertFalse(Matrix(((1,2),(3,4))) in set([Matrix(((9,8),(7,6)))]))
         
              
+class PlaneTests(unittest.TestCase):
+        
+    def test_planes_with_same_values_are_equal(self):
+        self.assertEqual(Plane(Vector3d(1.0,2.0,3.0),Vector3d(4.0,5.0,6.0)),
+                         Plane(Vector3d(1.0,2.0,3.0),Vector3d(4.0,5.0,6.0)))    
+
+    def test_planes_with_equivalent_values_are_equal(self):
+        self.assertEqual(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0)),
+                         Plane(Vector3d(1.0,2.0,40.0),Vector3d(2.0,2.0,0.0)))    
+
+    def test_planes_with_non_equivalent_values_are_not_equal(self):
+        self.assertNotEqual(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0)),
+                            Plane(Vector3d(1.0,10.0,40.0),Vector3d(2.0,2.0,0.0)))    
+                            
+    def test_planes_with_equivalent_values_have_same_hash(self):
+        self.assertTrue(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0)) 
+            in set([Plane(Vector3d(1.0,2.0,40.0),Vector3d(2.0,2.0,0.0))]))
+            
+    def test_planes_with_non_equivalent_values_have_different_hashes(self):
+        self.assertFalse(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0)) 
+            in set([Plane(Vector3d(1.0,10.0,40.0),Vector3d(2.0,2.0,0.0))]))
+    
+    def test_point_on_plane_returns_true_if_point_on_plane(self):
+        self.assertTrue(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .point_on_plane(Vector3d(2.0,1.0,3.0)))
+            
+    def test_point_on_plane_returns_false_if_point_not_on_plane(self):
+        self.assertFalse(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .point_on_plane(Vector3d(2.0,2.0,3.0)))
+    
+    def test_is_parallel_returns_true_for_parallel_vector(self):
+        self.assertTrue(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .is_parallel(Vector3d(-0.5,0.5,1.0)))
+                
+    def test_is_parallel_returns_false_for_non_parallel_vector(self):
+        self.assertFalse(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .is_parallel(Vector3d(-0.5,0.75,1.0)))
+    
+    def test_line_intersection_returns_correct_point_when_segment_intersects(self):
+        self.assertEqual(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .line_intersection(Line3d(Vector3d(-2.0,1.0,-4.0),Vector3d(2.0,5.0,2.0))), 
+            Vector3d(0.0,3.0,-1.0))
+        
+    def test_line_intersection_returns_none_if_segment_is_parallel(self):
+        self.assertIsNone(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .line_intersection(Line3d(Vector3d(2.0,3.0,-1.0),Vector3d(1.5,3.5,0.0))))
+    
+    def test_line_intersection_returns_none_if_segment_doesnt_reach_plane(self):
+        self.assertIsNone(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .line_intersection(Line3d(Vector3d(-2.0,1.0,-4.0),Vector3d(-1.0,2.0,2.0))))
+    
+    def test_line_intersection_returns_none_if_segment_is_beyond_plane(self):
+        self.assertIsNone(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .line_intersection(Line3d(Vector3d(1.0,4.0,-4.0),Vector3d(2.0,5.0,2.0))))
+    
+    def test_line_intersection_returns_none_if_segment_lies_on_plane(self):
+        self.assertIsNone(Plane(Vector3d(1.0,2.0,3.0),Vector3d(1.0,1.0,0.0))
+            .line_intersection(Line3d(Vector3d(0.0,3.0,-4.0),Vector3d(2.0,1.0,2.0))))
+    
+    
+class CuboidTests(unittest.TestCase):
+    # TODO
+    pass

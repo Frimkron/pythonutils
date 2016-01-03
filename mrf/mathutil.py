@@ -31,12 +31,14 @@ Math Utils Module
     TODO: test cuboid
     TODO: test 2d line intersection
     TODO: test 2d line clipping
+    TODO: test dist to line
 """
 
 import math
 import unittest
 import random
 from mrf.structs import isindexable, isiterable
+
 
 class Angle(object):
 
@@ -223,6 +225,7 @@ class Rotation(object):
             ( 0,     cosx,  -sinx ),
             ( 0,     sinx,  cosx  )
         ))
+
 
 class Vector2d(object):
 
@@ -675,6 +678,7 @@ class Matrix(object):
 
     def __hash__(self):
         return hash("Matrix") ^ hash(self.data)
+
     
 def sigmoid(x):
     """    
@@ -682,24 +686,29 @@ def sigmoid(x):
     an S-shaped curve in between.
     """
     return 1.0/(1.0+math.exp(-(x-0.5)*12.0))
+
     
 def smooth_step(x):
     return x*x * (3 - 2*x)
+
     
 def smooth_steps(steps):
     for i in range(int(steps)):
         x = float(i)/steps
         yield smooth_step(x)
+
     
 def mean(values):
     n = len(values)
     return float(sum(values))/n if n>0 else 0.0
+
 
 def standard_deviation(values):
     m = mean(values)
     sq_devs = [pow(x-m,2) for x in values]
     var = mean(sq_devs)
     return math.sqrt(var)
+
 
 def deviation(values, val):
     """    
@@ -737,6 +746,7 @@ def dist_to_line2d(line, point):
     dist = math.sqrt(math.pow(x-x3,2)+math.pow(y-y3,2))
     
     return dist
+
     
 def dist_to_line2d_seg(line, point):
     """    
@@ -770,10 +780,6 @@ def dist_to_line2d_seg(line, point):
     dist = math.sqrt(math.pow(x-x3,2)+math.pow(y-y3,2))
     
     return dist
-
-
-def line_plane_intersection(line3d,plane):
-    pass
 
     
 class Line2d(object):
@@ -957,7 +963,7 @@ class Plane(object):
     def line_intersection(self, line):
         """ 
         Takes a Line3d representing a line segment between two points and returns the 3d vector where it intersects this
-        plane, or None if it does not intersect. Returns None if the line lies in the plane.
+        plane, or None if it does not intersect. Returns None if the line lies on the plane.
         """
         l0 = line.a
         ld = line.dir()
@@ -1100,6 +1106,7 @@ class Rectangle(Polygon2d):
                 Vector2d(in_right,in_bottom)
             )
 
+
 class Polygon3d(object):
     """    
     A 3-dimensional shape
@@ -1136,6 +1143,7 @@ class Polygon3d(object):
 
     def __hash__(self):
         return hash("Polygon3d") ^ hash(self.lines)
+
 
 class Cuboid(Polygon3d):
     """    
@@ -1220,7 +1228,6 @@ class Cuboid(Polygon3d):
                 Vector3d(in_front,in_right,in_bottom)
             )
             
-
 
 def lead_angle(target_disp,target_speed,target_angle,bullet_speed):
     """    
