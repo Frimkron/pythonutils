@@ -40,7 +40,10 @@ import random
 from mrf.structs import isindexable, isiterable
 
 
-class Angle(object):
+TAU = math.pi * 2
+
+
+class Angle(object):    
 
     def __init__(self, rad=0):
         self.val = rad
