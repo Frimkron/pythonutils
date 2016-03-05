@@ -407,7 +407,21 @@ def two_way_ref(aname,bname,atype=object,btype=object):
     
     return property(geta,setter)
 
+DONT_PAD = object()
     
-
-
+def chunk(seq,size=2,pad=DONT_PAD):
+    buff = []
+    itr = iter(seq)
+    try:
+        while True:
+            buff = []
+            while len(buff) < size:
+                buff.append(next(itr))
+            yield tuple(buff)
+    except StopIteration:
+        pass
+    if len(buff) > 0:
+        if pad is not DONT_PAD:
+            buff.extend([pad]*(size-len(buff)))
+        yield tuple(buff)
 

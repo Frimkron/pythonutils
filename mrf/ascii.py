@@ -29,6 +29,16 @@ Ascii Module
 Utilities for handling ascii art
 """
 
+BLACK   = 0
+RED     = 1 << 0
+GREEN   = 1 << 1
+BLUE    = 1 << 2
+YELLOW  = RED | GREEN
+MAGENTA = RED | BLUE
+CYAN    = BLUE | GREEN
+WHITE   = RED | GREEN | BLUE
+
+
 class Canvas(object):
     """    
     Class facilitating ascii art by allowing characters at arbitrary coordinates to
@@ -161,3 +171,16 @@ def barchart(values,labels=None,length=80,vertical=False):
                 c.set(i*2+1,0,endchar)
                 c.set(i*2+1,barlen-1,endchar)
     return c.render()
+
+
+def colour(text, fgcol=None, bgcol=None, bright=False):    
+    if fgcol is not None:
+        text = _ansi(*([30+fgcol]+([1] if bright else []))) + text
+    if bgcol is not None:
+        text = _ansi(40+bgcol) + text
+    if fgcol is not None or bgcol is not None:
+        text = text + _ansi(0)
+    return text
+
+def _ansi(*params):
+    return '\x1b[{}m'.format(';'.join(map(str,params)))
