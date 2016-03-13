@@ -33,9 +33,11 @@ Contains data structures:
     
 """
 
+import json
 import copy
 import tarfile
 import os.path
+
 
 class TicketQueue(object):
     """    
@@ -69,11 +71,13 @@ def isiterable(item):
         return True
     except TypeError:
         return False
+
         
 def iscollection(item):
     if isinstance(item,basestring):
         return False
     return isiterable(item)
+
 
 def isindexable(item):
     try:
@@ -83,6 +87,7 @@ def isindexable(item):
         return False
     except IndexError:
         return True
+
     
 class IntrospectType(type):
     """    
@@ -314,6 +319,7 @@ class FlagInitialiser(object):
         self.val += 1
         return f
 
+
 def _make_ref_updaters(innername):
     def get(obj):
         return getattr(obj,innername,None)
@@ -407,9 +413,13 @@ def two_way_ref(aname,bname,atype=object,btype=object):
     
     return property(geta,setter)
 
+
 DONT_PAD = object()
     
 def chunk(seq,size=2,pad=DONT_PAD):
+    """Returns an iterator that yields consequtive subsequences of the given size from the given sequence.
+       By default the last subsequence, if shorter, is not padded to full size. However the pad parameter
+       can be used to specify a value to use as padding"""
     buff = []
     itr = iter(seq)
     try:
@@ -425,3 +435,188 @@ def chunk(seq,size=2,pad=DONT_PAD):
             buff.extend([pad]*(size-len(buff)))
         yield tuple(buff)
 
+
+class JsonSerialiser(object):
+    """Serialises an object structure to and from JSON format, using an example structure as the specification for what
+       is expected in both cases.
+       
+       Accepted types:
+         * int (will accept any integer value)
+         * float (will accept any float value)
+         * string (will accept any string value)
+         * bool (will accept any boolean value)
+         * list (example must contain 1 example value. Will accept a list of any size, containing values of the type 
+                 demonstrated )
+         * tuple (Will accept tuples with the length and value types indicated in the example)
+         * set (example must contain 1 example value. Will accept a set of any size, containing value of the type
+                demonstrated)
+         * dict (Example must use string keys. Will accept dictionary only with the keys and value types indicated in
+                 the example)
+         * other objects (Will accept objects with the same fields as the example)
+         
+       Example:
+       
+       >>> from mrf.structs import JsonSerialiser
+       >>> class Foo(object):
+       ...     name = "dave"
+       ...     age = 20
+       ...     curltongue = True
+       ...     petsnames = ["fluffles"]
+       ...     coordinates = 45.2,23.1
+       ...     other = {"favcake": "battenberg", "gradyear": 2010}
+       ...
+       >>> j = JsonSerialiser(Foo())
+       >>> o = Foo()
+       >>> o.name = "sarah"
+       >>> o.age = 99
+       >>> o.curltongue = False
+       >>> o.petsnames = ["ben","bill"]
+       >>> o.coordinates = 12.3, 45.6
+       >>> o.other = {"favcake": "marble", "gradyear": 1066}
+       >>> with open("myfile","w") as f:
+       ...     j.serialise(o,f)
+       ...
+       >>> with open("myfile","r") as f:
+       ...     o2 = j.deserialise(f)
+       ...
+       >>> o2.name
+       u'sarah'
+       >>> o2.petsnames
+       [u'ben', u'bill']"""
+
+    class IntSpec(object):
+        def simplify(self, val):
+            if not isinstance(val, (int,float)): raise ValueError()
+            return int(val)
+        desimplify = simplify
+                    
+    class FloatSpec(object):
+        def simplify(self, val):
+            if not isinstance(val, (int,float)): raise ValueError()
+            return float(val)
+        desimplify = simplify
+        
+    class StringSpec(object):
+        def simplify(self, val):
+            if not isinstance(val, basestring): raise ValueError()
+            return unicode(val)
+        desimplify = simplify
+            
+    class BoolSpec(object):
+        def simplify(self, val):
+            if not isinstance(val, bool): raise ValueError()
+            return bool(val)
+        desimplify = simplify
+
+    class ListSpec(object):
+        def __init__(self,inner_spec):
+            self.inner_spec = inner_spec
+        def simplify(self,val):
+            if not isinstance(val,(list,tuple,set)): raise ValueError()
+            return [ self.inner_spec.simplify(x) for x in val ]
+        def desimplify(self, val):
+            if not isinstance(val,(list,tuple,set)): raise ValueError()
+            return [ self.inner_spec.desimplify(x) for x in val ]
+            
+    class TupleSpec(object):
+        def __init__(self,inner_specs):
+            self.inner_specs = inner_specs
+        def simplify(self,val):
+            if not isinstance(val,(list,tuple)): raise ValueError()
+            if len(val) != len(self.inner_specs): raise ValueError()
+            return [ self.inner_specs[i].simplify(x) for i,x in enumerate(val) ]
+        def desimplify(self, val):
+            if not isinstance(val,(list,tuple)): raise ValueError()
+            if len(val) != len(self.inner_specs): raise ValueError()
+            return tuple([ self.inner_specs[i].desimplify(x) for i,x in enumerate(val) ])
+
+    class SetSpec(object):
+        def __init__(self,inner_spec):
+            self.inner_spec = inner_spec
+        def simplify(self,val):
+            if not isinstance(val,(list,tuple,set)): raise ValueError()
+            return [ self.inner_spec.simplify(x) for x in val ]
+        def desimplify(self, val):
+            if not isinstance(val,(list,tuple,set)): raise ValueError()
+            return set([ self.inner_spec.desimplify(x) for x in val ])
+            
+    class DictSpec(object):
+        def __init__(self,property_specs):
+            self.property_specs = property_specs
+        def simplify(self,val):
+            if not isinstance(val,dict): raise ValueError()
+            result = {}
+            for name,spec in self.property_specs.items():
+                if name not in val: raise ValueError()
+                result[unicode(name)] = spec.simplify(val[name])
+            return result
+        def desimplify(self,val):
+            if not isinstance(val,dict): raise ValueError()
+            result = {}
+            for name,spec in self.property_specs.items():
+                if name not in val: raise ValueError()
+                result[unicode(name)] = spec.desimplify(val[name])
+            return result
+                
+    class ObjectSpec(object):
+        def __init__(self,obj_type,property_specs):
+            self.obj_type = obj_type
+            self.property_specs = property_specs
+        def simplify(self,val):
+            if not isinstance(val,self.obj_type): raise ValueError()
+            result = {}
+            for name,spec in self.property_specs.items():
+                if not hasattr(val,name): raise ValueError()
+                result[unicode(name)] = spec.simplify(getattr(val,name))
+            return result
+        def desimplify(self,val):
+            if not isinstance(val,dict): raise ValueError()
+            result = self.obj_type()
+            for name,spec in self.property_specs.items():
+                if name not in val: raise ValueError()
+                setattr(result,unicode(name),spec.desimplify(val[name]))
+            return result
+
+    def __init__(self, example):
+        """Constructs a new serialiser using the given value as an example of the specification. See class docstring for
+           more info."""
+        self.spec = self._make_spec(example)
+
+    def serialise(self, val, filepointer):
+        """Writes the given object as json to the given file handle. If the object doesn't meet the established spec,
+           ValueError is raised"""
+        return json.dump(self.spec.simplify(val),filepointer)
+        
+    def deserialise(self, filepointer):
+        """Reads json from the given file handle and converts it to an object according to the established spec. If the
+           JSON structure doesn't meet the specification, ValueError is raised."""
+        return self.spec.desimplify(json.load(filepointer))
+        
+    def _make_spec(self,val):        
+        if isinstance(val, bool):
+            return JsonSerialiser.BoolSpec()
+        elif isinstance(val, int):
+            return JsonSerialiser.IntSpec()
+        elif isinstance(val, float):
+            return JsonSerialiser.FloatSpec()
+        elif isinstance(val, basestring):
+            return JsonSerialiser.StringSpec()        
+        elif isinstance(val, list):
+            if len(val)!=1: raise ValueError()
+            return JsonSerialiser.ListSpec(self._make_spec(next(iter(val))))
+        elif isinstance(val, tuple):
+            return JsonSerialiser.TupleSpec([self._make_spec(x) for x in val])
+        elif isinstance(val, set):
+            if len(val)!=1: raise ValueError()
+            return JsonSerialiser.SetSpec(self._make_spec(next(iter(val))))
+        elif isinstance(val, dict):
+            props = {}
+            for k,v in val.items():
+                if not isinstance(k,basestring): raise ValueError()
+                props[unicode(k)] = self._make_spec(v)
+            return JsonSerialiser.DictSpec(props)
+        else:
+            props = {}
+            for pname in [p for p in dir(val) if not p.startswith('_') and not callable(getattr(val,p))]:
+                props[unicode(pname)] = self._make_spec(getattr(val,pname))
+            return JsonSerialiser.ObjectSpec(type(val),props)
