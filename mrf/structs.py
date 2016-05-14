@@ -25,12 +25,6 @@ OTHER DEALINGS IN THE SOFTWARE.
 ---------------
 
 Data Structures Module
-
-Contains data structures:
-
-    TicketQueue - queue for restricting actions to x per frame
-    IntrospectType - metaclass which invokes setup method on classes created
-    
 """
 
 import json
@@ -585,7 +579,7 @@ class JsonSerialiser(object):
     def serialise(self, val, filepointer):
         """Writes the given object as json to the given file handle. If the object doesn't meet the established spec,
            ValueError is raised"""
-        return json.dump(self.spec.simplify(val),filepointer)
+        return json.dump(self.spec.simplify(val),filepointer,indent=4)
         
     def deserialise(self, filepointer):
         """Reads json from the given file handle and converts it to an object according to the established spec. If the
@@ -620,3 +614,49 @@ class JsonSerialiser(object):
             for pname in [p for p in dir(val) if not p.startswith('_') and not callable(getattr(val,p))]:
                 props[unicode(pname)] = self._make_spec(getattr(val,pname))
             return JsonSerialiser.ObjectSpec(type(val),props)
+
+
+class YieldFrom(object):    
+    """Helper class to capture StopIteration return values from generators in Python2 (similar to Python3's 
+       "yield from" syntax
+       
+    >>> from mrf.structs import YieldFrom
+    >>> def gen():
+    ...     yield 1
+    ...     yield 2
+    ...     raise StopIteration("example")
+    ... 
+    >>> itr = YieldFrom(gen())
+    >>> for i in itr: pass
+    ... 
+    >>> itr.return_value
+    'example'"""
+       
+    return_value = None
+    _iterator = None
+    
+    def __init__(self,iterator):
+        self._iterator = iterator
+        self.return_value = None
+    
+    def __iter__(self):
+        return self
+        
+    def __next__(self):
+        try:
+            return next(self._iterator)
+        except StopIteration as e:
+            if len(e.args) > 0:
+                self.return_value = e.args[0]
+            raise
+    
+    next = __next__
+
+
+def generator(fn):
+    """Decorator to make a generator out of a regular function, for instances where one requires a zero-length iterable 
+       without including a yield statement. Return values will be ignored."""
+    def gen(*args,**kargs):
+        if False: yield
+        fn(*args,**kargs)
+    return gen
