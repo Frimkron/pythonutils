@@ -66,39 +66,39 @@ class Test(unittest.TestCase):
     def testPropertyOverride(self):
         tiddles = Cat()
         tiddles.change_state("Asleep")
-        self.assertEquals("cat not interested",tiddles.be_played_with())
-        self.assertEquals("cat wakes up",tiddles.be_stroked())
-        self.assertEquals("cat plays",tiddles.be_played_with())
+        self.assertEqual("cat not interested",tiddles.be_played_with())
+        self.assertEqual("cat wakes up",tiddles.be_stroked())
+        self.assertEqual("cat plays",tiddles.be_played_with())
         
     def testEnterExitHooks(self):
         tiddles = Cat()
         tiddles.change_state("Asleep")
         tiddles.be_stroked()
-        self.assertEquals(2,tiddles.hunger)
+        self.assertEqual(2,tiddles.hunger)
         tiddles.be_fed()
-        self.assertEquals(1,tiddles.hunger)
+        self.assertEqual(1,tiddles.hunger)
         tiddles.be_played_with()
         tiddles.be_stroked()
         tiddles.be_stroked()
         tiddles.be_fed()
-        self.assertEquals(2,tiddles.hunger)
+        self.assertEqual(2,tiddles.hunger)
         
     def testStateName(self):
         tiddles = Cat()
-        self.assertEquals(None, tiddles.get_state())
+        self.assertEqual(None, tiddles.get_state())
         tiddles.change_state("Asleep")
-        self.assertEquals("Asleep", tiddles.get_state())
+        self.assertEqual("Asleep", tiddles.get_state())
         
     def testInheritance(self):
         ginger = SneezyCat()
-        self.assertEquals(4, len(ginger.states))
+        self.assertEqual(4, len(ginger.states))
         
     def testMagicMethods(self):
         ginger = SneezyCat()
         ginger.change_state("Sneezing")
-        self.assertNotEquals("ACHOOOOOOOOOOOO",str(ginger))
-        self.assertNotEquals("ACHOOOOOOOOOOOO",ginger)
-        self.assertEquals(SneezyCat,ginger.__class__)
+        self.assertNotEqual("ACHOOOOOOOOOOOO",str(ginger))
+        self.assertNotEqual("ACHOOOOOOOOOOOO",ginger)
+        self.assertEqual(SneezyCat,ginger.__class__)
 
         
 class FastCat(StateMachineBase):
@@ -154,28 +154,28 @@ class FastTest(unittest.TestCase):
     def testPropertyOverride(self):
         tiddles = FastCat()
         tiddles.change_state("Asleep")
-        self.assertEquals("cat not interested",tiddles.be_played_with())
-        self.assertEquals("cat wakes up",tiddles.be_stroked())
-        self.assertEquals("cat plays",tiddles.be_played_with())
+        self.assertEqual("cat not interested",tiddles.be_played_with())
+        self.assertEqual("cat wakes up",tiddles.be_stroked())
+        self.assertEqual("cat plays",tiddles.be_played_with())
         
     def testEnterExitHooks(self):
         tiddles = FastCat()
         tiddles.change_state("Asleep")
         tiddles.be_stroked()
-        self.assertEquals(2,tiddles.hunger)
+        self.assertEqual(2,tiddles.hunger)
         tiddles.be_fed()
-        self.assertEquals(1,tiddles.hunger)
+        self.assertEqual(1,tiddles.hunger)
         tiddles.be_played_with()
         tiddles.be_stroked()
         tiddles.be_stroked()
         tiddles.be_fed()
-        self.assertEquals(2,tiddles.hunger)
+        self.assertEqual(2,tiddles.hunger)
         
     def testStateName(self):
         tiddles = FastCat()
-        self.assertEquals(None, tiddles.get_state())
+        self.assertEqual(None, tiddles.get_state())
         tiddles.change_state("Asleep")
-        self.assertEquals("Asleep", tiddles.get_state())
+        self.assertEqual("Asleep", tiddles.get_state())
         
         
         

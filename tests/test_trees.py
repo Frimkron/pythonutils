@@ -7,7 +7,7 @@ class TestDrawTree(unittest.TestCase):
     def test_basic(self):
         t = [[1,2],[[3,4],5],8,[6,[7]],9]
         s = draw_tree(t)
-        self.assertEquals((
+        self.assertEqual((
              "[[1, 2], [[3, 4], 5], 8, [6, [7]], 9]\n"
             +"	|- [1, 2]\n"
             +"	|	|- 1\n"
@@ -27,12 +27,12 @@ class TestDrawTree(unittest.TestCase):
     def test_string_recursion(self):
         t = "foo"
         s = draw_tree(t)
-        self.assertEquals("foo\n", s)
+        self.assertEqual("foo\n", s)
 
     def test_display_strategy(self):
         t = (1,(2,3),4,(5,))
         s = draw_tree(t,displaystrategy=lambda x: "<%s>" % str(x))
-        self.assertEquals((
+        self.assertEqual((
              "<(1, (2, 3), 4, (5,))>\n"
             +"	|- <1>\n"
             +"	|- <(2, 3)>\n"
@@ -52,7 +52,7 @@ class TestDrawTree(unittest.TestCase):
     def test_branch_strategy(self):
         t = (1,(2,3),4)
         s = draw_tree(t, branchstrategy=self._branches)
-        self.assertEquals((
+        self.assertEqual((
              "(1, (2, 3), 4)\n"
             +"	|- (2, 3)\n"
             +"	|	'- 3\n"
@@ -62,7 +62,7 @@ class TestDrawTree(unittest.TestCase):
     def test_custom_formatting(self):
         t = (1,(2,3),4,(5,6))
         s = draw_tree(t, nodestr="[%s]\n\n", indentstr="  ", linestr=":", halflinestr="`", branchstr="--> ")
-        self.assertEquals((
+        self.assertEqual((
              "[(1, (2, 3), 4, (5, 6))]\n\n"
             +"  :--> [1]\n\n"
             +"  :--> [(2, 3)]\n\n"

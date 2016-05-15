@@ -269,7 +269,7 @@ class ReParser(object):
             elif self._current_char() != '|':
                 raise ParseError("Expected '|' at char %d" % self.pos)
             self.pos+=1
-            retval.children.append(self._parse_expression())                
+            retval.children.append(self._parse_expression())
                 
         self.pos+=1
         return retval
@@ -285,7 +285,7 @@ def print_re_tree(re, indent=0):
         s += '('+str(re.data)+')'
     else:
         s += '()'
-    print s
+    print(s)
     if hasattr(re,"children"):
         for c in re.children:
             print_re_tree(c, indent+1)
@@ -341,7 +341,7 @@ class NfAutomaton(object):
         in the sequence vals.
         """
         for v in vals:
-            if not self.states[fr].has_key(v):
+            if v not in self.states[fr]:
                 self.states[fr][v] = []
             self.states[fr][v].append(to)
     
@@ -374,10 +374,10 @@ class NfAutomaton(object):
             if s in self.end_states:
                 is_end = True
             state_name += s
-            if self.state_data.has_key(s):
+            if s in self.state_data:
                 combined_data.append(self.state_data[s])
             for t in self.states[s]:
-                if not combined_trans.has_key(t):
+                if t not in combined_trans:
                     combined_trans[t] = []
                 combined_trans[t].extend(self.states[s][t])
         if not state_name in dfa.states:
@@ -412,7 +412,7 @@ class NfAutomaton(object):
         """ 
         Returns the list of state names
         """
-        return self.states.keys()
+        return list(self.states.keys())
         
     def get_transitions(self):
         """ 
@@ -461,10 +461,10 @@ class DfAutomaton(NfAutomaton):
         """
         if self.current_state == None:
             raise StateError("Not in state")
-        if not self.states[self.current_state].has_key(value):
+        if value not in self.states[self.current_state]:
             raise StateError("No transition on \"%s\" in state \"%s\"" % (value,self.current_state))
         new_state = self.states[self.current_state][value]
-        if not self.states.has_key(new_state):
+        if new_state not in self.states:
             raise StateError("State \"%s\" does not exist" % new_state)
         self.current_state = new_state
         
@@ -487,7 +487,7 @@ class DfAutomaton(NfAutomaton):
         """
         out = []
         for s in self.states:
-            for t in self.states[s]:                
+            for t in self.states[s]:
                 out.append((s,self.states[s][t],t))
         return out
         
@@ -541,7 +541,7 @@ class ReCompiler(object):
         return dfa
         
     def _build_symbol(self, symbol, nfa, trans_from):
-        if self.handlers.has_key(symbol.type):
+        if symbol.type in self.handlers:
             return self.handlers[symbol.type](symbol, nfa, trans_from)
         else:
             return trans_from, trans_from
@@ -684,13 +684,13 @@ class ReMatcher(object):
             p = ReParser()
             tree = p.parse_re(re)
             #print_re_tree(tree)
-            #print "---------------------------"
+            #print("---------------------------")
             
             c = ReCompiler()
             nfa = c.make_nfa(tree)
             #pr = SaPrinter()
             #pr.print_automaton(nfa)
-            #print "---------------------------"
+            #print("---------------------------")
             
             self.dfa = nfa.make_dfa()
             #pr.print_automaton(self.dfa)
@@ -763,7 +763,7 @@ class SaPrinter(mrf.ascii.Canvas):
             range_to = (to_pos*2    -(1 if inc<0 else 0) 
                 + (1 if to_pos>fr_pos or (fr_pos==to_pos and inc>0) else 0))
             while not x_found:    
-                blocked = False                                    
+                blocked = False
                 for i in range(range_fr, range_to, inc):
                     check_pos = i
                     if (check_x,check_pos) in self.arrowed:
@@ -809,11 +809,11 @@ class SaPrinter(mrf.ascii.Canvas):
         return self.render()
         
     def print_automaton(self, automaton):
-        """
+        """ 
         Prints out an ascii art representation of the given NfAutomaton or 
         DfAutomaton object.
         """
-        print self.render_automaton(automaton)        
+        print(self.render_automaton(automaton))
         
 
 class SyntaxError(Exception):
@@ -864,7 +864,7 @@ class Lexer(object):
 
     @staticmethod
     def cb_indent(state_info, type, data, clazz):
-        curr_indent = state_info["indent_level"] if state_info.has_key("indent_level") else 0
+        curr_indent = state_info["indent_level"] if "indent_level" in state_info else 0
         new_indent = len(data)-1
         if new_indent > curr_indent:
             state_info["indent_level"] = new_indent
@@ -951,7 +951,7 @@ class Lexer(object):
             token_name = tdef[0]
             token_re = tdef[1]
             tree = parser.parse_re(token_re)
-            #print token_re
+            #print(token_re)
             #print_re_tree(tree)
             sub_nfa = compiler.make_nfa(tree)
             
@@ -961,7 +961,7 @@ class Lexer(object):
                 state_mapping[s] = new_name
                 if s in sub_nfa.end_states:
                     nfa.add_end_state(new_name)    
-                    nfa.add_state_data(new_name, token_name)                
+                    nfa.add_state_data(new_name, token_name)
                 else:
                     nfa.add_state(new_name)
                 if s == sub_nfa.get_start_state():
@@ -1000,6 +1000,8 @@ class Lexer(object):
         if t == None:
             raise StopIteration
         return t
+
+    __next__ = next
         
     def next_token(self):
         """ 
@@ -1022,8 +1024,8 @@ class Lexer(object):
         except StateError:
             if self.dfa.is_at_end():
                 ttype = self.dfa.state_data[self.dfa.current_state][0]
-                tclass = self.token_classes[ttype] if self.token_classes.has_key(ttype) else Token
-                if self.token_callbacks.has_key(ttype):
+                tclass = self.token_classes[ttype] if ttype in self.token_classes  else Token
+                if ttype in self.token_callbacks:
                     cbresult = self.token_callbacks[ttype](self.state_info,ttype,buffer,tclass)
                     if isinstance(cbresult,Token):
                         return cbresult    
@@ -1210,7 +1212,7 @@ class ItemSet(object):
         if not item in self.items:
             self.items.add(item)
             if item.get_next_symbol() != None:
-                if not self.lookup.has_key(item.get_next_symbol()):
+                if item.get_next_symbol() not in self.lookup:
                     self.lookup[item.get_next_symbol()] = []
                 self.lookup[item.get_next_symbol()].append(item)
             if item.is_end():
@@ -1261,8 +1263,8 @@ class LrParser(object):
         self.rules, self.symbol_classes, terminals, nonterminals = self._make_rules(ruledefs)
         
         #for r in self.rules:
-        #    print "rule %s: %s" % (r,self.rules[r])
-        #print ""
+        #    print("rule %s: %s" % (r,self.rules[r]))
+        #print("")
         
         # Find start rule
         self.start_rule = None
@@ -1309,7 +1311,7 @@ class LrParser(object):
                         nonterminals.add(rhs_item.data)
                     else:
                         terminals.add(rhs_item.data)
-                ruletuple = (ruletree.children[0].children[0].data, tuple(rhs_items))                            
+                ruletuple = (ruletree.children[0].children[0].data, tuple(rhs_items))
                 rules[str(rulenum)] = ruletuple 
                 rulenum += 1        
         return (rules,symbol_classes,terminals,nonterminals)
@@ -1332,9 +1334,9 @@ class LrParser(object):
             if len(next_set_names) == 0:
                 break
         
-        #print "item sets:"
+        #print("item sets:")
         #for i in item_sets:                    
-        #    print "%s: %s {%s}" % (i,str(item_sets[i]),str(item_sets[i].lookup))
+        #    print("%s: %s {%s}" % (i,str(item_sets[i]),str(item_sets[i].lookup)))
                 
         return table
                                 
@@ -1376,31 +1378,35 @@ class LrParser(object):
                         "goto" if symbol!=None and self._is_nonterminal(symbol) else "shift",
                         dest_item_set_name
                     )
-                if table.has_key((item_set_name,symbol)):
+                if (item_set_name,symbol) in table:
                     conflicting = new_action[0]+" "+dest_item_set_name
                     existing = table[(item_set_name,symbol)]
                     existing = str(existing[0])+" "+str(existing[1])
-                    raise (ParseError("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
-                            % (symbol, item_set_name, str(item_set), conflicting, existing)))
+                    raise (ParseError(
+                           "Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
+                           % (symbol, item_set_name, str(item_set), conflicting, existing)))
                 table[(item_set_name,symbol)] = new_action            
                 if is_new:
                     new_set_names.append(dest_item_set_name)
                     # for end item set, add reduce action or accept for final rule                    
                     for end_rule in item_sets[dest_item_set_name].end_rules:
                         if end_rule == start_rule:
-                            #print "add accept for %s" % dest_item_set_name
+                            #print("add accept for %s" % dest_item_set_name)
                             table[(dest_item_set_name,None)] = ("accept",None)
                         else:
-                            #print terminals
-                            #print terminals.union([None])
+                            #print(terminals)
+                            #print(terminals.union([None]))
                             for terminal in terminals.union([None]):
-                                if table.has_key((dest_item_set_name,terminal)):                                    
+                                if (dest_item_set_name,terminal) in table:
                                     conflicting = "reduce "+str(end_rule)
                                     existing = table[(dest_item_set_name,terminal)]
                                     existing = str(existing[0])+" "+str(existing[1])
-                                    raise (ParseError("Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because \"%s\" already exists)"
-                                            % (terminal, dest_item_set_name, str(item_sets[dest_item_set_name]),conflicting,existing)))
-                                #print "add reduce for %s, %s" % (dest_item_set_name,terminal)
+                                    raise (ParseError((
+                                                "Conflict on symbol \"%s\" in state %s: %s (Cannot add \"%s\" because"
+                                                "\"%s\" already exists)")
+                                            % (terminal, dest_item_set_name, str(item_sets[dest_item_set_name]),
+                                               conflicting,existing)))
+                                #print("add reduce for %s, %s" % (dest_item_set_name,terminal))
                                 table[(dest_item_set_name,terminal)] = ("reduce",end_rule)
                         
         return new_set_names    
@@ -1409,14 +1415,14 @@ class LrParser(object):
         return symbol[0].isupper()
         
     def _make_item_closure(self, item, visited_rules=set([])):    
-        #print "make item closure %s" % item
+        #print("make item closure %s" % item)
         visited_rules = visited_rules.copy()
         visited_rules.add(item.rulename)
         closure = set([item])
-        #print "\tget next symbol %s" % item.get_next_symbol()
+        #print("\tget next symbol %s" % item.get_next_symbol())
         if item.get_next_symbol() != None:
             more_rules = self._find_rules(item.get_next_symbol())
-            #print "\tmore rules %s" % more_rules
+            #print("\tmore rules %s" % more_rules)
             for r in more_rules:
                 # dont get into left recursion
                 if not r in visited_rules:
@@ -1424,8 +1430,8 @@ class LrParser(object):
                     closure = closure.union(self._make_item_closure(new_item, visited_rules))
                     closure.add(new_item)    
                 #else:
-                #    print "\t%r in visited rules" % r
-        #print "closure: %s" % closure    
+                #    print("\t%r in visited rules" % r)
+        #print("closure: %s" % closure)
         return closure
     
     def _find_rules(self, lhs):
@@ -1476,8 +1482,8 @@ class LrParser(object):
         
         while True:
         
-            #print "state stack %s" % str(self.state_stack)
-            #print "input stack %s" % str(self.input_stack)
+            #print("state stack %s" % str(self.state_stack))
+            #print("input stack %s" % str(self.input_stack))
         
             try:
                 action = self.table[(self._current_state(),self._current_token_type())]
@@ -1497,19 +1503,19 @@ class LrParser(object):
         return self.input_stack.pop()
                 
     def _do_shift(self, to_state):
-        #print "shift %s" % to_state
+        #print("shift %s" % to_state)
         self.input_stack.append(self._current_token())
         self.state_stack.append(to_state)
         self._advance()        
         
     def _do_reduce(self, rule):
-        #print "reduce %s" % rule
+        #print("reduce %s" % rule)
         ruledata = self.rules[rule]
         children = []
         for i in range(len(ruledata[1])):
             children.insert(0,self.input_stack.pop())
             self.state_stack.pop()
-        if self.symbol_classes.has_key(ruledata[0]):
+        if ruledata[0] in self.symbol_classes:
             symbclass = self.symbol_classes[ruledata[0]]
         else:
             symbclass = ParserSymbol
@@ -1525,11 +1531,11 @@ class LrParser(object):
         self.action_handlers[goto[0]](goto[1])
         
     def _do_goto(self, to_state):
-        #print "goto %s" % to_state
+        #print("goto %s" % to_state)
         self.state_stack.append(to_state)
         
     def _do_accept(self, dummy):
-        #print "accept"
+        #print("accept")
         self.accepted = True
         
         
@@ -1571,16 +1577,16 @@ class LrTablePrinter(mrf.ascii.Canvas):
                 for i in range(6):
                         self.set(1+(sy+1)*7+i,1+(st+1)*3+2, "-")
                 self.set(1+(sy+1)*7+6,1+(st+1)*3+2,"+")
-                if table.has_key((self.state_order[st],self.symbol_order[sy])):
+                if (self.state_order[st],self.symbol_order[sy]) in table:
                     content = table[(self.state_order[st],self.symbol_order[sy])]
-                    self.write(1+(sy+1)*7,1+(st+1)*3, content[0], 6)                    
+                    self.write(1+(sy+1)*7,1+(st+1)*3, content[0], 6)
                     self.write(1+(sy+1)*7,1+(st+1)*3+1, str(content[1]), 6)
                     
         self.set(0,3,"+")
         for i in range(6):
             self.set(1+i,3,"-")
         for st in range(len(self.state_order)):
-            for i in range(2):                
+            for i in range(2):
                 self.set(0,1+(st+1)*3+i,"|")
                 self.set(1+6,1+(st+1)*3+i,"|")
             self.set(0,1+(st+1)*3+2,"+")
@@ -1606,10 +1612,10 @@ class LrTablePrinter(mrf.ascii.Canvas):
         return self.render()
         
     def print_lr_table(self, table):    
-        """
+        """ 
         Prints out the ascii representation of the given parse table
         """
-        print self.render_lr_table(table)
+        print(self.render_lr_table(table))
 
 
 # ----- Testing ----------------------------------------------------------------
@@ -1632,46 +1638,46 @@ if __name__ == "__main__":
         
         def testChars(self):
             tree = self.parser.parse_re("a")
-            self.assertEquals("expression()",str(tree))
-            self.assertEquals("term()",str(delve(tree,"0")))
-            self.assertEquals("character(a)",str(delve(tree,"0/0")))
+            self.assertEqual("expression()",str(tree))
+            self.assertEqual("term()",str(delve(tree,"0")))
+            self.assertEqual("character(a)",str(delve(tree,"0/0")))
             tree = self.parser.parse_re("\+")
-            self.assertEquals("character(+)",str(delve(tree,"0/0")))
+            self.assertEqual("character(+)",str(delve(tree,"0/0")))
         
         def testQuantifiers(self):
             tree = self.parser.parse_re("a?")
-            self.assertEquals("character(a)",str(delve(tree,"0/0")))
-            self.assertEquals("quantifier((0, 1))",str(delve(tree,"0/1")))
+            self.assertEqual("character(a)",str(delve(tree,"0/0")))
+            self.assertEqual("quantifier((0, 1))",str(delve(tree,"0/1")))
             tree = self.parser.parse_re("a+")
-            self.assertEquals("quantifier((1, -1))",str(delve(tree,"0/1")))
+            self.assertEqual("quantifier((1, -1))",str(delve(tree,"0/1")))
             tree = self.parser.parse_re("a*")
-            self.assertEquals("quantifier((0, -1))",str(delve(tree,"0/1")))
+            self.assertEqual("quantifier((0, -1))",str(delve(tree,"0/1")))
             tree = self.parser.parse_re("a{2}")
-            self.assertEquals("quantifier((2, 2))",str(delve(tree,"0/1")))
+            self.assertEqual("quantifier((2, 2))",str(delve(tree,"0/1")))
             tree = self.parser.parse_re("a{2,3}")
-            self.assertEquals("quantifier((2, 3))",str(delve(tree,"0/1")))
+            self.assertEqual("quantifier((2, 3))",str(delve(tree,"0/1")))
             tree = self.parser.parse_re("a{2,}")
-            self.assertEquals("quantifier((2, -1))",str(delve(tree,"0/1")))
+            self.assertEqual("quantifier((2, -1))",str(delve(tree,"0/1")))
             self.assertRaises(ParseError, self.parser.parse_re, "+")
 
             
         def testSets(self):
             tree = self.parser.parse_re("[ab]")
-            self.assertEquals("set()",str(delve(tree,"0/0")))
-            self.assertEquals("character(a)",str(delve(tree,"0/0/0")))
-            self.assertEquals("character(b)",str(delve(tree,"0/0/1")))
+            self.assertEqual("set()",str(delve(tree,"0/0")))
+            self.assertEqual("character(a)",str(delve(tree,"0/0/0")))
+            self.assertEqual("character(b)",str(delve(tree,"0/0/1")))
             tree = self.parser.parse_re("[^a]")
-            self.assertEquals("character(a)",str(delve(tree,"0/0/0")))
-            self.assertEquals(True, delve(tree,"0/0/negate"))
+            self.assertEqual("character(a)",str(delve(tree,"0/0/0")))
+            self.assertEqual(True, delve(tree,"0/0/negate"))
             self.assertRaises(ParseError, self.parser.parse_re, "[a")
             
         def testGroups(self):
             tree = self.parser.parse_re("(a|b)")
-            self.assertEquals("group()",str(delve(tree,"0/0")))
-            self.assertEquals("expression()",str(delve(tree,"0/0/0")))
-            self.assertEquals("term()",str(delve(tree,"0/0/0/0")))
-            self.assertEquals("character(a)",str(delve(tree,"0/0/0/0/0")))
-            self.assertEquals("character(b)",str(delve(tree,"0/0/1/0/0")))
+            self.assertEqual("group()",str(delve(tree,"0/0")))
+            self.assertEqual("expression()",str(delve(tree,"0/0/0")))
+            self.assertEqual("term()",str(delve(tree,"0/0/0/0")))
+            self.assertEqual("character(a)",str(delve(tree,"0/0/0/0/0")))
+            self.assertEqual("character(b)",str(delve(tree,"0/0/1/0/0")))
             self.assertRaises(ParseError, self.parser.parse_re, "(")
 
     
@@ -1679,18 +1685,18 @@ if __name__ == "__main__":
     
         def testConstruction(self):
             nfa = NfAutomaton()
-            self.assertEquals(0, len(nfa.get_states()))
+            self.assertEqual(0, len(nfa.get_states()))
             nfa.add_state("one")
-            self.assert_("one" in nfa.get_states() and len(nfa.get_states())==1)
+            self.assertTrue("one" in nfa.get_states() and len(nfa.get_states())==1)
             nfa.set_start_state("one")
-            self.assertEquals("one", nfa.get_start_state())
+            self.assertEqual("one", nfa.get_start_state())
             nfa.add_end_state("two")
-            self.assert_("two" in nfa.get_states() and len(nfa.get_states())==2)
-            self.assert_("two" in nfa.end_states and len(nfa.end_states)==1)
+            self.assertTrue("two" in nfa.get_states() and len(nfa.get_states())==2)
+            self.assertTrue("two" in nfa.end_states and len(nfa.end_states)==1)
             nfa.add_trans("one", "two", ["a","b"])
-            self.assertEquals(2, len(nfa.get_transitions()))
-            self.assert_(("one","two","a") in nfa.get_transitions())
-            self.assert_(("one","two","b") in nfa.get_transitions())
+            self.assertEqual(2, len(nfa.get_transitions()))
+            self.assertTrue(("one","two","a") in nfa.get_transitions())
+            self.assertTrue(("one","two","b") in nfa.get_transitions())
             
         def testMakeDfa(self):
             nfa = NfAutomaton()
@@ -1702,7 +1708,7 @@ if __name__ == "__main__":
             nfa.add_trans("two","three",["a"])
             nfa.add_trans("two","one",["a"])
             dfa = nfa.make_dfa()
-            self.assertEquals(2, len(dfa.get_states()))
+            self.assertEqual(2, len(dfa.get_states()))
             
     class TestDfa(unittest.TestCase):
     
@@ -1713,7 +1719,7 @@ if __name__ == "__main__":
             dfa.add_state("three")
             dfa.add_trans("one","two",["a"])
             dfa.add_trans("one","three",["a"])
-            self.assertEquals(1, len(dfa.get_transitions()))
+            self.assertEqual(1, len(dfa.get_transitions()))
             
         def testMove(self):
             dfa = DfAutomaton()            
@@ -1724,9 +1730,9 @@ if __name__ == "__main__":
             self.assertRaises(StateError,dfa.move,"a")
             dfa.reset()
             self.assertRaises(StateError,dfa.move,"b")
-            self.assertEquals(False,dfa.is_at_end())
+            self.assertEqual(False,dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             
     class TestReCompiler(unittest.TestCase):
     
@@ -1736,145 +1742,145 @@ if __name__ == "__main__":
             
         def testCharacter(self):
             dfa = self.compiler.make_dfa(self.parser.parse_re("a"))
-            self.assertEquals(2,len(dfa.get_states()))
-            self.assertEquals(1,len(dfa.get_transitions()))
+            self.assertEqual(2,len(dfa.get_states()))
+            self.assertEqual(1,len(dfa.get_transitions()))
             states = dfa.get_states()
-            self.assert_((states[0],states[1],"a") in dfa.get_transitions())
+            self.assertTrue((states[0],states[1],"a") in dfa.get_transitions())
             dfa.reset()
-            self.assertEquals(False,dfa.is_at_end())
+            self.assertEqual(False,dfa.is_at_end())
             self.assertRaises(StateError,dfa.move,"b")
             dfa.move("a")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             
         def testAnyCharacter(self):
             dfa = self.compiler.make_dfa(self.parser.parse_re("."))
-            self.assertEquals(2, len(dfa.get_states()))
+            self.assertEqual(2, len(dfa.get_states()))
             states = dfa.get_states()
-            self.assert_(len(dfa.get_transitions()) > 1)
-            self.assert_((states[0],states[1],"!") in dfa.get_transitions())
+            self.assertTrue(len(dfa.get_transitions()) > 1)
+            self.assertTrue((states[0],states[1],"!") in dfa.get_transitions())
             dfa.reset()
-            self.assertEquals(False,dfa.is_at_end())
+            self.assertEqual(False,dfa.is_at_end())
             dfa.move("~")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             
         def testSet(self):
             dfa = self.compiler.make_dfa(self.parser.parse_re("[ab]"))
-            self.assertEquals(2,len(dfa.get_states()))
-            self.assertEquals(2,len(dfa.get_transitions()))
+            self.assertEqual(2,len(dfa.get_states()))
+            self.assertEqual(2,len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(False,dfa.is_at_end())
+            self.assertEqual(False,dfa.is_at_end())
             self.assertRaises(StateError,dfa.move,"c")
             dfa.move("a")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             dfa.reset()
             dfa.move("b")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             
         def testGroup(self):
             dfa = self.compiler.make_dfa(self.parser.parse_re("(ab|c)"))
-            self.assertEquals(4,len(dfa.get_states()))
-            self.assertEquals(3,len(dfa.get_transitions()))
+            self.assertEqual(4,len(dfa.get_states()))
+            self.assertEqual(3,len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(False,dfa.is_at_end())
+            self.assertEqual(False,dfa.is_at_end())
             self.assertRaises(StateError,dfa.move,"b")
             dfa.move("a")
-            self.assertEquals(False,dfa.is_at_end())
+            self.assertEqual(False,dfa.is_at_end())
             dfa.move("b")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             dfa.reset()
             dfa.move("c")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             
         def testTerm(self):
             dfa = self.compiler.make_dfa(self.parser.parse_re("a?"))
-            self.assertEquals(2,len(dfa.get_states()))
-            self.assertEquals(1,len(dfa.get_transitions()))
+            self.assertEqual(2,len(dfa.get_states()))
+            self.assertEqual(1,len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             self.assertRaises(StateError,dfa.move,"b")
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             self.assertRaises(StateError,dfa.move,"a")
             
             dfa = self.compiler.make_dfa(self.parser.parse_re("a+"))
-            self.assertEquals(2, len(dfa.get_states()))
-            self.assertEquals(2, len(dfa.get_transitions()))
+            self.assertEqual(2, len(dfa.get_states()))
+            self.assertEqual(2, len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "b")
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             
             dfa = self.compiler.make_dfa(self.parser.parse_re("a*"))
-            self.assertEquals(2, len(dfa.get_states()))
-            self.assertEquals(2, len(dfa.get_transitions()))
+            self.assertEqual(2, len(dfa.get_states()))
+            self.assertEqual(2, len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "b")
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             
             dfa = self.compiler.make_dfa(self.parser.parse_re("a{2}"))
-            self.assertEquals(3, len(dfa.get_states()))
-            self.assertEquals(2, len(dfa.get_transitions()))
+            self.assertEqual(3, len(dfa.get_states()))
+            self.assertEqual(2, len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "b")
             dfa.move("a")
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "a")
             
             dfa = self.compiler.make_dfa(self.parser.parse_re("a{2,3}"))
-            self.assertEquals(4, len(dfa.get_states()))
-            self.assertEquals(3, len(dfa.get_transitions()))
+            self.assertEqual(4, len(dfa.get_states()))
+            self.assertEqual(3, len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "b")
             dfa.move("a")
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "a")
             
             dfa = self.compiler.make_dfa(self.parser.parse_re("a{2,}"))
-            self.assertEquals(3, len(dfa.get_states()))
-            self.assertEquals(3, len(dfa.get_transitions()))
+            self.assertEqual(3, len(dfa.get_states()))
+            self.assertEqual(3, len(dfa.get_transitions()))
             dfa.reset()
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "b")
             dfa.move("a")
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             
         def testCombination(self):
             dfa = self.compiler.make_dfa(self.parser.parse_re("([ab]+|c{2})*"))
             dfa.reset()
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             dfa.move("a")            
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("b")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("a")
-            self.assertEquals(True,dfa.is_at_end())
+            self.assertEqual(True,dfa.is_at_end())
             dfa.reset()
             dfa.move("c")
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             self.assertRaises(StateError, dfa.move, "a")
             dfa.move("c")
-            self.assertEquals(True, dfa.is_at_end())
+            self.assertEqual(True, dfa.is_at_end())
             dfa.move("c")
-            self.assertEquals(False, dfa.is_at_end())
+            self.assertEqual(False, dfa.is_at_end())
             
     class TestLexer(unittest.TestCase):
     
@@ -1886,10 +1892,10 @@ if __name__ == "__main__":
             ])
             l.prepare("1x90x0x0")
             tokens = [x for x in l]
-            self.assertEquals(6,len(tokens))
-            self.assertEquals(["number","ex","number","hex","ex","number"],
+            self.assertEqual(6,len(tokens))
+            self.assertEqual(["number","ex","number","hex","ex","number"],
                     [x.type for x in tokens])
-            self.assertEquals(["1","x","9","0x0","x","0"],
+            self.assertEqual(["1","x","9","0x0","x","0"],
                     [x.data for x in tokens])
             l.prepare("0x99q")
             l.next()
@@ -1908,9 +1914,9 @@ if __name__ == "__main__":
             ])            
             l.prepare("x00xFF")
             tokens = [x for x in l]
-            self.assertEquals("ex(x)",str(tokens[0]))
-            self.assertEquals("number(0)",str(tokens[1]))
-            self.assertEquals("{hex(0xFF)}",str(tokens[2]))
+            self.assertEqual("ex(x)",str(tokens[0]))
+            self.assertEqual("number(0)",str(tokens[1]))
+            self.assertEqual("{hex(0xFF)}",str(tokens[2]))
             
         def testCallbacks(self):
             
@@ -1931,7 +1937,7 @@ if __name__ == "__main__":
     n "gah"                
 """)
             tokens = [x.type for x in l]
-            self.assertEquals(["node","name",
+            self.assertEqual(["node","name",
                 "indent","node","name","node","name",
                 "indent","node","name",
                 "indent","node","name",
@@ -1943,10 +1949,10 @@ if __name__ == "__main__":
         def testConstruction(self):
             p = RuleParser()
             t = p.parse_rule("S -> A b | c")
-            self.assertEquals(("nonterminal","S"), (delve(t,"0/0/type"),delve(t,"0/0/data")))
-            self.assertEquals(("nonterminal","A"), (delve(t,"1/0/0/type"),delve(t,"1/0/0/data")))
-            self.assertEquals(("terminal","b"), (delve(t,"1/0/1/type"),delve(t,"1/0/1/data")))
-            self.assertEquals(("terminal","c"), (delve(t,"1/1/0/type"),delve(t,"1/1/0/data")))
+            self.assertEqual(("nonterminal","S"), (delve(t,"0/0/type"),delve(t,"0/0/data")))
+            self.assertEqual(("nonterminal","A"), (delve(t,"1/0/0/type"),delve(t,"1/0/0/data")))
+            self.assertEqual(("terminal","b"), (delve(t,"1/0/1/type"),delve(t,"1/0/1/data")))
+            self.assertEqual(("terminal","c"), (delve(t,"1/1/0/type"),delve(t,"1/1/0/data")))
     
     class TestParserItem(unittest.TestCase):
         
@@ -1955,11 +1961,11 @@ if __name__ == "__main__":
                 "0" : ("S",("A","b"))
             }
             i = ParserItem(rules, "0", 0)
-            self.assertEquals("A",i.get_next_symbol())
+            self.assertEqual("A",i.get_next_symbol())
             i2 = i.make_next_item()
-            self.assertEquals("b",i2.get_next_symbol())
+            self.assertEqual("b",i2.get_next_symbol())
             i3 = i2.make_next_item()
-            self.assertEquals(True, i3.is_end())
+            self.assertEqual(True, i3.is_end())
     
     class TestItemSet(unittest.TestCase):
     
@@ -1976,21 +1982,21 @@ if __name__ == "__main__":
         def testAdding(self):
             self.s.add(self.i)
             self.s.add(self.i2)
-            self.assertEquals(2,len(self.s.items))            
+            self.assertEqual(2,len(self.s.items))            
             self.s.add(self.i3)
-            self.assertEquals(2,len(self.s.items))
+            self.assertEqual(2,len(self.s.items))
         
         def testLookup(self):
             self.s.add(self.i)
             self.s.add(self.i2)
-            self.assertEquals(1,len(self.s.lookup["A"]))
-            self.assertEquals("A",self.s.lookup["A"][0].get_next_symbol())
+            self.assertEqual(1,len(self.s.lookup["A"]))
+            self.assertEqual("A",self.s.lookup["A"][0].get_next_symbol())
             
         def testEndItems(self):
             self.s.add(self.i)
-            self.assertEquals(0,len(self.s.end_rules))
+            self.assertEqual(0,len(self.s.end_rules))
             self.s.add(self.i2)
-            self.assertEquals(1,len(self.s.end_rules))
+            self.assertEqual(1,len(self.s.end_rules))
     
     class TestLRParser(unittest.TestCase):
     
@@ -2009,11 +2015,11 @@ if __name__ == "__main__":
         def testParsing(self):
             self.l.prepare("1+1+1")
             t = self.p.parse(self.l)
-            self.assertEquals("one",delve(t,"0/0/0/0/type"))
-            self.assertEquals("plus",delve(t,"0/1/type"))
-            self.assertEquals("one",delve(t,"0/2/0/type"))
-            self.assertEquals("plus",delve(t,"1/type"))
-            self.assertEquals("one",delve(t,"2/0/type"))
+            self.assertEqual("one",delve(t,"0/0/0/0/type"))
+            self.assertEqual("plus",delve(t,"0/1/type"))
+            self.assertEqual("one",delve(t,"0/2/0/type"))
+            self.assertEqual("plus",delve(t,"1/type"))
+            self.assertEqual("one",delve(t,"2/0/type"))
             
         def testCustomClasses(self):
         
@@ -2028,12 +2034,12 @@ if __name__ == "__main__":
             ])
             self.l.prepare("1+1+1")
             t = self.p.parse(self.l)
-            self.assertEquals("E()",str(delve(t,"0")))
-            self.assertEquals("{B()}",str(delve(t,"0/2")))
+            self.assertEqual("E()",str(delve(t,"0")))
+            self.assertEqual("{B()}",str(delve(t,"0/2")))
     
     unittest.main()
 
-    """
+    """ 
     class One(Token):
         def eval(self):
             return 1
@@ -2078,6 +2084,6 @@ if __name__ == "__main__":
     tree = p.parse(l)
     print_re_tree(tree)
     
-    print "result: %d" % tree.eval()
+    print("result: %d" % tree.eval())
     """
 

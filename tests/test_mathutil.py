@@ -201,10 +201,10 @@ class Vector3dTests(unittest.TestCase):
 class MeanTests(unittest.TestCase):
 
     def test_returns_correct_value_for_populated_list(self):
-        self.assertEquals(8.0,mean([2,6,4,20]))
+        self.assertEqual(8.0,mean([2,6,4,20]))
 
     def test_returns_zero_for_empty_list(self):
-        self.assertEquals(0.0,mean([])) 
+        self.assertEqual(0.0,mean([])) 
 
                     
 class StandardDeviationTests(unittest.TestCase):
@@ -213,7 +213,7 @@ class StandardDeviationTests(unittest.TestCase):
         self.assertAlmostEquals(7.071,standard_deviation([2,6,4,20]),3)
 
     def test_returns_zero_for_empty_list(self):
-        self.assertEquals(0.0,standard_deviation([]))
+        self.assertEqual(0.0,standard_deviation([]))
 
 
 class DeviationTest(unittest.TestCase):
@@ -222,7 +222,7 @@ class DeviationTest(unittest.TestCase):
         self.assertAlmostEquals(0.141,deviation([2,6,4,20],9),3)
 
     def test_returns_zero_for_empty_list(self):
-        self.assertEquals(0.0,deviation([],5))
+        self.assertEqual(0.0,deviation([],5))
 
 
 class WeightedRouletteTests(unittest.TestCase):
@@ -241,7 +241,7 @@ class WeightedRouletteTests(unittest.TestCase):
         iterations = 10000
         for i in range(iterations):
             result = weighted_roulette(items)
-            self.assert_(result!=None)
+            self.assertTrue(result!=None)
             results[result] += 1
             
         self.assertAlmostEquals(results["alpha"]/float(iterations),1.0/10.0,1)
@@ -259,10 +259,10 @@ class LeadAngleTests(unittest.TestCase):
         self.assertAlmostEquals(math.pi/2.0,ang,2)
         
     def test_returns_none_when_bullet_and_target_are_already_at_same_position(self):
-        self.assertEquals(None,lead_angle((0.0,0.0),1.0,0.0,1.0))
+        self.assertEqual(None,lead_angle((0.0,0.0),1.0,0.0,1.0))
 
     def test_returns_none_when_bullet_cannot_catch_up_to_target(self):
-        self.assertEquals(None,lead_angle((1.0,1.0),1.0,0.0,0.9))
+        self.assertEqual(None,lead_angle((1.0,1.0),1.0,0.0,0.9))
 
 
 class Line2dTests(unittest.TestCase):
@@ -325,7 +325,7 @@ class Polygon2dTests(unittest.TestCase):
             Line2d(Vector2d(1.0,0.0),Vector2d(1.0,1.0)),
             Line2d(Vector2d(1.0,1.0),Vector2d(0.0,0.0))
         ]
-        self.assertEquals(lines, p.get_lines())
+        self.assertEqual(lines, p.get_lines())
         
     def test_polygons_with_same_values_have_same_hash(self):        
         self.assertTrue(Polygon2d((Vector2d(0,0),Vector2d(1,2),Vector2d(2,3))) 
@@ -351,7 +351,7 @@ class Polygon3dTests(unittest.TestCase):
             Vector3d(0.0,0.0,0.0), Vector3d(1.0,0.0,0.0),
             Vector3d(0.0,1.0,0.0), Vector3d(0.0,0.0,1.0)
         ])
-        self.assertEquals(points, p.get_points())
+        self.assertEqual(points, p.get_points())
         
     def test_polygons_with_same_values_have_same_hash(self):
         self.assertTrue(Polygon3d((
@@ -517,11 +517,11 @@ class MatrixTest(unittest.TestCase):
         self.assertNotEqual(Matrix(((1,2),(3,4))),Matrix(((5,6,7),(8,9,10))))
 
     def test_addition_returns_correct_matrix(self):
-        self.assertEquals( Matrix(((1,2,3),(4,5,6)))+Matrix(((3,4,5),(6,7,8))), 
+        self.assertEqual( Matrix(((1,2,3),(4,5,6)))+Matrix(((3,4,5),(6,7,8))), 
             Matrix(((4,6,8),(10,12,14))) )
             
     def test_subtraction_returns_correct_matrix(self):
-        self.assertEquals( Matrix(((1,2,3),(4,5,6)))-Matrix(((3,4,5),(6,7,8))),
+        self.assertEqual( Matrix(((1,2,3),(4,5,6)))-Matrix(((3,4,5),(6,7,8))),
             Matrix(((-2,-2,-2),(-2,-2,-2))) )        
             
     def test_additional_of_different_sized_matrices_raises_typeerror(self):
@@ -533,37 +533,37 @@ class MatrixTest(unittest.TestCase):
             lambda: Matrix(((1,2,3),(4,5,6))) - Matrix(((1,2),(3,4),(5,6))) )
     
     def test_addition_with_tuple_returns_correct_matrix(self):
-        self.assertEquals( Matrix((2,3,4)) + (1,2,3), Matrix((3,5,7)) )
+        self.assertEqual( Matrix((2,3,4)) + (1,2,3), Matrix((3,5,7)) )
         
     def test_subtraction_with_tuple_returns_correct_matrix(self):
-        self.assertEquals( Matrix((2,3,4)) - (1,2,3), Matrix((1,1,1)) )
+        self.assertEqual( Matrix((2,3,4)) - (1,2,3), Matrix((1,1,1)) )
 
     def test_multiplication_with_scalar_on_rhs_returns_correct_matrix(self):            
-        self.assertEquals( Matrix(((1,2,3),(4,5,6))) * 2.0, Matrix(((2,4,6),(8,10,12))) )
+        self.assertEqual( Matrix(((1,2,3),(4,5,6))) * 2.0, Matrix(((2,4,6),(8,10,12))) )
 
     def test_multiplication_with_scalar_on_lhs_returns_correct_matrix(self):
-        self.assertEquals( 2.0 * Matrix(((1,2,3),(4,5,6))), Matrix(((2,4,6),(8,10,12))) )
+        self.assertEqual( 2.0 * Matrix(((1,2,3),(4,5,6))), Matrix(((2,4,6),(8,10,12))) )
 
     def test_division_by_scalar_returns_correct_matrix(self):
-        self.assertEquals( Matrix(((1,2,3),(4,5,6))) / 2.0, Matrix(((0.5,1,1.5),(2,2.5,3))) )
+        self.assertEqual( Matrix(((1,2,3),(4,5,6))) / 2.0, Matrix(((0.5,1,1.5),(2,2.5,3))) )
 
     def test_multiplication_with_matrix_returns_correct_matrix(self):
-        self.assertEquals( Matrix(((1,2,3),(4,5,6))) * Matrix(((1,2),(3,4),(5,6))),
+        self.assertEqual( Matrix(((1,2,3),(4,5,6))) * Matrix(((1,2),(3,4),(5,6))),
             Matrix(((1*1+2*3+3*5, 1*2+2*4+3*6),(4*1+5*3+6*5, 4*2+5*4+6*6))) )
             
     def test_multiplication_with_sequence_on_lhs_returns_correct_matrix(self):
-        self.assertEquals( [[1,2,3],[4,5,6]] * Matrix([9,8,7]),
+        self.assertEqual( [[1,2,3],[4,5,6]] * Matrix([9,8,7]),
             Matrix([1*9+2*8+3*7,4*9+5*8+6*7]) )            
 
     def test_multiplication_with_sequence_on_rhs_returns_correct_sequence(self):
-        self.assertEquals( Matrix(((1,2,3),(4,5,6))) * [[9],[8],[7]],
+        self.assertEqual( Matrix(((1,2,3),(4,5,6))) * [[9],[8],[7]],
              [1*9+2*8+3*7, 4*9+5*8+6*7] )            
              
     def test_identity_returns_correct_identity_matrix(self):
-        self.assertEquals(Matrix.identity(2), Matrix(((1,0),(0,1))))
+        self.assertEqual(Matrix.identity(2), Matrix(((1,0),(0,1))))
 
     def test_transpose_returns_correctly_transposed_matrix(self):
-        self.assertEquals(Matrix(((1,2),(3,4),(5,6))).transpose(), Matrix(((1,3,5),(2,4,6))))
+        self.assertEqual(Matrix(((1,2),(3,4),(5,6))).transpose(), Matrix(((1,3,5),(2,4,6))))
 
     def test_matrices_with_same_values_have_same_hash(self):            
         self.assertTrue(Matrix(((1,2),(3,4))) in set([Matrix(((1,2),(3,4)))]))

@@ -36,10 +36,18 @@ import json
 import sys
 import time
 import copy
-import Queue
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 from mrf.statemachine import StateMachineBase, statemethod
 from mrf.structs import TagLookup
 from mrf.mathutil import deviation, mean
+
+try:
+    unicode
+except NameError:
+    unicode = str
 
 """    
 TODO: Structure diagram

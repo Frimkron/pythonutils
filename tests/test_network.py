@@ -24,7 +24,7 @@ class JsonTest(unittest.TestCase):
     def testEncodeDecode(self):
         m = TestMessage(["c1","c2","c3"],[],"c1","Frank", 25, 123.5)
         j = self.encoder.encode(m)
-        print j
+        print(j)
         m2 = self.encoder.decode(j)
         self.assertEquals(TestMessage, m2.__class__)
         self.assertEquals(["c1","c2","c3"],m2.get_recipients())
@@ -79,47 +79,47 @@ class EventHandler(object):
         self.messages = []
     
     def handle_EvtClientArrived(self, event):
-        print "Client %d arrived" % event.client_id
+        print("Client %d arrived" % event.client_id)
         
     def handle_EvtClientDeparted(self, event):
-        print "Client %d departed" % event.client_id
+        print("Client %d departed" % event.client_id)
 
     def handle_EvtFatalError(self, event):
-        print "Fatal error: %s" % str(event.error.args)            
+        print("Fatal error: %s" % str(event.error.args))
     
     def handle_EvtConnectionError(self, event):
-        print "Connection error to %d: %s" % (event.to_client,str(event.error.args))
+        print("Connection error to %d: %s" % (event.to_client,str(event.error.args)))
 
     def handle_MsgChat(self, event):
-        print "Chat message: %s" % str(event.message)
+        print("Chat message: %s" % str(event.message))
         self.messages.append(event)
         
     def handle_MsgAcceptConnect(self, event):
-        print "Connect accepted"
+        print("Connect accepted")
         self.messages.append(event)
         
     def handle_MsgRejectConnect(self, event):
-        print "Connect rejected: %s" % str(event.reason)
+        print("Connect rejected: %s" % str(event.reason))
         self.messages.append(event)
 
     def handle_EvtPlayerAccepted(self, event):
-        print "Player accepted: %d" % event.client_id
+        print("Player accepted: %d" % event.client_id)
         self.messages.append(event)
         
     def handle_EvtPlayerRejected(self, event):
-        print "Player rejected: %d" % event.client_id
+        print("Player rejected: %d" % event.client_id)
         self.messages.append(event)
         
     def handle_MsgPlayerConnect(self, event):
-        print "Player connected: %d, %s" % (event.player_id, event.player_info["name"])
+        print("Player connected: %d, %s" % (event.player_id, event.player_info["name"]))
         self.messages.append(event)
         
     def handle_MsgPlayerDisconnect(self, event):
-        print "Player disconnect: %d" % event.player_id
+        print("Player disconnect: %d" % event.player_id)
         self.messages.append(event)
         
     def handle_MsgServerShutdown(self, event):
-        print "Server shutdown"
+        print("Server shutdown")
         self.messages.append(event)
         
 

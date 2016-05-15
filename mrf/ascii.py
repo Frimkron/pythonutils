@@ -70,7 +70,7 @@ class Canvas(object):
         """    
         Returns the character at position x,y
         """
-        if self.grid.has_key((x,y)):
+        if (x,y) in self.grid:
             return self.grid[(x,y)]
         else:
             return ' '
@@ -120,7 +120,7 @@ class Canvas(object):
         """    
         Prints the full canvas
         """
-        print self.render()
+        print(self.render())
 
 
 

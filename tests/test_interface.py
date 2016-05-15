@@ -27,9 +27,9 @@ class Test(unittest.TestCase):
             def two(self): pass
             
         foo = MyObj()
-        self.assertEquals(True, MyIFace.is_impl_by(foo))
+        self.assertEqual(True, MyIFace.is_impl_by(foo))
         
         bar = MyObjTwo()
-        self.assertEquals(False, MyIFace.is_impl_by(bar))
+        self.assertEqual(False, MyIFace.is_impl_by(bar))
         
             

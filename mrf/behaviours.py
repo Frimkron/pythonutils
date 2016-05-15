@@ -43,6 +43,7 @@ class BehaviourError(Exception):
     pass
 
 
+# Declare using 2/3 compatible metaclass use
 class Behavable(object):
     """    
     A behavable object may change the way it works depending on the behaviours

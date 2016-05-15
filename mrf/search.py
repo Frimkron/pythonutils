@@ -63,14 +63,6 @@ class AStar(object):
             self.cost = 0
             self.previous = previous
             
-        def cost_compare(self, other):
-            if self.cost > other.cost:
-                return 1
-            elif self.cost < other.cost:
-                return -1
-            else:
-                return 0
-            
         def __str__(self):
             return str(self.value)+":"+str(self.cost)
     
@@ -98,7 +90,7 @@ class AStar(object):
     def _expand_next_node(self):
         
         # Get state in open set with lowest cost
-        open_sorted = sorted(self.open_set.values(),AStar.State.cost_compare)
+        open_sorted = sorted(self.open_set.values(),key=lambda s: s.cost)
         best = open_sorted[0]
         
         # If this is the finish state, set path
@@ -116,11 +108,11 @@ class AStar(object):
         for b in self.expand(best):
             
             # Ignore if already expanded
-            if self.closed_set.has_key(b.value):
+            if b.value in self.closed_set:
                 continue
             
             # Ignore if already open with a better path_cost
-            if (self.open_set.has_key(b.value) 
+            if (b.value in self.open_set
                     and self.open_set[b.value].path_cost <= b.path_cost):
                 continue
             

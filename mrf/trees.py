@@ -28,6 +28,12 @@ Tree Utils Module
 
 """
 
+try:
+    basestring
+except NameError:
+    basestring = str    
+
+
 def _get_branches(node):
     # strings cause inf recursion
     if isinstance(node,basestring):

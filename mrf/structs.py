@@ -32,6 +32,12 @@ import copy
 import tarfile
 import os.path
 
+try:
+    basestring
+except NameError:
+    basestring = str
+
+
 
 class TicketQueue(object):
     """    
@@ -104,10 +110,10 @@ class TagLookup(object):
         self.clear()
 
     def has_item(self, item):
-        return self.items.has_key(item)
+        return item in self.items
 
     def has_tag(self, tag):
-        return self.groups.has_key(tag)
+        return tag in self.groups
 
     def add_item(self, item):
         if self.has_item(item):
@@ -304,14 +310,19 @@ class Dispatcher(object):
     
         
 class FlagInitialiser(object):
+
     def __init__(self):
         self.val = 0
+        
     def __iter__(self):
         return self
+        
     def next(self):
         f = 1 << self.val
         self.val += 1
         return f
+        
+    __next__ = next
 
 
 def _make_ref_updaters(innername):

@@ -507,7 +507,7 @@ class _FunctionBuilder(object):
         buffer = "def %s (%s):\n" % (self.name, ",".join(arglist))
         for d,s in self.statements:
             buffer += "%s%s\n" % ("\t"*d,repr(s))
-        exec buffer in self.globals, self.locals
+        exec(buffer, self.globals, self.locals)
         return self.locals[self.name]
         
     def get_function(self):
@@ -710,7 +710,7 @@ class _FunctionBuilderInterface(object):
         args = list(args)
         if len(args) % 2 != 0:
             args.append(None)
-        self._owner.start_with(zip(args[::2],args[1::2]))
+        self._owner.start_with(list(zip(args[::2],args[1::2])))
         return self
 
     def __enter__(self):

@@ -29,6 +29,11 @@ Command Line Module
 Utilities for command line apps.
 """
 
+try:
+    input = raw_input
+except NameError: pass
+
+
 def yes_no_validator(string):
     if string.lower() in ("y","yes"):
         return True
@@ -44,12 +49,12 @@ def prompt(text,validator=str,invalid="Please enter a valid value"):
     require and integer value, the "int" function can be used.
     """
     while True:
-        string = raw_input(text).strip()
+        string = input(text).strip()
         try:
             value = validator(string)
             return value
         except ValueError:
-            print invalid
+            print(invalid)
 
 def menu(items,prompt_text="Enter a selection: ",title="Menu\n----",option="%s) %s"):
     """    
@@ -66,9 +71,9 @@ def menu(items,prompt_text="Enter a selection: ",title="Menu\n----",option="%s) 
         options = [str(i+1) for i in range(len(items))]
         values = items[:]
             
-    print title
+    print(title)
     for i in range(len(items)):
-        print option % (options[i],str(values[i]))
+        print(option % (options[i],str(values[i])))
         
     choice = prompt(prompt_text,lambda s: options.index(s),"Please enter a valid menu choice")
     return values[choice]

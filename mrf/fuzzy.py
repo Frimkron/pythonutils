@@ -32,10 +32,12 @@ Contains RuleSet class for evaluating fuzzy logic rules.
 import mrf.parser
 import sys
 
+
 class FuzzySymbol(mrf.parser.ParserSymbol):
 
     def evaluate(self, classes, input_values, cache):
         pass
+
 
 class And(FuzzySymbol):
 
@@ -43,6 +45,7 @@ class And(FuzzySymbol):
         lhs = self.children[0].evaluate(classes, input_values, cache)
         rhs = self.children[2].evaluate(classes, input_values, cache)
         return min(lhs, rhs)
+
         
 class Or(FuzzySymbol):
     
@@ -50,11 +53,12 @@ class Or(FuzzySymbol):
         lhs = self.children[0].evaluate(classes, input_values, cache)
         rhs = self.children[2].evaluate(classes, input_values, cache)
         return max(lhs, rhs)
+
         
 class Is(FuzzySymbol):
 
     def _get_dom_for_input_class(self, classes, input_name, input_value, class_name, cache):
-        if cache.has_key((input_name,class_name)):
+        if (input_name,class_name) in cache:
             return cache[(input_name,class_name)]
         else:
             dom = classes[input_name][class_name].get_dom(input_value)
@@ -70,6 +74,7 @@ class Is(FuzzySymbol):
     
     def get_class_name(self):
         return self.children[2].data
+
         
 class  Term(FuzzySymbol):
     
@@ -78,11 +83,13 @@ class  Term(FuzzySymbol):
             return self.children[0].evaluate(classes, input_values, cache)
         else:
             return self.children[1].evaluate(classes, input_values, cache)
+
         
 class Expression(FuzzySymbol):
 
     def evaluate(self, classes, input_values, cache):
         return self.children[0].evaluate(classes, input_values, cache)
+
         
 class Rule(FuzzySymbol):
 
@@ -98,6 +105,7 @@ class Rule(FuzzySymbol):
         
     def get_output_name(self):
         return self._get_output_is().get_flv_name()
+
 
 class RuleParser(object):
 
@@ -127,6 +135,7 @@ class RuleParser(object):
         self.lexer.prepare(rule)
         return self.parser.parse(self.lexer)
 
+
 class FuzzyClass(object):
 
     def get_dom(self, input_val):
@@ -137,6 +146,7 @@ class FuzzyClass(object):
         
     def get_end(self):
         pass
+
         
 class TriangularClass(FuzzyClass):
 
@@ -166,6 +176,7 @@ class TriangularClass(FuzzyClass):
         
     def get_end(self):
         return self.end
+
 
 class TrapezoidClass(FuzzyClass):
 
@@ -203,6 +214,7 @@ class TrapezoidClass(FuzzyClass):
     def get_end(self):
         return self.end
 
+
 class LeftShoulderClass(FuzzyClass):
 
     def __init__(self, start, top, bottom):
@@ -229,6 +241,7 @@ class LeftShoulderClass(FuzzyClass):
         
     def get_end(self):
         return self.end
+
         
 class RightShoulderClass(FuzzyClass):
 
@@ -259,6 +272,7 @@ class RightShoulderClass(FuzzyClass):
         
 
 RULE_PARSER = RuleParser()
+
 
 class RuleSet(object):
     """ 
@@ -318,8 +332,8 @@ class RuleSet(object):
         """
         parsed = RULE_PARSER.parse(rule)
         output_name = parsed.get_output_name()
-        #print "rule output name: %s" % output_name
-        if not self.rules.has_key(output_name):
+        #print("rule output name: %s" % output_name)
+        if output_name not in self.rules:
             self.rules[output_name] = []
         self.rules[output_name].append(parsed)
         

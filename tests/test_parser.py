@@ -18,46 +18,46 @@ class TestReParser(unittest.TestCase):
     
     def testChars(self):
         tree = self.parser.parse_re("a")
-        self.assertEquals("expression()",str(tree))
-        self.assertEquals("term()",str(delve(tree,"0")))
-        self.assertEquals("character(a)",str(delve(tree,"0/0")))
+        self.assertEqual("expression()",str(tree))
+        self.assertEqual("term()",str(delve(tree,"0")))
+        self.assertEqual("character(a)",str(delve(tree,"0/0")))
         tree = self.parser.parse_re("\+")
-        self.assertEquals("character(+)",str(delve(tree,"0/0")))
+        self.assertEqual("character(+)",str(delve(tree,"0/0")))
     
     def testQuantifiers(self):
         tree = self.parser.parse_re("a?")
-        self.assertEquals("character(a)",str(delve(tree,"0/0")))
-        self.assertEquals("quantifier((0, 1))",str(delve(tree,"0/1")))
+        self.assertEqual("character(a)",str(delve(tree,"0/0")))
+        self.assertEqual("quantifier((0, 1))",str(delve(tree,"0/1")))
         tree = self.parser.parse_re("a+")
-        self.assertEquals("quantifier((1, -1))",str(delve(tree,"0/1")))
+        self.assertEqual("quantifier((1, -1))",str(delve(tree,"0/1")))
         tree = self.parser.parse_re("a*")
-        self.assertEquals("quantifier((0, -1))",str(delve(tree,"0/1")))
+        self.assertEqual("quantifier((0, -1))",str(delve(tree,"0/1")))
         tree = self.parser.parse_re("a{2}")
-        self.assertEquals("quantifier((2, 2))",str(delve(tree,"0/1")))
+        self.assertEqual("quantifier((2, 2))",str(delve(tree,"0/1")))
         tree = self.parser.parse_re("a{2,3}")
-        self.assertEquals("quantifier((2, 3))",str(delve(tree,"0/1")))
+        self.assertEqual("quantifier((2, 3))",str(delve(tree,"0/1")))
         tree = self.parser.parse_re("a{2,}")
-        self.assertEquals("quantifier((2, -1))",str(delve(tree,"0/1")))
+        self.assertEqual("quantifier((2, -1))",str(delve(tree,"0/1")))
         self.assertRaises(ParseError, self.parser.parse_re, "+")
 
         
     def testSets(self):
         tree = self.parser.parse_re("[ab]")
-        self.assertEquals("set()",str(delve(tree,"0/0")))
-        self.assertEquals("character(a)",str(delve(tree,"0/0/0")))
-        self.assertEquals("character(b)",str(delve(tree,"0/0/1")))
+        self.assertEqual("set()",str(delve(tree,"0/0")))
+        self.assertEqual("character(a)",str(delve(tree,"0/0/0")))
+        self.assertEqual("character(b)",str(delve(tree,"0/0/1")))
         tree = self.parser.parse_re("[^a]")
-        self.assertEquals("character(a)",str(delve(tree,"0/0/0")))
-        self.assertEquals(True, delve(tree,"0/0/negate"))
+        self.assertEqual("character(a)",str(delve(tree,"0/0/0")))
+        self.assertEqual(True, delve(tree,"0/0/negate"))
         self.assertRaises(ParseError, self.parser.parse_re, "[a")
         
     def testGroups(self):
         tree = self.parser.parse_re("(a|b)")
-        self.assertEquals("group()",str(delve(tree,"0/0")))
-        self.assertEquals("expression()",str(delve(tree,"0/0/0")))
-        self.assertEquals("term()",str(delve(tree,"0/0/0/0")))
-        self.assertEquals("character(a)",str(delve(tree,"0/0/0/0/0")))
-        self.assertEquals("character(b)",str(delve(tree,"0/0/1/0/0")))
+        self.assertEqual("group()",str(delve(tree,"0/0")))
+        self.assertEqual("expression()",str(delve(tree,"0/0/0")))
+        self.assertEqual("term()",str(delve(tree,"0/0/0/0")))
+        self.assertEqual("character(a)",str(delve(tree,"0/0/0/0/0")))
+        self.assertEqual("character(b)",str(delve(tree,"0/0/1/0/0")))
         self.assertRaises(ParseError, self.parser.parse_re, "(")
 
 
@@ -65,18 +65,18 @@ class TestNfa(unittest.TestCase):
 
     def testConstruction(self):
         nfa = NfAutomaton()
-        self.assertEquals(0, len(nfa.get_states()))
+        self.assertEqual(0, len(nfa.get_states()))
         nfa.add_state("one")
-        self.assert_("one" in nfa.get_states() and len(nfa.get_states())==1)
+        self.assertTrue("one" in nfa.get_states() and len(nfa.get_states())==1)
         nfa.set_start_state("one")
-        self.assertEquals("one", nfa.get_start_state())
+        self.assertEqual("one", nfa.get_start_state())
         nfa.add_end_state("two")
-        self.assert_("two" in nfa.get_states() and len(nfa.get_states())==2)
-        self.assert_("two" in nfa.end_states and len(nfa.end_states)==1)
+        self.assertTrue("two" in nfa.get_states() and len(nfa.get_states())==2)
+        self.assertTrue("two" in nfa.end_states and len(nfa.end_states)==1)
         nfa.add_trans("one", "two", ["a","b"])
-        self.assertEquals(2, len(nfa.get_transitions()))
-        self.assert_(("one","two","a") in nfa.get_transitions())
-        self.assert_(("one","two","b") in nfa.get_transitions())
+        self.assertEqual(2, len(nfa.get_transitions()))
+        self.assertTrue(("one","two","a") in nfa.get_transitions())
+        self.assertTrue(("one","two","b") in nfa.get_transitions())
         
     def testMakeDfa(self):
         nfa = NfAutomaton()
@@ -88,7 +88,7 @@ class TestNfa(unittest.TestCase):
         nfa.add_trans("two","three",["a"])
         nfa.add_trans("two","one",["a"])
         dfa = nfa.make_dfa()
-        self.assertEquals(2, len(dfa.get_states()))
+        self.assertEqual(2, len(dfa.get_states()))
 
         
 class TestDfa(unittest.TestCase):
@@ -100,7 +100,7 @@ class TestDfa(unittest.TestCase):
         dfa.add_state("three")
         dfa.add_trans("one","two",["a"])
         dfa.add_trans("one","three",["a"])
-        self.assertEquals(1, len(dfa.get_transitions()))
+        self.assertEqual(1, len(dfa.get_transitions()))
         
     def testMove(self):
         dfa = DfAutomaton()            
@@ -111,9 +111,9 @@ class TestDfa(unittest.TestCase):
         self.assertRaises(StateError,dfa.move,"a")
         dfa.reset()
         self.assertRaises(StateError,dfa.move,"b")
-        self.assertEquals(False,dfa.is_at_end())
+        self.assertEqual(False,dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
 
         
 class TestReCompiler(unittest.TestCase):
@@ -124,145 +124,145 @@ class TestReCompiler(unittest.TestCase):
         
     def testCharacter(self):
         dfa = self.compiler.make_dfa(self.parser.parse_re("a"))
-        self.assertEquals(2,len(dfa.get_states()))
-        self.assertEquals(1,len(dfa.get_transitions()))
+        self.assertEqual(2,len(dfa.get_states()))
+        self.assertEqual(1,len(dfa.get_transitions()))
         states = dfa.get_states()
-        self.assert_((states[0],states[1],"a") in dfa.get_transitions())
+        self.assertTrue((states[0],states[1],"a") in dfa.get_transitions())
         dfa.reset()
-        self.assertEquals(False,dfa.is_at_end())
+        self.assertEqual(False,dfa.is_at_end())
         self.assertRaises(StateError,dfa.move,"b")
         dfa.move("a")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         
     def testAnyCharacter(self):
         dfa = self.compiler.make_dfa(self.parser.parse_re("."))
-        self.assertEquals(2, len(dfa.get_states()))
+        self.assertEqual(2, len(dfa.get_states()))
         states = dfa.get_states()
-        self.assert_(len(dfa.get_transitions()) > 1)
-        self.assert_((states[0],states[1],"!") in dfa.get_transitions())
+        self.assertTrue(len(dfa.get_transitions()) > 1)
+        self.assertTrue((states[0],states[1],"!") in dfa.get_transitions())
         dfa.reset()
-        self.assertEquals(False,dfa.is_at_end())
+        self.assertEqual(False,dfa.is_at_end())
         dfa.move("~")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         
     def testSet(self):
         dfa = self.compiler.make_dfa(self.parser.parse_re("[ab]"))
-        self.assertEquals(2,len(dfa.get_states()))
-        self.assertEquals(2,len(dfa.get_transitions()))
+        self.assertEqual(2,len(dfa.get_states()))
+        self.assertEqual(2,len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(False,dfa.is_at_end())
+        self.assertEqual(False,dfa.is_at_end())
         self.assertRaises(StateError,dfa.move,"c")
         dfa.move("a")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         dfa.reset()
         dfa.move("b")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         
     def testGroup(self):
         dfa = self.compiler.make_dfa(self.parser.parse_re("(ab|c)"))
-        self.assertEquals(4,len(dfa.get_states()))
-        self.assertEquals(3,len(dfa.get_transitions()))
+        self.assertEqual(4,len(dfa.get_states()))
+        self.assertEqual(3,len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(False,dfa.is_at_end())
+        self.assertEqual(False,dfa.is_at_end())
         self.assertRaises(StateError,dfa.move,"b")
         dfa.move("a")
-        self.assertEquals(False,dfa.is_at_end())
+        self.assertEqual(False,dfa.is_at_end())
         dfa.move("b")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         dfa.reset()
         dfa.move("c")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         
     def testTerm(self):
         dfa = self.compiler.make_dfa(self.parser.parse_re("a?"))
-        self.assertEquals(2,len(dfa.get_states()))
-        self.assertEquals(1,len(dfa.get_transitions()))
+        self.assertEqual(2,len(dfa.get_states()))
+        self.assertEqual(1,len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         self.assertRaises(StateError,dfa.move,"b")
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         self.assertRaises(StateError,dfa.move,"a")
         
         dfa = self.compiler.make_dfa(self.parser.parse_re("a+"))
-        self.assertEquals(2, len(dfa.get_states()))
-        self.assertEquals(2, len(dfa.get_transitions()))
+        self.assertEqual(2, len(dfa.get_states()))
+        self.assertEqual(2, len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "b")
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         
         dfa = self.compiler.make_dfa(self.parser.parse_re("a*"))
-        self.assertEquals(2, len(dfa.get_states()))
-        self.assertEquals(2, len(dfa.get_transitions()))
+        self.assertEqual(2, len(dfa.get_states()))
+        self.assertEqual(2, len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "b")
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         
         dfa = self.compiler.make_dfa(self.parser.parse_re("a{2}"))
-        self.assertEquals(3, len(dfa.get_states()))
-        self.assertEquals(2, len(dfa.get_transitions()))
+        self.assertEqual(3, len(dfa.get_states()))
+        self.assertEqual(2, len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "b")
         dfa.move("a")
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "a")
         
         dfa = self.compiler.make_dfa(self.parser.parse_re("a{2,3}"))
-        self.assertEquals(4, len(dfa.get_states()))
-        self.assertEquals(3, len(dfa.get_transitions()))
+        self.assertEqual(4, len(dfa.get_states()))
+        self.assertEqual(3, len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "b")
         dfa.move("a")
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "a")
         
         dfa = self.compiler.make_dfa(self.parser.parse_re("a{2,}"))
-        self.assertEquals(3, len(dfa.get_states()))
-        self.assertEquals(3, len(dfa.get_transitions()))
+        self.assertEqual(3, len(dfa.get_states()))
+        self.assertEqual(3, len(dfa.get_transitions()))
         dfa.reset()
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "b")
         dfa.move("a")
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         
     def testCombination(self):
         dfa = self.compiler.make_dfa(self.parser.parse_re("([ab]+|c{2})*"))
         dfa.reset()
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         dfa.move("a")            
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("b")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("a")
-        self.assertEquals(True,dfa.is_at_end())
+        self.assertEqual(True,dfa.is_at_end())
         dfa.reset()
         dfa.move("c")
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
         self.assertRaises(StateError, dfa.move, "a")
         dfa.move("c")
-        self.assertEquals(True, dfa.is_at_end())
+        self.assertEqual(True, dfa.is_at_end())
         dfa.move("c")
-        self.assertEquals(False, dfa.is_at_end())
+        self.assertEqual(False, dfa.is_at_end())
 
         
 class TestLexer(unittest.TestCase):
@@ -275,10 +275,10 @@ class TestLexer(unittest.TestCase):
         ])
         l.prepare("1x90x0x0")
         tokens = [x for x in l]
-        self.assertEquals(6,len(tokens))
-        self.assertEquals(["number","ex","number","hex","ex","number"],
+        self.assertEqual(6,len(tokens))
+        self.assertEqual(["number","ex","number","hex","ex","number"],
                 [x.type for x in tokens])
-        self.assertEquals(["1","x","9","0x0","x","0"],
+        self.assertEqual(["1","x","9","0x0","x","0"],
                 [x.data for x in tokens])
         l.prepare("0x99q")
         l.next()
@@ -297,9 +297,9 @@ class TestLexer(unittest.TestCase):
         ])            
         l.prepare("x00xFF")
         tokens = [x for x in l]
-        self.assertEquals("ex(x)",str(tokens[0]))
-        self.assertEquals("number(0)",str(tokens[1]))
-        self.assertEquals("{hex(0xFF)}",str(tokens[2]))
+        self.assertEqual("ex(x)",str(tokens[0]))
+        self.assertEqual("number(0)",str(tokens[1]))
+        self.assertEqual("{hex(0xFF)}",str(tokens[2]))
         
     def testCallbacks(self):
         
@@ -321,7 +321,7 @@ class TestLexer(unittest.TestCase):
 """
         )
         tokens = [x.type for x in l]
-        self.assertEquals(["node","name",
+        self.assertEqual(["node","name",
             "indent","node","name","node","name",
             "indent","node","name",
             "indent","node","name",
@@ -334,10 +334,10 @@ class TestRuleParser(unittest.TestCase):
     def testConstruction(self):
         p = RuleParser()
         t = p.parse_rule("S -> A b | c")
-        self.assertEquals(("nonterminal","S"), (delve(t,"0/0/type"),delve(t,"0/0/data")))
-        self.assertEquals(("nonterminal","A"), (delve(t,"1/0/0/type"),delve(t,"1/0/0/data")))
-        self.assertEquals(("terminal","b"), (delve(t,"1/0/1/type"),delve(t,"1/0/1/data")))
-        self.assertEquals(("terminal","c"), (delve(t,"1/1/0/type"),delve(t,"1/1/0/data")))
+        self.assertEqual(("nonterminal","S"), (delve(t,"0/0/type"),delve(t,"0/0/data")))
+        self.assertEqual(("nonterminal","A"), (delve(t,"1/0/0/type"),delve(t,"1/0/0/data")))
+        self.assertEqual(("terminal","b"), (delve(t,"1/0/1/type"),delve(t,"1/0/1/data")))
+        self.assertEqual(("terminal","c"), (delve(t,"1/1/0/type"),delve(t,"1/1/0/data")))
 
 
 class TestParserItem(unittest.TestCase):
@@ -347,11 +347,11 @@ class TestParserItem(unittest.TestCase):
             "0" : ("S",("A","b"))
         }
         i = ParserItem(rules, "0", 0)
-        self.assertEquals("A",i.get_next_symbol())
+        self.assertEqual("A",i.get_next_symbol())
         i2 = i.make_next_item()
-        self.assertEquals("b",i2.get_next_symbol())
+        self.assertEqual("b",i2.get_next_symbol())
         i3 = i2.make_next_item()
-        self.assertEquals(True, i3.is_end())
+        self.assertEqual(True, i3.is_end())
 
 
 class TestItemSet(unittest.TestCase):
@@ -369,21 +369,21 @@ class TestItemSet(unittest.TestCase):
     def testAdding(self):
         self.s.add(self.i)
         self.s.add(self.i2)
-        self.assertEquals(2,len(self.s.items))            
+        self.assertEqual(2,len(self.s.items))            
         self.s.add(self.i3)
-        self.assertEquals(2,len(self.s.items))
+        self.assertEqual(2,len(self.s.items))
     
     def testLookup(self):
         self.s.add(self.i)
         self.s.add(self.i2)
-        self.assertEquals(1,len(self.s.lookup["A"]))
-        self.assertEquals("A",self.s.lookup["A"][0].get_next_symbol())
+        self.assertEqual(1,len(self.s.lookup["A"]))
+        self.assertEqual("A",self.s.lookup["A"][0].get_next_symbol())
         
     def testEndItems(self):
         self.s.add(self.i)
-        self.assertEquals(0,len(self.s.end_rules))
+        self.assertEqual(0,len(self.s.end_rules))
         self.s.add(self.i2)
-        self.assertEquals(1,len(self.s.end_rules))
+        self.assertEqual(1,len(self.s.end_rules))
 
 
 class TestLRParser(unittest.TestCase):
@@ -403,11 +403,11 @@ class TestLRParser(unittest.TestCase):
     def testParsing(self):
         self.l.prepare("1+1+1")
         t = self.p.parse(self.l)
-        self.assertEquals("one",delve(t,"0/0/0/0/type"))
-        self.assertEquals("plus",delve(t,"0/1/type"))
-        self.assertEquals("one",delve(t,"0/2/0/type"))
-        self.assertEquals("plus",delve(t,"1/type"))
-        self.assertEquals("one",delve(t,"2/0/type"))
+        self.assertEqual("one",delve(t,"0/0/0/0/type"))
+        self.assertEqual("plus",delve(t,"0/1/type"))
+        self.assertEqual("one",delve(t,"0/2/0/type"))
+        self.assertEqual("plus",delve(t,"1/type"))
+        self.assertEqual("one",delve(t,"2/0/type"))
         
     def testCustomClasses(self):
     
@@ -422,8 +422,8 @@ class TestLRParser(unittest.TestCase):
         ])
         self.l.prepare("1+1+1")
         t = self.p.parse(self.l)
-        self.assertEquals("E()",str(delve(t,"0")))
-        self.assertEquals("{B()}",str(delve(t,"0/2")))
+        self.assertEqual("E()",str(delve(t,"0")))
+        self.assertEqual("{B()}",str(delve(t,"0/2")))
 
 
 """ 

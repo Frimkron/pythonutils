@@ -146,7 +146,7 @@ class StateMachine(StateMachineBase):
                 and hasattr(self, "state") and self.state != None ):
             try:
                 return self.state.__getattribute__(attr)
-            except AttributeError, error:
+            except AttributeError as error:
                 return object.__getattribute__(self, attr)
         else:
             return object.__getattribute__(self, attr)

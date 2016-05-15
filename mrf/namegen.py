@@ -74,7 +74,7 @@ class NameGenerator(object):
     @staticmethod
     def from_list_file(filename, allow_originals=False, mkv_order=1):
         ng = NameGenerator(mkv_order)
-        with open(filename,"rb") as file:
+        with open(filename,"r") as file:
             ng.add_example_names(file, allow_originals)
         return ng
                 

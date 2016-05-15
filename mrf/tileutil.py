@@ -87,7 +87,7 @@ def _trc_check_axis(axis, start_pos, diff, dir, grid_size, end_pos,
                 pos = collision[0]
                 
                 if collision[1] != None:
-                    coll_point = collision[1]                
+                    coll_point = collision[1]
     else:
         
         # if we dont actually move on the axis, just return a non-collision
@@ -126,9 +126,11 @@ def _trc_move_collide(axis, pos, inc, dir, grid_size, end_pos, end_grid_pos, col
         # - either could stop the ray and incur a collision.
         # TODO if an axis's dir is 0, this does not check both tiles!
         grid_poses.append({ axis: int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2.0)) / grid_size[axis])),
-                           oth_ax : int(math.floor((pos[oth_ax] - dir[oth_ax] * (grid_size[oth_ax] / 2.0)) / grid_size[oth_ax])) })
+                           oth_ax : int(math.floor((pos[oth_ax] - dir[oth_ax] * (grid_size[oth_ax] / 2.0)) 
+                                        / grid_size[oth_ax])) })
         grid_poses.append({ axis: int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2.0)) / grid_size[axis])),
-                           oth_ax : int(math.floor((pos[oth_ax] + dir[oth_ax] * (grid_size[oth_ax] / 2.0)) / grid_size[oth_ax])) })
+                           oth_ax : int(math.floor((pos[oth_ax] + dir[oth_ax] * (grid_size[oth_ax] / 2.0)) 
+                                        / grid_size[oth_ax])) })
     else:
         grid_poses.append({ axis : int(math.floor((pos[axis] + dir[axis] * (grid_size[axis] / 2.0)) / grid_size[axis])),
                 oth_ax : int(math.floor(pos[oth_ax] / grid_size[oth_ax])) })
@@ -204,7 +206,7 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
     grid_pos = (int(math.floor(start_pos[0] / grid_size[0])),
                 int(math.floor(start_pos[1] / grid_size[1])))
     
-    if(grid_pos == end_grid_pos):
+    if grid_pos == end_grid_pos:
         
         # if we start and end on the same tile, report no collision, even if the
         # tile is blocking. The ray must cross a boundary to collide with 
@@ -263,8 +265,9 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
                 grid_blocks = {}
                 for i in [ - 1, 1]:
                     for j in [ - 1, 1]:
-                        grid_poses[(i, j)] = (int(math.floor((x_cand[1][0][0] + grid_size[0] / 2.0 * i) / grid_size[0])),
-                                             int(math.floor((x_cand[1][0][1] + grid_size[1] / 2.0 * j) / grid_size[1])))                
+                        grid_poses[(i, j)] = (
+                            int(math.floor((x_cand[1][0][0] + grid_size[0] / 2.0 * i) / grid_size[0])),
+                            int(math.floor((x_cand[1][0][1] + grid_size[1] / 2.0 * j) / grid_size[1])))
                         grid_blocks[(i, j)] = collision_callback(x_cand[1][0], grid_poses[(i, j)])
                 
                 root_half = math.sqrt(0.5)
@@ -296,7 +299,8 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
                 # Convex corner
                 elif not grid_blocks[(dir[0] *- 1, dir[1])] and not grid_blocks[(dir[0], dir[1] *- 1)]:
                     
-                    result = (x_cand[1][0], grid_poses[(dir[0], dir[1])], (dir[0] * root_half *- 1, dir[1] * root_half *- 1))
+                    result = (x_cand[1][0], grid_poses[(dir[0], dir[1])], (dir[0] * root_half *- 1, dir[1] 
+                                * root_half *- 1))
                 
                 # ??|XX
                 # --+--    
@@ -306,7 +310,8 @@ def tile_ray_cast(start_pos, end_pos, grid_size, collision_callback):
                     
                     # Which block do we hit here? Just assume a vertical surface collision but
                     # bounce straight back 
-                    result = (x_cand[1][0], grid_poses[(dir[0], dir[1] *- 1)], (dir[0] * root_half *- 1, dir[1] * root_half *- 1))
+                    result = (x_cand[1][0], grid_poses[(dir[0], dir[1] *- 1)], (dir[0] * root_half *- 1, dir[1] 
+                                * root_half *- 1))
                 
     return result
 
@@ -357,7 +362,7 @@ class TilePathfinder(AStar):
                 ycheck = (state.previous.value[0], state.previous.value[1] + ymove)
                 if (self.tilecost_func(xcheck[0], xcheck[1]) == None 
                         or self.tilecost_func(ycheck[0], ycheck[1]) == None):
-                    return None                
+                    return None
         tile_cost = self.tilecost_func(state.value[0], state.value[1])
         if tile_cost != None:
             path_cost = ((state.previous.path_cost if state.previous != None else 0)
@@ -480,7 +485,7 @@ def tile_map_from_ascii(ascii, mapping):
             tile_row.append(mapping[char])
         tiles.append(tile_row)
         
-    return tiles                
+    return tiles
 
 
 class Dir4(object):
@@ -556,7 +561,7 @@ class LosMap(object):
                 tile_ray_cast((0.5,0.5), (i+0.5,j+0.5), (1,1),
                     lambda chpos,chtile: LosMap._los_callback(deps, chtile))
                 # sort the dependencies into ray path order
-                deps.sort(LosMap._los_sort)
+                deps.sort(key=lambda d: (d[1], d[0]))
                 # record the dependencies in the map
                 data[(i,j)] = deps
         
@@ -568,19 +573,6 @@ class LosMap(object):
             deps.append(tile)
         return False
     
-    @staticmethod
-    def _los_sort(a, b):
-        if a[1] > b[1]:
-            return 1
-        elif a[1] < b[1]:
-            return -1
-        elif a[0] > b[0]:
-            return 1
-        elif a[0] < b[0]:
-            return -1
-        else:
-            return 0            
-
     @staticmethod
     def load(filename):
         """    
@@ -609,7 +601,7 @@ class LosMap(object):
         with open(filename,'w') as file:
             for k in self.data:
                 line = "%d,%d:" % k
-                line += "|".join([("%d,%d" % x) for x in self.data[k]])                    
+                line += "|".join([("%d,%d" % x) for x in self.data[k]])
                 file.write(line+"\n")
 
     def is_tile_visible(self, tile, from_tile, seethru_callback, checked=None):

@@ -31,6 +31,7 @@ Markov chains module
 import mrf.mathutil
 import mrf.structs
 
+
 class Markov(object):
 
     START = 1
@@ -59,7 +60,7 @@ class Markov(object):
         
     def has_from(self, fr):
         fr = self.prepare_from(fr)
-        return self.graph.has_key(fr)
+        return fr in self.graph
         
     def make_from(self, fr):
         fr = self.prepare_from(fr)
@@ -74,7 +75,7 @@ class Markov(object):
         if not self.has_from(fr):
             return False
         
-        return self.graph[fr]["tos"].has_key(to)
+        return to in self.graph[fr]["tos"]
         
     def make_to(self, fr, to):
         fr = self.prepare_from(fr)
@@ -96,7 +97,7 @@ class Markov(object):
         # add enough start items to start
         newseq = [Markov.START]*self.order + seq        
         # add sequence items
-        for i in xrange(len(seq)):
+        for i in range(len(seq)):
             seqindex = self.order+i
             self.add(newseq[seqindex-self.order:seqindex],newseq[seqindex])
         # add end
@@ -121,7 +122,7 @@ class Markov(object):
         best = None
         best_prob = 0
         for k in self.graph[fr]["tos"]:
-            prob = self.graph[fr]["tos"][k]
+            prob = self.graph[fr]["tos"][k]["prob"]
             if best==None or prob > best_prob:
                 best_prob = prob
                 best = k

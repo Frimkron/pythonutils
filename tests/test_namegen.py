@@ -22,8 +22,8 @@ class TestNameGenerator(unittest.TestCase):
             ng.save(filename)    
             
             ng2 = NameGenerator.load(filename)
-            self.assertEquals(ng2.mkv.order, order)
-            self.assertEquals(ng2.mkv.graph, graph)
+            self.assertEqual(ng2.mkv.order, order)
+            self.assertEqual(ng2.mkv.graph, graph)
         finally:
             if os.path.exists(filename):
                 os.remove(filename)

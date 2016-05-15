@@ -32,6 +32,12 @@ Utilities for manipulating XML documents
 from __future__ import absolute_import
 import xml.dom.minidom
 
+try:
+    basestring
+except NameError:
+    basestring = str
+
+
 
 def xhtml(*child_specs):
     return doc(('html', '-//W3C//DTD XHTML 1.0 Strict//EN', 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'), 
