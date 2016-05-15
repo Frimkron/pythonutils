@@ -34,9 +34,10 @@ import os.path
 
 try:
     basestring
+    unicode
 except NameError:
     basestring = str
-
+    unicode = str
 
 
 class TicketQueue(object):
