@@ -1,7 +1,12 @@
 import re
-import urllib
-import urllib2
-import urlparse
+import codecs
+try:
+    from urllib2 import HTTPError, Request, urlopen, quote
+    from urllib import urlencode
+    from urlparse import parse_qs, parse_qsl, urlparse
+except ImportError:
+    from urllib.request import HTTPError, Request, urlopen, quote
+    from urllib.parse import urlencode, parse_qs, parse_qsl, urlparse
 import json
 import base64
 import time
@@ -80,7 +85,7 @@ class Client1(object):
         self._token_secret = None
         if self._temp_token is None:
             self._request_temp_token()
-        return self._auth_endpoint + '?' + urllib.urlencode({'oauth_token': self._temp_token})
+        return self._auth_endpoint + '?' + urlencode({'oauth_token': self._temp_token})
         
     def complete_authorization(self, verifier):
         """Should be called on receipt of an authorization callback request. Attempts to obtain an access token
@@ -93,7 +98,7 @@ class Client1(object):
         self._token_secret = result['oauth_token_secret']        
         
     def access_resource(self, request_obj):
-        """Makes an authenticated request. request_obj is a urllib2.Request object which will have authentication info
+        """Makes an authenticated request. request_obj is a urllib Request object which will have authentication info
         added to it before sending. Returns the response if available"""
         if self._token is None:
             raise GrantRequiredError('No access token been obtained yet. Generate a new grant url')
@@ -108,12 +113,12 @@ class Client1(object):
                 
     def _oauth_request(self, url, token, token_secret, params, realm=None):
         try:
-            response = self._authenticated_request(urllib2.Request(url, ''), token, token_secret, params, realm)
-        except urllib2.HTTPError as e:
+            response = self._authenticated_request(Request(url, bytes()), token, token_secret, params, realm)
+        except HTTPError as e:
             raise OAuthError('Error response from request', e, str(e))
         except IOError as e:
             raise OAuthError('Failed to make request', e, str(e))
-        result = urlparse.parse_qs(response.read())
+        result = parse_qs(codecs.getreader('utf-8')(response).read())
         return {n:v[0] for n,v in result.items()}
         
     def _authenticated_request(self, request_obj, token, token_secret, extra_oauth_params={}, realm=None):
@@ -139,24 +144,34 @@ class Client1(object):
         auth_header = 'OAuth '+','.join(['{}="{}"'.format(self._encode(name),self._encode(value)) 
                                          for name,value in authzn_params.items()])
         request_obj.headers['Authorization'] = auth_header
-        return urllib2.urlopen(request_obj)        
+        return urlopen(request_obj)        
         
     def _cypher_key(self, token_secret):
-        return self._encode(self._secret) + '&' + self._encode(token_secret)
+        val = self._encode(self._secret) + '&' + self._encode(token_secret)
+        try:
+            val = bytes(val,'utf-8')
+        except TypeError: 
+            pass
+        return val
         
     def _signature_base_string(self, request_obj, oauth_params):
-        scheme, netloc, path, params, query, fragment = urlparse.urlparse(request_obj.get_full_url())
-        basestring_uri = scheme + '://' + netloc + path + (params if params!='' else '')
-        param_list = urlparse.parse_qsl(params) + oauth_params.items()
+        scheme, netloc, path, params, query, fragment = urlparse(request_obj.get_full_url())
+        basestring_uri = scheme + '://' + netloc + path + (';'+params if params!='' else '')
+        param_list = parse_qsl(query) + list(oauth_params.items())
         if request_obj.headers.get('Content-Type','') == 'application/x-www-form-urlencoded':
-            param_list += urlparse.parse_qsl(request_obj.data)
+            param_list += parse_qsl(request_obj.data)
         param_list = [(self._encode(name),self._encode(value)) for name,value in param_list]
-        param_list.sort(cmp=lambda a, b: cmp(a[1],b[1]) if a[0]==b[0] else cmp(a[0],b[0]))
+        param_list.sort()        
         param_string = '&'.join(['{}={}'.format(n,v) for n,v in param_list])
-        return request_obj.get_method() + '&' + self._encode(basestring_uri) + '&' + self._encode(param_string)
+        val = request_obj.get_method() + '&' + self._encode(basestring_uri) + '&' + self._encode(param_string)
+        try:
+            val = bytes(val,'utf-8')
+        except TypeError:
+            pass
+        return val
         
     def _encode(self, val):
-        return urllib.quote(val,'~')
+        return quote(val,'~')
 
 
 class Client2(object):
@@ -232,7 +247,7 @@ class Client2(object):
         params = {'client_id': self._id, 'redirect_uri': self._auth_redirect_uri, 'response_type': 'code'}
         if state is not None: params['state'] = state
         if self._scope is not None: params['scope'] = ' '.join(self._scope)
-        return self._auth_endpoint + '?' + urllib.urlencode(params)
+        return self._auth_endpoint + '?' + urlencode(params)
 
     def auth_code_grant(self, auth_code):
         """Should be called on receipt of an auth code grant callback request. Attempts to obtain an access token
@@ -246,7 +261,7 @@ class Client2(object):
         params = {'client_id': self._id, 'response_type': 'token', 'redirect_uri': self._auth_redirect_uri}
         if state is not None: params['state'] = state
         if self._scope is not None: params['scope'] = ' '.join(self._scope)
-        return self._auth_endpoint + '?' + urllib.urlencode(params)        
+        return self._auth_endpoint + '?' + urlencode(params)        
         
     def implicit_grant(self, token_type, access_token, expires_in=None):
         """Should be called on receipt of an implicit grant callback request"""
@@ -275,7 +290,7 @@ class Client2(object):
         self._grant_request(params)
             
     def access_resource(self, request_obj):
-        """Makes an authenticated request. request_obj is a urllib2.Request object which will have authentication info
+        """Makes an authenticated request. request_obj is a urllib Request object which will have authentication info
         added to it before sending. Returns the response if available"""
         
         if not self._has_valid_access_token():
@@ -289,8 +304,8 @@ class Client2(object):
                 request_obj.headers['Authorization'] = 'Bearer '+self._access_token
         
             try:
-                return urllib2.urlopen(request_obj)
-            except urllib2.HTTPError as e:
+                return urlopen(request_obj)
+            except HTTPError as e:
                 if e.code == 401 and self._extract_authentication_error(e) == 'invalid_token':
                     self._access_token = None
                     self._access_token_expire_time = None
@@ -341,12 +356,12 @@ class Client2(object):
         return token_type == 'bearer'
         
     def _request(self, endpoint, params):
-        auth_header = 'Basic '+base64.b64encode(urllib.quote(self._id,'')+':'+urllib.quote(self._secret,''))
-        request = urllib2.Request(endpoint, urllib.urlencode(params), 
+        auth_header = 'Basic '+base64.b64encode(quote(self._id,'')+':'+quote(self._secret,''))
+        request = Request(endpoint, urlencode(params), 
                                   {'Authorization': auth_header, 'Content-Type': 'application/x-www-form-urlencoded'})
         try:
-            response = urllib2.urlopen(request)
-        except urllib2.HTTPError as e:
+            response = urlopen(request)
+        except HTTPError as e:
             errordesc = ''
             if e.code==400 and self._is_json_response(e):
                 try:
