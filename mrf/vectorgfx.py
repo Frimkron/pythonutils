@@ -1579,7 +1579,7 @@ if __name__ == "__main__":
                     b.append(getattr(x,a))
             return b
 
-    print trees.draw_tree(v,displaystrategy=lambda x: type(x).__name__,branchstrategy=branches)
+    print(trees.draw_tree(v,displaystrategy=lambda x: type(x).__name__,branchstrategy=branches))
     
     #renderer.cache(v)
     #for p in renderer._cache[v]:
