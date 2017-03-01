@@ -61,6 +61,7 @@ def menu(items,prompt_text="Enter a selection: ",title="Menu\n----",option="%s) 
     Takes either a list/tuple or dictionary of menu options. For a list, 
     the options are numbered, requiring the user to enter a number. For
     a dictionary, the keys are used as the values the user should enter.    
+    Returns the value corresponding to the user's choice.
     """
     options = None
     values = None
