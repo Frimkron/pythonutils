@@ -31,6 +31,7 @@ Utilities for manipulating XML documents
 
 from __future__ import absolute_import
 import xml.dom.minidom
+from .structs import chunk
 
 try:
     basestring
@@ -92,35 +93,25 @@ def node(doc, ns_map, spec):
         return n
 
 
-def css_node(doc, ns_map, ns_prefix, spec):
+def css_props(*spec):
+    return '; '.join(['{}: {}'.format(prop,val) for prop, val in chunk(spec,2,'')])
+
+
+def css_rules(*spec):
+    return ' '.join(['{} {{ {} }}'.format(selector,css_props(*props)) for selector,props in chunk(spec,2,[])])
+
+
+def css_style(doc, ns_map, ns_prefix, spec):
     """Returns a Node object for the given DOM document representning a 'style' tag containing CSS.
        ns_map is an optional dictionary of prefixes to namespace uris
        ns_prefix is an optional prefix to use for the style node
        spec is a sequence that alternates between:
          - a CSS selector string and 
-         - a dictionary of CSS properties
+         - a sequence that alternates between property names and property values.
        to define each CSS rule"""
     tagname = '{}:style'.format(ns_prefix) if ns_prefix else 'style'
     return node(doc, ns_map, 
-            (tagname, {'type': 'text/css'},
-                '\n'.join(['%s { %s }' % (
-                    selector, 
-                    ';'.join(['%s: %s' % (pname, pval) for pname, pval in props.items()])) 
-                  for selector, props in _iter_pairs(spec)])))
-
-
-def _iter_pairs(itr):
-    itr = iter(itr)
-    while True:
-        pair = [None, None]
-        try:
-            pair[0] = next(itr)
-            pair[1] = next(itr)        
-        except StopIteration:
-            break
-        finally:
-            if pair[0] is not None:
-                yield tuple(pair)
+            (tagname, {'type': 'text/css'}, css_rules(*spec)))
 
 
 def _add_attrs_and_children(doc, n, ns_map, attributes, child_specs):
